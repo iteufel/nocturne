@@ -1,10 +1,12 @@
 # Online broker and peer-to-peer connections
 
 Nocturne includes a self-hosted Rust broker and a Rust transport embedded in the
-Mac and iOS apps. Enable **Nocturne Server → Settings → Remote access**, enter your
-broker's HTTPS origin, start the server, and scan a new QR code. Existing LAN-only
+Mac and iOS apps. Remote access is disabled by default, with
+`https://nocturne.alkal.de` preconfigured as the broker. Enable
+**Nocturne Server → Settings → Remote access**, keep the default broker or enter
+your own HTTPS origin, start the server, and scan a new QR code. Existing LAN-only
 pairings still work; scanning again adds the broker and public endpoint identity
-to the pairing saved in Keychain. There is no hosted default or external account.
+to the pairing saved in Keychain. No external account is required.
 
 The client first tries Bonjour and its saved LAN address. If those connections
 fail, it connects to the Mac's cryptographic endpoint through the broker. The

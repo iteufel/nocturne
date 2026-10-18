@@ -49,7 +49,7 @@ final class ServerModel: ObservableObject {
     @Published var remoteAccessEnabled = UserDefaults.standard.bool(forKey: "remoteAccessEnabled") {
         didSet { UserDefaults.standard.set(remoteAccessEnabled, forKey: "remoteAccessEnabled") }
     }
-    @Published var brokerURL = UserDefaults.standard.string(forKey: "remoteBrokerURL") ?? "" {
+    @Published var brokerURL = UserDefaults.standard.string(forKey: "remoteBrokerURL") ?? "https://nocturne.alkal.de" {
         didSet { UserDefaults.standard.set(brokerURL, forKey: "remoteBrokerURL") }
     }
     private var deviceStore: WorkspaceDeviceStore?
