@@ -1,10 +1,12 @@
 # Builds and TestFlight
 
-The [Build and TestFlight workflow](https://github.com/iteufel/nocturne/actions/workflows/build.yml)
+The [Build and Release workflow](https://github.com/iteufel/nocturne/actions/workflows/build.yml)
 tests both apps on GitHub's Apple Silicon Xcode 27 runners. Pull requests run the
 checks without release credentials. Code changes pushed to `main` run the checks,
-then archive, sign, export, and upload the iOS app to App Store Connect. A manual
-run can disable the upload with **publish_testflight**.
+then archive, sign, export, and upload the iOS app to App Store Connect. It also
+builds a Developer ID-signed Mac server, notarizes it with Apple, and publishes
+the verified ZIP as a GitHub preview release. A manual run can disable either
+release with **publish_testflight** or **publish_macos**.
 
 Each job installs Xcode's Metal Toolchain, which the SwiftTerm renderer needs and
 the runner image does not include. Bootstrap generates pixel-exact, opaque RGB
@@ -24,10 +26,12 @@ change physical displays or launch the real streaming engine are disabled.
 CI boots one temporary simulator at a time and waits for startup before testing,
 then shuts down and deletes that simulator. This avoids concurrent startup
 timeouts on the hosted runner and does not affect local development simulators.
-It retains client test results and a zipped **development** Mac build for seven
-days. This Mac artifact is ad-hoc signed, not notarized, and is not a public
-release installer. The Mac app's private display APIs require direct distribution;
-the TestFlight job is for iOS/iPadOS.
+It retains client test results for seven days. The ad-hoc development Mac
+build is a compilation check and is no longer offered as a download. Mac
+downloads come from the signed release job, which signs all nested binaries,
+checks their signing team and secure timestamps, notarizes the app, staples
+Apple's ticket, and requires Gatekeeper to accept it before publication. The Mac
+app's private display APIs require direct distribution; TestFlight is for iOS/iPadOS.
 
 The upload job waits for Apple to finish processing. The build number is
 `github.run_number.github.run_attempt`, so rerunning a failed release gets a new
@@ -80,3 +84,39 @@ NOCTURNE_BUILD_NUMBER='<unused numeric build number>' scripts/archive-ios.sh
 
 The archive and exported IPA stay in the ignored `.build/TestFlight` directory.
 Build scripts never start Nocturne Server or change the Mac's display layout.
+
+## Signed Mac downloads
+
+Use the ZIP attached to a [Mac server release](https://github.com/iteufel/nocturne/releases).
+Quit an older Nocturne Server, unzip the download, and move the app to Applications.
+The ZIP includes the stapled notarization ticket; `SHA256SUMS.txt` accompanies it.
+Builds target Apple Silicon and macOS 14 or later. They remain previews, with the
+display limitations described in [VERIFICATION.md](VERIFICATION.md).
+
+The `macos-release` environment also permits `main` only. It stores:
+
+| Kind | Name | Purpose |
+| --- | --- | --- |
+| Variable | `APPLE_TEAM_ID` | Expected team for every nested binary |
+| Variable | `MACOS_SIGNING_IDENTITY` | Developer ID Application certificate fingerprint |
+| Variable | `NOTARY_KEY_ID` | App Store Connect API key ID |
+| Variable | `NOTARY_ISSUER_ID` | API issuer ID |
+| Secret | `MACOS_CERTIFICATES_FILE_BASE64` | Base64 Developer ID `.p12`, including its certificate chain |
+| Secret | `MACOS_CERTIFICATES_PASSWORD` | Password for that `.p12` |
+| Secret | `NOTARY_API_PRIVATE_KEY` | Existing Nocturne API `.p8` for notarization |
+
+The initial Developer ID certificate expires on **17 November 2027**. Renew it
+before then and update the signing identity and certificate secrets. The signing
+keychain and temporary API key are removed after each job. Only this protected
+release job has repository write permission, to create the GitHub release.
+
+`scripts/release-macos.sh` builds and signs the app, saves the notarization request
+and result under `.build/MacRelease`, and publishes a ZIP only after Apple accepts
+it and local Gatekeeper verification succeeds. CI retains signing diagnostics for
+seven days. The script never starts the streaming engine or changes display state.
+
+`python3 scripts/verify-macos-release.py '/path/Nocturne Server.app' '<team ID>'`
+checks every Mach-O binary. This catches the Team ID mismatch that made the old
+ad-hoc runtime abort during library loading, as well as missing Developer ID
+signatures or secure timestamps. Keep Gatekeeper enabled; a downloadable release
+must pass `spctl --assess --type execute --verbose=4 '/path/Nocturne Server.app'`.

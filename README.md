@@ -4,7 +4,9 @@ A native SwiftUI workspace for streaming your computer to iPhone and iPad, with 
 
 ## Run
 
-GitHub builds and TestFlight automation are documented in [the release guide](docs/RELEASING.md).
+Download the signed and notarized Mac server from [GitHub Releases](https://github.com/iteufel/nocturne/releases).
+Quit any older server, unzip the download, and move **Nocturne Server.app** to Applications.
+GitHub builds, Mac releases, and TestFlight automation are documented in [the release guide](docs/RELEASING.md).
 
 Targets iOS 17+ and macOS 14+ on an Apple Silicon Mac. Build with Xcode 26 or newer (iOS 26/macOS 26 SDKs) and Ruby's `xcodeproj` gem. Development here uses Xcode 27 and iOS 27 simulators.
 

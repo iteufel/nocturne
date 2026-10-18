@@ -1,4 +1,4 @@
-name: Build and TestFlight
+name: Build and Release
 
 on:
   push:
@@ -10,6 +10,10 @@ on:
     inputs:
       publish_testflight:
         description: Upload a new iOS build to TestFlight after checks pass
+        type: boolean
+        default: true
+      publish_macos:
+        description: Publish a signed and notarized Mac server after checks pass
         type: boolean
         default: true
 
@@ -46,22 +50,9 @@ jobs:
         run: scripts/test-ios-ci.sh
       - name: Build the unified macOS server
         run: scripts/build.sh mac
-      - name: Package macOS development build
-        run: |
-          mkdir -p artifacts
-          ditto -c -k --sequesterRsrc --keepParent \
-            '.build/XcodeMac/Build/Products/Debug/Nocturne Server.app' \
-            artifacts/Nocturne-Server-development-arm64.zip
-      - name: Save macOS development build
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: Nocturne-Server-development-arm64
-          path: artifacts/Nocturne-Server-development-arm64.zip
-          retention-days: 7
-          if-no-files-found: error
       - name: Save client test results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ClientTests
           path: .build/ClientTests
@@ -127,3 +118,94 @@ jobs:
         run: |
           rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision
           rm -f "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"*.mobileprovision
+
+  macos_release:
+    name: Release signed macOS server
+    needs: verify
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish_macos))
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    environment:
+      name: macos-release
+      url: https://github.com/iteufel/nocturne/releases
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Prepare pinned dependencies
+        run: |
+          xcodebuild -version
+          gem install --user-install xcodeproj -v 1.27.0 --no-document
+          scripts/bootstrap.sh
+      - name: Import the Developer ID identity
+        uses: Apple-Actions/import-codesign-certs@fe74d46e82474f87e1ba79832ad28a4013d0e33a # v6
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATES_FILE_BASE64 }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATES_PASSWORD }}
+      - name: Build, sign, notarize, and verify the Mac server
+        env:
+          NOCTURNE_DEVELOPER_ID: ${{ vars.MACOS_SIGNING_IDENTITY }}
+          NOCTURNE_DEVELOPMENT_TEAM: ${{ vars.APPLE_TEAM_ID }}
+          NOCTURNE_BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+          NOCTURNE_NOTARY_KEY_ID: ${{ vars.NOTARY_KEY_ID }}
+          NOCTURNE_NOTARY_ISSUER_ID: ${{ vars.NOTARY_ISSUER_ID }}
+          NOTARY_API_PRIVATE_KEY: ${{ secrets.NOTARY_API_PRIVATE_KEY }}
+        run: |
+          umask 077
+          export NOCTURNE_NOTARY_KEY_PATH="$RUNNER_TEMP/nocturne-notary.p8"
+          printf '%s' "$NOTARY_API_PRIVATE_KEY" > "$NOCTURNE_NOTARY_KEY_PATH"
+          unset NOTARY_API_PRIVATE_KEY
+          scripts/release-macos.sh
+      - name: Save the notarized Mac download
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Nocturne-Server-macOS-arm64
+          path: |
+            .build/MacRelease/Nocturne-Server-macOS-arm64.zip
+            .build/MacRelease/SHA256SUMS.txt
+          retention-days: 7
+          if-no-files-found: error
+      - name: Publish the Mac preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' '.build/MacRelease/Nocturne Server.app/Contents/Info.plist')
+          build="$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
+          cat > "$RUNNER_TEMP/mac-release-notes.md" <<EOF
+          Nocturne Server for Apple Silicon Macs running macOS 14 or later.
+
+          Signed with Developer ID, notarized by Apple, and verified by Gatekeeper.
+          Download the ZIP, unzip it, quit an older Nocturne Server if it is running,
+          and move Nocturne Server.app to Applications.
+
+          This is an early preview. Virtual-display and monitor-off features have
+          an unresolved black-screen issue; keep those features disabled.
+
+          Built from commit $GITHUB_SHA. The ZIP includes Apple's notarization ticket.
+          SHA256SUMS.txt contains the download checksum.
+          EOF
+          release_url=$(gh release create "server-v$version-$build" \
+            .build/MacRelease/Nocturne-Server-macOS-arm64.zip \
+            .build/MacRelease/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "Nocturne Server $version ($build)" \
+            --prerelease --notes-file "$RUNNER_TEMP/mac-release-notes.md")
+          printf 'Signed and notarized Mac release: %s\n' "$release_url" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save Mac signing diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Mac-signing-diagnostics
+          path: |
+            .build/MacRelease/signature.txt
+            .build/MacRelease/submission.json
+            .build/MacRelease/notarization.json
+            .build/MacRelease/notarization-log.json
+          retention-days: 7
+      - name: Remove the notarization private key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/nocturne-notary.p8"
