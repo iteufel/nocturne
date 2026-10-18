@@ -1,0 +1,133 @@
+name: Build and TestFlight
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['site/**', 'docs/**', '**.md']
+  pull_request:
+    paths-ignore: ['site/**', 'docs/**', '**.md']
+  workflow_dispatch:
+    inputs:
+      publish_testflight:
+        description: Upload a new iOS build to TestFlight after checks pass
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+  NOCTURNE_TEST_DISPLAYS: '0'
+  NOCTURNE_TEST_DISPLAY_SWITCH: '0'
+
+jobs:
+  verify:
+    name: Test and build both apps
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Prepare pinned dependencies
+        run: |
+          xcodebuild -version
+          gem install --user-install xcodeproj -v 1.27.0 --no-document
+          scripts/bootstrap.sh
+      - name: Test shared and host services
+        run: env -u NOCTURNE_ENGINE_EXECUTABLE swift test
+      - name: Test the iPhone and iPad client
+        run: |
+          xcodebuild test -workspace Nocturne.xcworkspace -scheme Nocturne \
+            -destination 'platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0' \
+            -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5),OS=27.0' \
+            -derivedDataPath .build/Xcode -resultBundlePath .build/ClientTests.xcresult \
+            -parallel-testing-enabled NO -only-testing:NocturneClientTests \
+            CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=
+      - name: Build the unified macOS server
+        run: scripts/build.sh mac
+      - name: Package macOS development build
+        run: |
+          mkdir -p artifacts
+          ditto -c -k --sequesterRsrc --keepParent \
+            '.build/XcodeMac/Build/Products/Debug/Nocturne Server.app' \
+            artifacts/Nocturne-Server-development-arm64.zip
+      - name: Save macOS development build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Nocturne-Server-development-arm64
+          path: artifacts/Nocturne-Server-development-arm64.zip
+          retention-days: 7
+          if-no-files-found: error
+      - name: Save client test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ClientTests
+          path: .build/ClientTests.xcresult
+          retention-days: 7
+
+  testflight:
+    name: Release iOS to TestFlight
+    needs: verify
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish_testflight))
+    runs-on: xcode-27
+    timeout-minutes: 60
+    environment:
+      name: testflight
+      url: https://appstoreconnect.apple.com/apps/${{ vars.APPSTORE_APP_ID }}/testflight
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Prepare pinned dependencies
+        run: |
+          xcodebuild -version
+          gem install --user-install xcodeproj -v 1.27.0 --no-document
+          scripts/bootstrap.sh
+      - name: Import the distribution identity
+        uses: Apple-Actions/import-codesign-certs@fe74d46e82474f87e1ba79832ad28a4013d0e33a # v6
+        with:
+          p12-file-base64: ${{ secrets.APPSTORE_CERTIFICATES_FILE_BASE64 }}
+          p12-password: ${{ secrets.APPSTORE_CERTIFICATES_PASSWORD }}
+      - name: Download the App Store provisioning profile
+        uses: Apple-Actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
+        with:
+          bundle-id: app.nocturne.client
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+      - name: Archive and export iOS
+        env:
+          NOCTURNE_DEVELOPMENT_TEAM: ${{ vars.APPLE_TEAM_ID }}
+          NOCTURNE_BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+        run: scripts/archive-ios.sh
+      - name: Upload and wait for Apple processing
+        uses: Apple-Actions/upload-testflight-build@155ea93be9ee6d5186c71f660a612f5eddb14510 # v5
+        with:
+          app-path: .build/TestFlight/export/Nocturne.ipa
+          issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          wait-for-processing: 'true'
+          release-notes: |
+            Nocturne beta from commit ${{ github.sha }}.
+            Test pairing, streaming, keyboard and controller input, terminal tabs, and file transfers.
+      - name: Record the uploaded build
+        run: |
+          printf 'TestFlight build **%s.%s** from `%s` finished processing.\n' \
+            "$GITHUB_RUN_NUMBER" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove provisioning profiles
+        if: always()
+        run: |
+          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision
+          rm -f "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"*.mobileprovision

@@ -7,3 +7,7 @@ DerivedData/
 xcuserdata/
 build/
 artifacts/
+*.p8
+*.p12
+*.mobileprovision
+*.provisionprofile

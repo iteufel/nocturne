@@ -93,6 +93,7 @@ target.build_configurations.each do |config|
   settings['HEADER_SEARCH_PATHS'] << '$(PROJECT_DIR)/../../Sources/Client/Bridge'
   settings['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'DarkAppIcon'
   settings['MARKETING_VERSION'] = '1.0'
+  settings['CURRENT_PROJECT_VERSION'] = '1'
   settings['CODE_SIGN_STYLE'] = 'Automatic'
   settings['DEVELOPMENT_TEAM'] = ''
   settings['CODE_SIGN_ENTITLEMENTS'] = '../../Resources/Client.entitlements'

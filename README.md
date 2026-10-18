@@ -4,6 +4,8 @@ A native SwiftUI workspace for streaming your computer to iPhone and iPad, with 
 
 ## Run
 
+GitHub builds and TestFlight automation are documented in [the release guide](docs/RELEASING.md).
+
 Targets iOS 17+ and macOS 14+ on an Apple Silicon Mac. Build with Xcode 26 or newer (iOS 26/macOS 26 SDKs) and Ruby's `xcodeproj` gem. Development here uses Xcode 27 and iOS 27 simulators.
 
 ```sh
