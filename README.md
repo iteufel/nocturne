@@ -48,6 +48,16 @@ Paired Macs are rediscovered when their IP address changes, including after movi
 
 Selecting a discovered computer requires explicit pairing approval before its library or desktop can open. Cached streaming certificates alone cannot grant access. A new video pairing is saved only after both QR workspace authorization and the streaming handshake succeed. **Forget computer** removes its streaming approval, and forgetting the paired Mac also removes its linked video connection.
 
+## Mac apps in iPad windows
+
+Choose **Apps** in the client's sidebar or tab bar to browse the paired Mac's installed applications, with their icons and open windows. Tap an app to launch it; when it has several windows, choose the one to share. Long-press an app to open a particular existing window directly. Refresh the list after opening or closing windows on the Mac.
+
+On iPad, each selected Mac window opens in a separate native Nocturne window. Use iPad windowing or Stage Manager to arrange several side by side. Selecting an already open stream returns to its existing iPad window. Up to four app windows per device (eight across the host) can stream independently. iPhone opens one app window inside the client.
+
+Only the selected window is captured, including when another app covers it on the Mac. Resizing the iPad window resizes that actual Mac window in points and updates Retina video without restarting the desktop engine or other streams. Mac apps may enforce a minimum window size; Nocturne preserves the resulting aspect ratio. Touch, dragging, right-click by holding, two-finger scrolling, hardware keyboards/mice, and the toolbar's software keyboard control the selected window. Closing the stream leaves the app running and restores its original window size unless it was manually resized on the Mac. Backgrounding releases that scene's capture; returning reconnects it.
+
+Both apps must support app windows. The Mac server needs **Screen Recording** and **Accessibility** permission. Apps without an open, capturable, resizable window report an error. App streams currently carry H.264 video and input; audio, game controllers, other windows, app menus, and separate dialog windows are not included. Desktop streaming remains available for those uses. Individual window control uses a runtime-checked macOS window-ID bridge in the directly distributed server.
+
 **Devices → Your devices** lists paired streaming devices and connected workspaces by name, with a separate **Remove…** action for each. Removing one device closes its terminal/file sessions, disables its active stream, and revokes its pairing without disconnecting the others. Saved devices remain visible while the server is stopped. “Connected” indicates an open workspace connection; streaming-only clients are shown as “Paired”.
 
 One **Stop server** stops capture, streaming, terminal sessions, and transfers. Quitting the Mac app stops its child engine. **Reset all pairing** revokes video certificates and rotates the workspace key together.
@@ -107,6 +117,7 @@ Streaming approval is stored separately in Keychain and bound to the computer ID
 
 ```sh
 swift test
+NOCTURNE_TEST_APP_WINDOWS=1 swift test --filter AppWindowTests/testNativeWindowCaptureAndResize
 bash scripts/test-microphone-driver.sh
 NOCTURNE_ENGINE_EXECUTABLE="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne Server.app/Contents/MacOS/nocturne-stream-host" swift test
 ```
