@@ -133,3 +133,43 @@ Rust libraries also built for physical iOS devices. The Linux Docker image
 built and passed a non-root HTTPS `/ping` check with a test certificate and a
 clean SIGTERM shutdown. No public broker has been deployed or two-network
 physical-device streaming test performed.
+
+
+## Container publication and automatic updates
+
+The Build and Release workflow tests Rust before publishing the Linux amd64
+broker to [Docker Hub](https://hub.docker.com/r/iteufel/nocturne-broker).
+Every eligible push to `main` publishes `latest` and `sha-<full commit SHA>`.
+PR checks never receive Docker Hub credentials or publish images. Maintainers
+can explicitly publish a selected branch using the existing workflow's manual
+`publish_broker` input; this also deploys that branch to the live broker.
+Store a Docker Hub read/write token for `iteufel` in the repository Actions secret
+`DOCKERHUB_TOKEN`. Token rotation is required before its expiration.
+
+The production Quadlet is versioned in `remote/deploy/nocturne-broker.container`.
+It retains the external certificate directory and runs as UID/GID 10001 without
+capabilities. Before installing it on the existing server, pull the image:
+
+```sh
+podman pull docker.io/iteufel/nocturne-broker:latest
+cp /etc/containers/systemd/nocturne-broker.container /etc/nocturne-broker/previous.container
+install -m 0644 remote/deploy/nocturne-broker.container /etc/containers/systemd/
+mkdir -p /etc/systemd/system/podman-auto-update.timer.d
+install -m 0644 remote/deploy/auto-update.conf /etc/systemd/system/podman-auto-update.timer.d/
+systemctl daemon-reload
+systemctl restart nocturne-broker.service
+systemctl enable --now podman-auto-update.timer
+podman auto-update --dry-run
+```
+
+Podman checks the registry every five minutes (up to 30 seconds jitter). It
+restarts the broker only when the image digest changes; active relay sessions
+may briefly disconnect. `Notify=healthy` makes systemd wait for the trusted
+HTTPS health check, allowing Podman's default rollback when an update fails to
+start healthily. Certificates and their existing Certbot renewal hooks remain
+on the host. Public pulls do not require a Docker Hub credential on the server.
+
+Inspect updates with `journalctl -u podman-auto-update.service` and
+`systemctl list-timers podman-auto-update.timer`. To pin a known working release,
+stop the timer, set `Image=docker.io/iteufel/nocturne-broker:sha-<commit>` and
+remove `AutoUpdate=registry` in the Quadlet, then reload and restart the service.

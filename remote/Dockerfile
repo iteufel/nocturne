@@ -12,5 +12,5 @@ COPY --from=build /source/target/release/nocturne-broker /usr/local/bin/nocturne
 USER 10001:10001
 ENV NOCTURNE_BROKER_HTTP=0.0.0.0:8080 NOCTURNE_BROKER_HTTPS=0.0.0.0:8443
 EXPOSE 8080/tcp 8443/tcp 7842/udp
-HEALTHCHECK --interval=30s --timeout=5s CMD curl -fsS http://127.0.0.1:8080/ping || exit 1
+HEALTHCHECK --interval=30s --timeout=5s CMD curl -fsS http://127.0.0.1:8080/generate_204 || exit 1
 ENTRYPOINT ["/usr/local/bin/nocturne-broker"]
