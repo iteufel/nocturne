@@ -133,6 +133,9 @@ public struct PairingInvitation: Codable, Equatable {
         if let enrollmentToken { parts.queryItems?.append(URLQueryItem(name: "token", value: enrollmentToken.base64EncodedString())) }
         return parts.url!
     }
+    public func replacingAddress(host: String, port: UInt16? = nil) throws -> PairingInvitation {
+        try PairingInvitation(host: host, port: port ?? self.port, name: name, secret: secret, enrollmentToken: enrollmentToken)
+    }
 }
 
 public enum StreamInputMode: String, CaseIterable, Identifiable {

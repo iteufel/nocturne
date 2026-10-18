@@ -72,7 +72,8 @@ final class ClientModel: ObservableObject {
     @Published var preferences: StreamPreferences {
         didSet { if let data = try? JSONEncoder().encode(preferences) { UserDefaults.standard.set(data, forKey: "streamPreferences") } }
     }
-    private var reconnecting = false
+    private var reconnectTask: Task<Void, Error>?
+    private var networkTask: Task<Void, Never>?
     private var pendingStreamAddress: String?
     private var linkedHostID = UserDefaults.standard.string(forKey: "serverHostID")
     private var pendingStream: Task<Void, Never>?
@@ -136,12 +137,33 @@ final class ClientModel: ObservableObject {
     }
     func start() {
         if session == nil { engine.start() }; refreshInputs()
-        if savedServerName != nil, server.state == .disconnected, !reconnecting {
-            reconnecting = true
-            Task { defer { reconnecting = false }; await reconnectServer(reportError: false) }
+        guard networkTask == nil else { return }
+        networkTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.maintainConnection()
+                do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+            }
         }
     }
+    private func maintainConnection() async {
+        guard savedServerName != nil, !showAdd else { return }
+        if server.state == .disconnected { await reconnectServer(reportError: false) }
+        else if server.state == .connected {
+            let generation = serverPairingGeneration
+            do { _ = try await server.request(Packet(.ping), timeout: 5) }
+            catch {
+                guard !Task.isCancelled, serverPairingGeneration == generation else { return }
+                server.disconnect()
+            }
+        }
+    }
+    private func cancelReconnect() {
+        serverPairingGeneration = UUID()
+        reconnectTask?.cancel(); reconnectTask = nil
+        pendingStreamAddress = nil
+    }
     func suspend() {
+        networkTask?.cancel(); networkTask = nil; cancelReconnect()
         endStream()
         engine.cancelPairing(); busy = false
         engine.pause()
@@ -283,37 +305,62 @@ final class ClientModel: ObservableObject {
         if microphone.active || microphone.starting { microphone.stop(); return }
         guard canUseMicrophone else { return }
         do {
-            guard let data = try SecureStore.read("server") else { throw NocturneError.disconnected }
-            microphone.start(invitation: try JSONDecoder().decode(PairingInvitation.self, from: data), connection: server.mediaConnection())
+            guard let invitation = server.connectedInvitation else { throw NocturneError.disconnected }
+            microphone.start(invitation: invitation, connection: server.mediaConnection())
         } catch { self.error = error.localizedDescription }
     }
     func pairScannedServer(_ text: String) async {
-        let generation = UUID(); serverPairingGeneration = generation
+        cancelReconnect()
+        let generation = serverPairingGeneration
         engine.cancelPairing()
         do {
             guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw NocturneError.invalidInvitation }
             let invitation = try PairingInvitation(url: url)
-            try await server.connect(invitation)
+            try await server.connect(invitation, rediscover: true)
             guard serverPairingGeneration == generation else { return }
-            try SecureStore.write(JSONEncoder().encode(invitation), account: "server")
+            let connected = server.connectedInvitation ?? invitation
+            try SecureStore.write(JSONEncoder().encode(connected), account: "server")
+            linkedHostID = nil; UserDefaults.standard.removeObject(forKey: "serverHostID")
             savedServerName = invitation.name; UserDefaults.standard.set(invitation.name, forKey: "serverName")
             showAdd = false
             if server.capabilities.contains("streaming") {
-                pendingStreamAddress = invitation.host; busy = true
+                pendingStreamAddress = connected.host; busy = true
                 try await Task.sleep(nanoseconds: 350_000_000)
                 guard serverPairingGeneration == generation else { return }
-                engine.addAddress(invitation.host)
+                engine.addAddress(connected.host)
             }
         } catch { if serverPairingGeneration == generation { self.error = error.localizedDescription } }
     }
     func reconnectServer(reportError: Bool = true) async {
+        var generation = serverPairingGeneration
         do {
-            guard let data = try SecureStore.read("server") else { showAdd = true; return }
-            try await server.connect(JSONDecoder().decode(PairingInvitation.self, from: data))
-        } catch { if reportError { self.error = error.localizedDescription } }
+            if let reconnectTask { try await reconnectTask.value; return }
+            guard server.state == .disconnected else { return }
+            generation = UUID(); serverPairingGeneration = generation
+            let attempt = generation
+            let task = Task { @MainActor in
+                guard let data = try SecureStore.read("server") else { if reportError { self.showAdd = true }; return }
+                var invitation = try JSONDecoder().decode(PairingInvitation.self, from: data)
+                // Also recover older servers (without the workspace Bonjour ID) using
+                // the already-paired video host. TLS still verifies the workspace key.
+                if let host = self.hosts.first(where: { $0.id == self.linkedHostID && $0.online && $0.paired }), !host.address.isEmpty {
+                    invitation = try invitation.replacingAddress(host: host.address)
+                }
+                try await self.server.connect(invitation, rediscover: true)
+                try Task.checkCancellation()
+                guard self.serverPairingGeneration == attempt, let connected = self.server.connectedInvitation else { return }
+                if let id = self.linkedHostID { self.engine.updateHostAddress(id, address: connected.host) }
+                try SecureStore.write(JSONEncoder().encode(connected), account: "server")
+            }
+            reconnectTask = task
+            defer { if serverPairingGeneration == generation { reconnectTask = nil } }
+            try await task.value
+        } catch {
+            if reportError, serverPairingGeneration == generation, !(error is CancellationError) { self.error = error.localizedDescription }
+        }
     }
     func forgetServer() {
-        serverPairingGeneration = UUID()
+        cancelReconnect()
         if let linkedHostID, !removeStreamingHost(linkedHostID) { return }
         do {
             try SecureStore.delete("server"); server.disconnect(); server.forgetTerminals(); savedServerName = nil

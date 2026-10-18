@@ -174,7 +174,6 @@
     NSArray *snapshot = [hosts copy];
     dispatch_async(dispatch_get_main_queue(), ^{
         for (TemporaryHost *host in snapshot) if (host.uuid) {
-            if (host.address.length) host.activeAddress = host.address;
             self.hosts[host.uuid] = host;
         }
         [self publishHosts];
@@ -192,6 +191,15 @@
 - (BOOL)hasApprovalForHost:(TemporaryHost *)host {
     return host && [self.pairingTrust isApprovedHost:host.uuid serverCertificate:host.serverCert
                                  clientCertificate:[CryptoManager readCertFromFile]];
+}
+- (void)updateHostAddress:(NSString *)hostID address:(NSString *)address {
+    // Called only after the linked workspace authenticates at this address.
+    // Retain the UUID, pinned certificates, and explicit pairing approval.
+    TemporaryHost *host = self.hosts[hostID];
+    if (!host || !address.length) return;
+    host.address = host.localAddress = host.activeAddress = address;
+    [[DataManager new] updateHost:host];
+    [self publishHosts];
 }
 - (void)addAddress:(NSString *)address {
     [self.operations addOperationWithBlock:^{
@@ -227,7 +235,6 @@
     attempt.clientCertificate = [CryptoManager readCertFromFile];
     attempt.qrAuthorized = qrAuthorized;
     self.pairingAttempt = attempt;
-    if (host.address.length) host.activeAddress = host.address;
     [self.operations addOperationWithBlock:^{
         if (self.pairingAttempt != attempt) return;
         [self.discovery pauseDiscoveryForHost:host];

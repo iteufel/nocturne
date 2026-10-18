@@ -43,7 +43,9 @@ public final class WorkspaceServer {
         let listener = try NWListener(using: SecureTransport.parameters(secret: secret), on: NWEndpoint.Port(rawValue: port)!)
         self.listener = listener
         let cancelled = DispatchSemaphore(value: 0); listenerCancelled = cancelled
-        listener.service = NWListener.Service(name: name, type: WorkspaceProtocol.service)
+        let discoveryID = WorkspaceDiscovery.identifier(for: secret)
+        listener.service = NWListener.Service(name: "Nocturne-" + discoveryID.prefix(32), type: WorkspaceProtocol.service,
+            txtRecord: NWTXTRecord(["id": discoveryID]))
         listener.newConnectionHandler = { [weak self] connection in
             guard let self = self, self.listener != nil, self.sessions.count < 8 else { connection.cancel(); return }
             let id = UUID()
