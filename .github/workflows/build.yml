@@ -31,7 +31,7 @@ env:
 
 jobs:
   verify:
-    name: Test and build both apps
+    name: Test the iPhone and iPad client
     runs-on: xcode-27
     timeout-minutes: 45
     steps:
@@ -44,12 +44,8 @@ jobs:
           xcodebuild -downloadComponent MetalToolchain
           gem install --user-install xcodeproj -v 1.27.0 --no-document
           scripts/bootstrap.sh
-      - name: Test shared and host services
-        run: env -u NOCTURNE_ENGINE_EXECUTABLE swift test
       - name: Test the iPhone and iPad client
         run: scripts/test-ios-ci.sh
-      - name: Build the unified macOS server
-        run: scripts/build.sh mac
       - name: Save client test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -58,9 +54,27 @@ jobs:
           path: .build/ClientTests
           retention-days: 7
 
+  macos_verify:
+    name: Test and build the Mac server
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Prepare pinned dependencies
+        run: |
+          xcodebuild -version
+          gem install --user-install xcodeproj -v 1.27.0 --no-document
+          scripts/bootstrap.sh
+      - name: Test shared and host services
+        run: env -u NOCTURNE_ENGINE_EXECUTABLE swift test
+      - name: Build the unified macOS server
+        run: scripts/build.sh mac
+
   testflight:
     name: Release iOS to TestFlight
-    needs: verify
+    needs: [verify, macos_verify]
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' ||
@@ -121,7 +135,7 @@ jobs:
 
   macos_release:
     name: Release signed macOS server
-    needs: verify
+    needs: macos_verify
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' ||

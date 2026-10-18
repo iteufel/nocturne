@@ -8,7 +8,7 @@ builds a Developer ID-signed Mac server, notarizes it with Apple, and publishes
 the verified ZIP as a GitHub preview release. A manual run can disable either
 release with **publish_testflight** or **publish_macos**.
 
-Each job installs Xcode's Metal Toolchain, which the SwiftTerm renderer needs and
+The iOS jobs install Xcode's Metal Toolchain, which the SwiftTerm renderer needs and
 the runner image does not include. Bootstrap generates pixel-exact, opaque RGB
 icons. The iOS bundle includes required-reason privacy declarations for app
 preferences, local/user-selected file metadata, and media timers.
@@ -20,8 +20,10 @@ name was already taken. TestFlight is at
 
 ## Verification and artifacts
 
-The first job runs the Swift package tests, the client regression tests on an
-iPhone and iPad simulator, and a build of the unified Mac server. Tests that
+Mac verification runs the Swift package tests and builds the unified server.
+A separate job runs the client regression tests on an iPhone and iPad simulator.
+Mac releases require Mac verification; TestFlight requires both verification jobs.
+This keeps simulator delays from blocking a verified Mac release. Tests that
 change physical displays or launch the real streaming engine are disabled.
 CI boots one temporary simulator at a time and waits for startup before testing,
 then shuts down and deletes that simulator. This avoids concurrent startup
@@ -35,7 +37,9 @@ app's private display APIs require direct distribution; TestFlight is for iOS/iP
 
 The upload job waits for Apple to finish processing. The build number is
 `github.run_number.github.run_attempt`, so rerunning a failed release gets a new
-number. Release builds use the marketing version in `scripts/generate-project.rb`.
+number. Both app bundles use Xcode's build and marketing version settings; the
+Mac release script rejects a bundle whose build number does not match the request.
+Release builds use the marketing version in `scripts/generate-project.rb`.
 An upload does not submit an App Store release or automatically request external
 beta review. Internal groups can automatically receive processed builds; external
 testing requires Apple's beta review and its own tester group.
@@ -59,7 +63,7 @@ The dedicated API key is named **Nocturne GitHub TestFlight**, with App Manager
 access. Apple team API keys apply to all apps on the team; keep this credential
 limited to the protected release environment. The API key is not used in pull
 request builds. All actions are pinned to commit hashes, checkout does not retain
-Git credentials, and the workflow has read-only repository permissions.
+Git credentials, and the workflow has read-only repository permissions by default.
 
 The distribution identity is imported into a temporary keychain and removed by
 the signing action's cleanup. The current **Nocturne App Store** provisioning

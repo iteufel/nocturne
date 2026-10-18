@@ -30,6 +30,11 @@ xcodebuild -project Nocturne.xcodeproj -scheme 'Nocturne Server' \
 
 rm -rf "$app"
 ditto '.build/XcodeMacRelease/Build/Products/Release/Nocturne Server.app' "$app"
+actual_build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app/Contents/Info.plist")
+if [ "$actual_build" != "$NOCTURNE_BUILD_NUMBER" ]; then
+  echo "Mac bundle build number $actual_build does not match requested build $NOCTURNE_BUILD_NUMBER." >&2
+  exit 1
+fi
 sign=(/usr/bin/codesign --force --sign "$NOCTURNE_DEVELOPER_ID" --options runtime --timestamp)
 if [ -n "${NOCTURNE_SIGNING_KEYCHAIN:-}" ]; then
   sign+=(--keychain "$NOCTURNE_SIGNING_KEYCHAIN")
