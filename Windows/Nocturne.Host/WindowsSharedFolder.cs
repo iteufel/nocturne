@@ -116,7 +116,7 @@ public sealed class WindowsSharedFolder : IWorkspaceFiles
         {
             var destination = Path.Combine(parent.Path, parts[^1]);
             if (File.Exists(destination) || Directory.Exists(destination)) throw new IOException("A file with this name already exists. Rename it before sending.");
-            return new Upload(destination, root, size, parent.Locks);
+            return new Upload(destination, size, parent.Locks);
         }
         catch { foreach (var handle in parent.Locks) handle.Dispose(); throw; }
     }
@@ -130,11 +130,17 @@ public sealed class WindowsSharedFolder : IWorkspaceFiles
         private readonly List<SafeFileHandle> locks;
         private FileStream? stream;
         private bool committed;
-        public Upload(string destination, string root, long expected, List<SafeFileHandle> locks)
+        public Upload(string destination, long expected, List<SafeFileHandle> locks)
         {
             this.destination = destination; this.expected = expected; this.locks = locks;
-            temporary = Path.Combine(root, ".nocturne-upload-" + Id);
-            stream = new(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            temporary = Path.Combine(Path.GetDirectoryName(destination)!, ".nocturne-upload-" + Id);
+            // DELETE access permits an atomic rename through this handle, without
+            // reopening a protected parent directory for write access.
+            var handle = CreateFileW(temporary, 0x40010000, 0, 0, 1, 0x00200000, 0);
+            if (handle.IsInvalid)
+            { handle.Dispose(); throw new IOException("Cannot create the upload file.", new Win32Exception()); }
+            try { stream = new(handle, FileAccess.Write); }
+            catch { handle.Dispose(); File.Delete(temporary); throw; }
         }
         public void Append(byte[] data, long offset)
         {
@@ -145,9 +151,12 @@ public sealed class WindowsSharedFolder : IWorkspaceFiles
         public void Commit()
         {
             if (stream == null || committed || Received != expected) throw new IOException("The transfer is incomplete. Start it again.");
-            stream.Flush(true); stream.Dispose(); stream = null;
-            // MoveFile without REPLACE_EXISTING makes the no-overwrite decision atomic.
-            File.Move(temporary, destination, false); committed = true;
+            stream.Flush(true);
+            // A simple native rename stays in the source directory. MoveFile
+            // reopens the destination parent for write and conflicts with its
+            // mutation guard, even when source and destination share a parent.
+            RenameWithinDirectory(stream.SafeFileHandle, Path.GetFileName(destination));
+            committed = true; stream.Dispose(); stream = null;
         }
         public void Dispose()
         {
@@ -155,6 +164,24 @@ public sealed class WindowsSharedFolder : IWorkspaceFiles
             try { if (!committed) File.Delete(temporary); }
             finally { foreach (var handle in locks) handle.Dispose(); locks.Clear(); }
         }
+    }
+
+    private static void RenameWithinDirectory(SafeFileHandle file, string name)
+    {
+        var encoded = Encoding.Unicode.GetBytes(name);
+        var size = checked(Marshal.SizeOf<RenameInfo>() + encoded.Length);
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            // ReplaceIfExists/Flags and RootDirectory remain zero. With a simple
+            // name, FileRenameInformation renames within the existing directory
+            // and fails atomically if the destination already exists.
+            Marshal.StructureToPtr(new RenameInfo { NameLength = (uint)encoded.Length }, buffer, false);
+            Marshal.Copy(encoded, 0, buffer + (int)Marshal.OffsetOf<RenameInfo>(nameof(RenameInfo.Name)), encoded.Length);
+            int status = NtSetInformationFile(file, out _, buffer, (uint)size, 10);
+            if (status < 0) throw new IOException("Cannot publish the upload file.", new Win32Exception((int)RtlNtStatusToDosError(status)));
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
     }
 
     private static SafeFileHandle Open(string path, bool directory)
@@ -175,6 +202,12 @@ public sealed class WindowsSharedFolder : IWorkspaceFiles
         public uint Attributes, CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh;
         public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
     }
+    [StructLayout(LayoutKind.Sequential)] private struct RenameInfo
+    { public uint Flags; public nint RootDirectory; public uint NameLength; public ushort Name; }
+    [StructLayout(LayoutKind.Sequential)] private struct IoStatus
+    { public nint Status; public nuint Information; }
+    [DllImport("ntdll.dll")] private static extern int NtSetInformationFile(SafeFileHandle file, out IoStatus status, nint information, uint length, int informationClass);
+    [DllImport("ntdll.dll")] private static extern uint RtlNtStatusToDosError(int status);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeFileHandle CreateFileW(string name, uint access, uint share, nint security, uint creation, uint flags, nint template);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetFileInformationByHandle(SafeFileHandle file, out FileInfo info);

@@ -47,6 +47,7 @@ public sealed class WindowsPlatformTests(ITestOutputHelper testOutput)
         var root = Path.Combine(Path.GetTempPath(), "nocturne-junction-" + Guid.NewGuid());
         var outside = root + "-outside";
         var link = Path.Combine(root, "escape");
+        var child = Path.Combine(root, "child");
         try
         {
             Directory.CreateDirectory(outside); File.WriteAllText(Path.Combine(outside, "secret"), "private");
@@ -59,11 +60,14 @@ public sealed class WindowsPlatformTests(ITestOutputHelper testOutput)
                 Assert.Throws<IOException>(() => folder.Read("escape/secret", 0));
                 Assert.Throws<IOException>(() => folder.BeginUpload("escape/created", 0));
                 Assert.Empty(folder.List(""));
-                var child = Path.Combine(root, "child"); Directory.CreateDirectory(child);
+                Directory.CreateDirectory(child);
                 using (var upload = folder.BeginUpload("child/pending", 0))
                     Assert.Throws<IOException>(() => Directory.Move(child, child + "-renamed"));
-                Directory.Move(child, child + "-renamed"); // Disposing the upload releases its parent.
+                using var completed = folder.BeginUpload("child/complete", 3);
+                completed.Append([1, 2, 3], 0); completed.Commit();
+                Assert.Equal(new byte[] { 1, 2, 3 }, folder.Read("child/complete", 0).Data);
             }
+            Directory.Move(child, child + "-renamed"); // Disposing the guards releases the directories.
             Assert.True(File.Exists(Path.Combine(outside, "secret")));
         }
         finally
@@ -83,12 +87,7 @@ public sealed class WindowsPlatformTests(ITestOutputHelper testOutput)
         var output = new MemoryStream(); var gate = new object();
         var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         terminal.Output += bytes => { lock (gate) output.Write(bytes); };
-        terminal.Exited += () =>
-        {
-            var child = (Process)typeof(ConPtyTerminal).GetField("process", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(terminal)!;
-            testOutput.WriteLine("[DEBUG-pr7-conpty] Child exit code: " + child.ExitCode);
-            ended.TrySetResult();
-        };
+        terminal.Exited += () => ended.TrySetResult();
         terminal.Start(); terminal.Resize(100, 30);
         // The echoed command contains only base64, so it cannot satisfy the output assertion.
         terminal.Input(Encoding.UTF8.GetBytes("[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Tk9DVFVSTkVfUFRZX09L')); exit\r"));
@@ -131,7 +130,7 @@ public sealed class WindowsPlatformTests(ITestOutputHelper testOutput)
         }
         finally
         {
-            lock (gate) testOutput.WriteLine("[DEBUG-pr7-conpty] Interactive output: " + JsonSerializer.Serialize(captured.ToString()));
+            lock (gate) testOutput.WriteLine("ConPTY output: " + JsonSerializer.Serialize(captured.ToString()));
         }
     }
 

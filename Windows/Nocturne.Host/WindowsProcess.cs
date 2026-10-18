@@ -72,7 +72,13 @@ internal static class WindowsProcess
     {
         var startup = new StartupInfoEx
         {
-            Startup = new() { Size = attributes == 0 ? Marshal.SizeOf<StartupInfo>() : Marshal.SizeOf<StartupInfoEx>() },
+            Startup = new()
+            {
+                Size = attributes == 0 ? Marshal.SizeOf<StartupInfo>() : Marshal.SizeOf<StartupInfoEx>(),
+                // STARTF_USESTDHANDLES with null handles lets ConPTY supply its
+                // console handles instead of copying redirected parent stdio.
+                Flags = attributes == 0 ? 0u : 0x00000100u
+            },
             Attributes = attributes
         };
         // Assign the suspended process before it can create children or execute code.
