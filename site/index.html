@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5f7">
+  <title>Nocturne — Your Mac. A touch closer.</title>
+  <meta name="description" content="Stream your Mac to iPhone and iPad with Nocturne. A native workspace for your desktop, persistent terminal sessions, and files. Free and open source.">
+  <link rel="canonical" href="https://iteufel.github.io/nocturne/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Nocturne — Your Mac. A touch closer.">
+  <meta property="og:description" content="Your desktop, terminal, and files. Beautifully at home on iPhone and iPad.">
+  <meta property="og:url" content="https://iteufel.github.io/nocturne/">
+  <meta property="og:image" content="https://iteufel.github.io/nocturne/assets/app-icon.png">
+  <meta property="og:image:alt" content="Nocturne's silver-blue crescent moon app icon">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" type="image/png" href="assets/app-icon.png">
+  <link rel="apple-touch-icon" href="assets/app-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <svg class="symbol-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M7 17 17 7M7 7h10v10"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+    <symbol id="i-desktop" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="18" rx="3"/><path d="m6 8 4 4-4 4m7 0h5"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M3 8h18"/></symbol>
+    <symbol id="i-pad" viewBox="0 0 24 24"><rect x="3" y="1" width="18" height="22" rx="3"/><path d="M9 19h6"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="1" width="12" height="22" rx="3"/><path d="M10 4h4m-4 16h4"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 40 32"><rect x="1" y="5" width="38" height="24" rx="5"/><path d="M7 11h1m5 0h1m5 0h1m5 0h1m5 0h1M7 17h1m5 0h1m5 0h1m5 0h1m5 0h1M8 23h3m4 0h15"/></symbol>
+    <symbol id="i-mouse" viewBox="0 0 40 32"><rect x="10" y="1" width="20" height="30" rx="10"/><path d="M20 6v6"/></symbol>
+    <symbol id="i-controller" viewBox="0 0 40 32"><path d="M13 8h14c5 0 8 5 10 15 1 5-4 8-7 4l-5-6H15l-5 6c-3 4-8 1-7-4C5 13 8 8 13 8Z"/><path d="M12 12v8m-4-4h8m11-3h.1m5 5h.1"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2 9 4v6c0 6-9 10-9 10S3 18 3 12V6l9-4Z"/><path d="m8 12 3 3 5-6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 .8a11.3 11.3 0 0 0-3.6 22c.6.1.8-.3.8-.6v-2.1c-3.1.7-3.8-1.3-3.8-1.3-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.1.1 1.7 1.2 1.7 1.2 1 1.7 2.6 1.2 3.3.9.1-.7.4-1.2.7-1.5-2.5-.3-5.1-1.3-5.1-5.6 0-1.3.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 .9-.3 3.1 1.2a10.8 10.8 0 0 1 5.6 0c2.2-1.5 3.1-1.2 3.1-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.3-2.6 5.3-5.1 5.6.4.4.8 1 .8 2.1v3.1c0 .3.2.7.8.6A11.3 11.3 0 0 0 12 .8Z"/></symbol>
+  </svg>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav container" aria-label="Main navigation">
+      <a class="brand" href="#" aria-label="Nocturne home"><img src="assets/app-icon.png" width="32" height="32" alt=""><span>Nocturne</span></a>
+      <div class="nav-links"><a href="#experience">Experience</a><a href="#server">For your Mac</a><a class="nav-github" href="https://github.com/iteufel/nocturne">GitHub <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a></div>
+      <a class="button button-small" href="#get-started">Get Nocturne</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy container">
+        <p class="eyebrow">Meet Nocturne</p>
+        <h1 id="hero-title">Your Mac.<br><span>A touch closer.</span></h1>
+        <p class="hero-description">Your desktop, terminal, and files.<br>Beautifully at home on iPhone and iPad.</p>
+        <div class="hero-actions"><a class="button" href="#get-started">Get started <svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></a><a class="text-link" href="https://github.com/iteufel/nocturne">Explore the source <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a></div>
+      </div>
+
+      <div class="device-stage" id="workspace-preview">
+        <div class="tablet device">
+          <div class="tablet-camera" aria-hidden="true"></div>
+          <div class="tablet-screen">
+            <div class="stream-topbar" aria-hidden="true"><span class="stream-brand"><img src="assets/app-icon.png" alt=""> Nocturne</span><span><span class="status-dot"></span> Studio Mac</span><span class="stream-topbar-end">⌁ &nbsp; 100% ▰</span></div>
+            <div class="preview-panel desktop-preview" id="preview-desktop" role="tabpanel" aria-labelledby="tab-desktop" tabindex="0">
+              <p class="sr-only">Desktop illustration: a Mac desktop with a Finder window and a terminal, streamed inside Nocturne.</p>
+              <div class="desktop-art" aria-hidden="true">
+                <div class="mac-menubar"><span class="mini-moon">◒</span><strong>Finder</strong><span>File</span><span>Edit</span><span>View</span><span class="menu-time">Mon 9:41 AM</span></div>
+                <div class="finder-window">
+                  <div class="window-chrome"><span class="traffic-lights"><i></i><i></i><i></i></span><span>Shared workspace</span><span>⌕</span></div>
+                  <div class="finder-body"><div class="finder-sidebar"><small>Favorites</small><span>◷ &nbsp; Recents</span><span class="selected">▦ &nbsp; Projects</span><span>↓ &nbsp; Downloads</span><small>Locations</small><span>▣ &nbsp; Studio Mac</span></div><div class="finder-items"><div><span class="folder-shape"></span>Design</div><div><span class="folder-shape"></span>Development</div><div><span class="folder-shape"></span>Shared</div><div><span class="document-shape"><i></i><i></i><i></i></span>Notes.md</div></div></div>
+                  <div class="finder-footer">4 items · Your Mac, your files</div>
+                </div>
+                <div class="floating-terminal"><div class="window-chrome"><span class="traffic-lights"><i></i><i></i><i></i></span><span>studio — zsh</span><span></span></div><div class="terminal-code"><span class="terminal-muted">~/Projects/nocturne</span><br><span class="terminal-blue">❯</span> swift build<br><span class="terminal-muted">Building for debugging…</span><br><span class="terminal-green">Build complete.</span><br><br><span class="terminal-blue">❯</span> <span class="terminal-cursor"></span></div></div>
+                <div class="desktop-dock"><span class="dock-finder">⌘</span><span class="dock-browser">◎</span><span class="dock-notes">▤</span><span class="dock-terminal">›_</span><img src="assets/app-icon.png" alt=""></div>
+              </div>
+            </div>
+            <div class="preview-panel terminal-preview" id="preview-terminal" role="tabpanel" aria-labelledby="tab-terminal" tabindex="0" hidden>
+              <p class="sr-only">Terminal illustration: two independent terminal tabs on the Mac. Shell sessions continue when the mobile app disconnects.</p>
+              <div aria-hidden="true" class="terminal-demo"><div class="terminal-demo-heading"><span>Terminal</span><span class="terminal-muted">Studio Mac</span></div><div class="terminal-demo-tabs"><span class="active">⌘ &nbsp; Development &nbsp; ×</span><span>⌘ &nbsp; Server &nbsp; ×</span><span>＋</span></div><div class="terminal-demo-code"><span class="terminal-muted">Last login: Mon Oct 19 09:41:00 on ttys002</span><br><br><span class="terminal-blue">~/Projects/nocturne</span><br><span class="terminal-green">❯</span> swift build<br><span class="terminal-muted">Building for debugging…<br>Compiling NocturneKit<br>Linking Nocturne</span><br><span class="terminal-green">Build complete.</span><br><br><span class="terminal-green">❯</span> echo "Right where I left off."<br>Right where I left off.<br><br><span class="terminal-green">❯</span> <span class="terminal-cursor"></span></div></div>
+            </div>
+            <div class="preview-panel files-preview" id="preview-files" role="tabpanel" aria-labelledby="tab-files" tabindex="0" hidden>
+              <p class="sr-only">Files illustration: browse a shared Mac folder, upload files, and download them to your device.</p>
+              <div class="files-demo" aria-hidden="true"><div class="files-demo-sidebar"><strong>Workspace</strong><span>▣ &nbsp; Desktop</span><span>⌘ &nbsp; Terminal</span><span class="active">▱ &nbsp; Files</span><small>Connected to Studio Mac</small></div><div class="files-demo-main"><div class="files-demo-heading"><div><span class="terminal-muted">Studio Mac /</span><h3>Shared files</h3></div><span class="demo-upload">↑ &nbsp; Upload</span></div><div class="files-demo-labels"><span>Name</span><span>Size</span></div><div class="demo-file-row"><span>📁 &nbsp; Design</span><span>Folder</span></div><div class="demo-file-row"><span>📁 &nbsp; Projects</span><span>Folder</span></div><div class="demo-file-row"><span>📁 &nbsp; Screenshots</span><span>Folder</span></div><div class="demo-file-row"><span>▤ &nbsp; Getting started.md</span><span>4 KB</span></div><div class="demo-file-row"><span>▧ &nbsp; Wallpaper.png</span><span>2.1 MB</span></div><div class="files-privacy"><svg class="icon"><use href="#i-shield"/></svg> Only the folder you choose to share.</div></div></div>
+            </div>
+            <div class="stream-toolbar" aria-hidden="true"><span>‹</span><span class="status-dot"></span><span>Studio Mac</span><span class="toolbar-divider"></span><svg class="icon"><use href="#i-terminal"/></svg><svg class="icon"><use href="#i-folder"/></svg><span>•••</span></div>
+            <div class="home-indicator" aria-hidden="true"></div>
+          </div>
+        </div>
+        <div class="phone device" aria-hidden="true"><div class="phone-screen"><div class="phone-status"><span>9:41</span><span>▮▮▮ &nbsp; ▰</span></div><div class="dynamic-island"></div><div class="phone-heading"><img src="assets/app-icon.png" alt=""><h3>Computers</h3><span>＋</span></div><div class="phone-computer"><div class="phone-wallpaper"><svg class="icon"><use href="#i-desktop"/></svg></div><div class="phone-computer-name"><strong>Studio Mac</strong><span><i class="status-dot"></i> Online</span></div><div class="phone-open">Open desktop <span>↗</span></div></div><p class="phone-caption">A familiar place.<br>A little more freedom.</p><div class="phone-tabbar"><span class="active"><svg class="icon"><use href="#i-desktop"/></svg>Computers</span><span><svg class="icon"><use href="#i-terminal"/></svg>Terminal</span><span><svg class="icon"><use href="#i-folder"/></svg>Files</span></div><div class="home-indicator"></div></div></div>
+      </div>
+
+      <div class="preview-controls container">
+        <div class="preview-tabs" role="tablist" aria-label="Explore the Nocturne workspace">
+          <button id="tab-desktop" type="button" role="tab" aria-selected="true" aria-controls="preview-desktop"><svg class="icon" aria-hidden="true"><use href="#i-desktop"/></svg>Desktop</button>
+          <button id="tab-terminal" type="button" role="tab" aria-selected="false" aria-controls="preview-terminal" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-terminal"/></svg>Terminal</button>
+          <button id="tab-files" type="button" role="tab" aria-selected="false" aria-controls="preview-files" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>Files</button>
+        </div>
+        <p class="preview-description" aria-live="polite">Your full Mac desktop. A natural fit for your iPad.</p>
+        <p class="preview-note">Interface illustrations. Actual appearance varies by device.</p>
+      </div>
+      <div class="compatibility container"><span><svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg>iPhone</span><span><svg class="icon" aria-hidden="true"><use href="#i-pad"/></svg>iPad</span><span><svg class="icon" aria-hidden="true"><use href="#i-desktop"/></svg>Mac</span><span class="compatibility-divider"></span><span>Native by design. Open by nature.</span></div>
+    </section>
+
+    <section class="experience section container" id="experience" aria-labelledby="experience-title">
+      <div class="section-heading"><p class="eyebrow">More than a remote desktop</p><h2 id="experience-title">A familiar workspace.<br>A fresh perspective.</h2><p>Settle into the sofa. Move to the kitchen table.<br class="desktop-break"> The tools on your Mac can come along.</p></div>
+      <div class="feature-grid">
+        <article class="feature feature-terminal"><div class="feature-copy"><svg class="feature-icon icon" aria-hidden="true"><use href="#i-terminal"/></svg><p class="feature-label">Always in your flow</p><h3>Step away.<br>Pick right back up.</h3><p>Open multiple terminal tabs. Leave commands running on your Mac. Reconnect to the same sessions when you’re ready.</p></div><div class="feature-shell" aria-hidden="true"><div class="feature-shell-tabs"><span>Development <i>×</i></span><span>Server <i>×</i></span><span>＋</span></div><div class="feature-shell-code"><span class="terminal-muted">~/Projects/next-idea</span><br><span class="terminal-blue">❯</span> npm run dev<br><br><span class="terminal-green">Ready when you are.</span><br><span class="terminal-muted">Your session is still running.</span><br><br><span class="terminal-blue">❯</span> <span class="terminal-cursor"></span></div></div><span class="feature-footnote">While Nocturne Server stays running.</span></article>
+        <article class="feature feature-files"><div class="feature-copy"><svg class="feature-icon icon" aria-hidden="true"><use href="#i-folder"/></svg><p class="feature-label">Keep your files close</p><h3>From here.<br>To there.</h3><p>Browse a shared folder on your Mac. Upload from your device, or download and share a file in a few taps.</p></div><div class="files-art" aria-hidden="true"><div class="paper paper-back"><span></span><span></span><span></span></div><div class="paper paper-front"><div class="paper-picture"></div><span></span><span></span></div><div class="large-folder"><svg class="icon"><use href="#i-check"/></svg></div><div class="transfer-label"><span class="status-dot"></span> Your files. Your Mac.</div></div></article>
+        <article class="feature feature-input"><div><p class="feature-label">Bring your favorites</p><h3>Feels right.<br>However you connect.</h3><p>Keyboard. Mouse. Trackpad. Controller.<br>The familiar controls, with room to make yourself comfortable.</p></div><div class="input-accessories" aria-hidden="true"><div class="accessory"><svg class="icon"><use href="#i-keyboard"/></svg><span>Keyboard</span></div><div class="accessory"><svg class="icon"><use href="#i-mouse"/></svg><span>Mouse</span></div><div class="accessory"><svg class="icon"><use href="#i-controller"/></svg><span>Controller</span></div></div><a class="text-link input-link" href="#compatibility-details">Check compatibility <svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></a></article>
+      </div>
+    </section>
+
+    <section class="server-section section" id="server" aria-labelledby="server-title">
+      <div class="container server-layout"><div class="server-copy"><p class="eyebrow">Meet Nocturne Server</p><h2 id="server-title">One Mac app.<br>All together.</h2><p>Streaming, device pairing, terminal access, and file sharing. All managed from one native app on your Mac.</p><p>Nocturne runs its streaming engine directly. Start your server, pair your device, and make yourself at home.</p><a class="text-link" href="https://github.com/iteufel/nocturne#connect">See how it works <svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></a></div><div class="server-art"><div class="server-window" role="img" aria-label="Nocturne Server interface illustration showing an iPad and iPhone in the connected-device list, with individual device controls."><div class="server-titlebar"><span class="traffic-lights"><i></i><i></i><i></i></span><span>Nocturne Server</span><span></span></div><div class="server-window-body"><div class="server-sidebar"><img src="assets/app-icon.png" alt=""><strong>Nocturne</strong><span>◫ &nbsp; Overview</span><span>⇄ &nbsp; Sharing</span><span class="active">▣ &nbsp; Devices</span><span class="server-sidebar-bottom">⚙ &nbsp; Settings</span></div><div class="server-device-list"><div class="server-device-heading"><h3>Your devices</h3><span>＋ Pair a device</span></div><p>Just the devices you choose.</p><div class="server-device"><span class="server-device-icon"><svg class="icon"><use href="#i-pad"/></svg></span><span><strong>iPad Pro</strong><small><i class="status-dot"></i> Connected</small></span><span class="remove-label">Remove</span></div><div class="server-device"><span class="server-device-icon"><svg class="icon"><use href="#i-phone"/></svg></span><span><strong>iPhone</strong><small><i class="status-dot"></i> Connected</small></span><span class="remove-label">Remove</span></div><div class="server-security"><svg class="icon"><use href="#i-shield"/></svg><span>Pair with approval.<br>Remove devices individually.</span></div></div></div></div><p class="art-caption">A native home for your connections.</p></div></div>
+    </section>
+
+    <section class="setup section container" id="get-started" aria-labelledby="setup-title">
+      <div class="section-heading centered"><p class="eyebrow">Make yourself at home</p><h2 id="setup-title">A small setup.<br>A whole new workspace.</h2><p>Nocturne is free, open source, and in active development.</p></div>
+      <div class="setup-grid"><article><span class="step-number">1</span><h3>Start with your Mac.</h3><p>Build Nocturne Server with Xcode. Open the app and allow the permissions it needs to stream your screen.</p></article><article><span class="step-number">2</span><h3>Make the connection.</h3><p>Install the iOS app from source. Scan your Mac’s private pairing code to connect your iPhone or iPad.</p></article><article><span class="step-number">3</span><h3>Find your flow.</h3><p>Open your desktop. Bring up a terminal. Share a folder. Settle into the workspace that works for you.</p></article></div>
+      <div class="release-status"><span class="release-tag">Developer preview</span><p>Source builds are available now. <strong>TestFlight is not available yet.</strong><br>Requires iOS 17+, macOS 14+, and an Apple Silicon Mac for the server.</p><a href="https://github.com/iteufel/nocturne#run">Build instructions <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a></div>
+      <div class="faq" aria-label="Before you get started"><details id="compatibility-details"><summary>What should I know before trying Nocturne?<span aria-hidden="true">＋</span></summary><div><p>Nocturne is a development preview. Physical accessory compatibility, audio, HDR, and long streaming sessions still need more testing. Mac controller emulation requires a compatible Virtual HID Broker driver.</p><p>Virtual-display and monitor-off work is experimental and has an unresolved black-screen issue. Keep those features disabled. Read the <a href="https://github.com/iteufel/nocturne/blob/main/docs/VERIFICATION.md">verification notes</a> before testing.</p></div></details><details><summary>Do I need to install a separate streaming server?<span aria-hidden="true">＋</span></summary><div><p>No. Nocturne Server manages the Sunshine streaming executable directly inside one Mac application. There is no separate companion app or Sunshine web setup. The iPhone and iPad client uses the Moonlight streaming engine.</p></div></details><details><summary>Where do my files and terminal sessions live?<span aria-hidden="true">＋</span></summary><div><p>On your Mac. File access is limited to the folder you choose to share. Terminal and file sharing start disabled, and you decide when to turn them on. Terminal sessions survive mobile disconnects while the Mac server keeps running; stopping the server ends those sessions.</p></div></details></div>
+    </section>
+
+    <section class="closing container" aria-labelledby="closing-title"><div class="closing-glow" aria-hidden="true"></div><img src="assets/app-icon.png" width="76" height="76" alt="" loading="lazy"><p class="eyebrow">Made to feel like it belongs.</p><h2 id="closing-title">A little more room<br>for your Mac.</h2><a class="button button-light" href="https://github.com/iteufel/nocturne"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>Get Nocturne on GitHub <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a><p class="closing-note">Open source. Yours to explore.</p></section>
+  </main>
+
+  <footer class="site-footer container"><div class="footer-top"><a class="brand" href="#"><img src="assets/app-icon.png" width="27" height="27" alt=""><span>Nocturne</span></a><p>Your desktop, within reach.</p><a href="https://github.com/iteufel/nocturne" aria-label="Nocturne on GitHub"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg></a></div><div class="footer-bottom"><span>An independent open-source project.</span><div><a href="https://github.com/iteufel/nocturne/blob/main/LICENSE">GPL-3.0 license</a><a href="https://github.com/iteufel/nocturne/blob/main/THIRD_PARTY_NOTICES.md">Credits</a><a href="https://github.com/iteufel/nocturne/issues">Feedback</a></div></div><p class="trademark-note">Apple, Mac, iPhone, and iPad are trademarks of Apple Inc. Nocturne is not affiliated with Apple Inc.</p></footer>
+</body>
+</html>
