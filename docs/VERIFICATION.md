@@ -1,5 +1,14 @@
 # Verification — 18 October 2026
 
+## Client microphone forwarding
+
+- Added authenticated, separately permissioned iPhone/iPad microphone forwarding and a bundled input-only **Nocturne Microphone** Core Audio driver. Streams begin muted; disconnect/background/reconfiguration, permission revocation, and device removal stop capture and clear the host input.
+- `swift test`: 37 tests discovered, 33 passed, four existing opt-in engine/display tests skipped. New tests exercise real TLS authentication and audio bytes, same-identity connection isolation, another device's lease rejection, permission revocation, disconnect, device removal, server stop, expiry, replay/size validation, framing, and actual AVAudioConverter resampling/downmixing from 8/16/44.1/48 kHz mono/stereo inputs.
+- `bash scripts/test-microphone-driver.sh`: passed with AddressSanitizer and UndefinedBehaviorSanitizer. The compiled plug-in is loaded in a test process. Checks cover its input-only format, Core Audio property-list serialization contract, PCM amplitude, concurrent recording clients reading identical audio, producer ownership, latency bounds, flush/silence, timeout, and clock progression. The driver test is included in CI.
+- The final macOS development build, iOS Simulator build/test, and unsigned generic iOS device build passed after rebasing onto `db7c1d3`. All 28 native client authorization, pointer/input-routing, and lifecycle tests passed on iPhone 18 Pro (iOS 27), using regenerated input overlays and `.build/XcodeMicrophoneRebase`. Deep/strict signature verification passed for the Mac app with the embedded driver; release signing now explicitly signs the driver before the app.
+- Mac Sharing controls and iPhone microphone setup text were inspected in the running apps. The system driver was **not installed** and coreaudiod was not restarted. Real coreaudiod device enumeration/IPC, a physical iPhone/iPad microphone, Bluetooth routes, simultaneous streamed playback/echo cancellation, and Discord/game voice chat latency still need an end-to-end device check. These builds are development artifacts, not a notarized release or TestFlight upload.
+- Logs: `/tmp/nocturne-microphone-rebase-swift-tests.log`, `/tmp/nocturne-microphone-rebase-ios-tests.log`, `/tmp/nocturne-microphone-rebase-mac-build.log`, and `/tmp/nocturne-microphone-rebase-device-build.log`.
+
 ## Builds and package
 
 - macOS Apple Silicon development build: passed, signed with the installed Apple Development identity.

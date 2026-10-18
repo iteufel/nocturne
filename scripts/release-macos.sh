@@ -46,6 +46,7 @@ for component in "$app/Contents/Frameworks/"*; do
 done
 "${sign[@]}" --identifier app.nocturne.stream-host \
   --entitlements Resources/Server.entitlements "$app/Contents/MacOS/nocturne-stream-host"
+"${sign[@]}" "$app/Contents/Resources/NocturneMicrophone.driver"
 "${sign[@]}" --entitlements Resources/Server.entitlements "$app"
 python3 scripts/verify-macos-release.py "$app" "$NOCTURNE_DEVELOPMENT_TEAM"
 codesign -dv --verbose=4 "$app" 2> "$output/signature.txt"

@@ -22,3 +22,4 @@ done
 rm -f "$contents/Helpers/nocturne-stream-host"
 # Migration cleanup is limited to the old generated resource from earlier development builds.
 if [ -d "$contents/Resources/Sunshine.app" ]; then rm -rf "$contents/Resources/Sunshine.app"; fi
+bash "$SRCROOT/scripts/package-microphone-driver.sh"

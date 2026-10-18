@@ -141,6 +141,24 @@ struct ServerView: View {
                     Text("Changing the folder restarts the server and disconnects current sessions.").font(.caption2).foregroundStyle(MoonStyle.secondary)
                 }
             }
+            MoonPanel {
+                VStack(alignment: .leading, spacing: 16) {
+                    Toggle(isOn: $model.microphoneEnabled) {
+                        FeatureRow(icon: "mic", title: "Client microphone", subtitle: "Let a paired iPhone or iPad send its microphone to voice chat on this Mac. Turning this off immediately mutes the input.")
+                    }.toggleStyle(.switch)
+                    Text("In Discord or your game, choose Nocturne Microphone as the input device. Unmute with the microphone button while streaming; each new stream starts muted.")
+                        .font(.caption).foregroundStyle(MoonStyle.secondary)
+                    if model.microphoneInstalled {
+                        Label("Nocturne Microphone is ready", systemImage: "checkmark.circle").font(.caption)
+                    } else {
+                        Text("Install the audio input once, then restart your Mac. macOS will ask for administrator approval.")
+                            .font(.caption).foregroundStyle(MoonStyle.secondary)
+                        Button(model.installingMicrophone ? "Installing…" : "Install microphone input…", systemImage: "arrow.down.circle") { model.installMicrophone() }
+                            .buttonStyle(NocturneGlassButtonStyle()).disabled(model.installingMicrophone)
+                    }
+                    if let message = model.microphoneInstallationMessage { Text(message).font(.caption).foregroundStyle(MoonStyle.secondary) }
+                }
+            }
             Text("Reconnect the iOS client after enabling a new feature. Revoking access takes effect immediately.").font(.caption).foregroundStyle(MoonStyle.secondary)
             MoonPanel {
                 FeatureRow(icon: "gamecontroller", title: "Controllers & Bluetooth input", subtitle: "Pair your accessories with your iPhone or iPad. Nocturne forwards keyboard, mouse, trackpad, and controller input. Mac gamepad emulation uses Virtual HID Broker when installed; keyboard and mouse require Accessibility permission.")

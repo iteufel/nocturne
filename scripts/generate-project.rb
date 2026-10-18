@@ -235,6 +235,7 @@ info['NSLocalNetworkUsageDescription'] = 'Find your computers and connect direct
 info['NSBluetoothAlwaysUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
 info['NSBluetoothPeripheralUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
 info['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Nocturne Server on your Mac.'
+info['NSMicrophoneUsageDescription'] = 'Send your microphone to your paired Mac for voice chat in Discord and games when you unmute a stream.'
 info['UIApplicationSceneManifest'] = {'UIApplicationSupportsMultipleScenes' => false}
 info.delete('CFBundleURLTypes') # Pairing invitations are accepted only by the in-app QR scanner.
 orientations = %w[UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown]

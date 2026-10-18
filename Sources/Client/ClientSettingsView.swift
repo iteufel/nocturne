@@ -47,6 +47,13 @@ struct ClientSettingsView: View {
                 Text("Pair Bluetooth accessories in iOS Settings. Nocturne forwards their input to your computer. Mac gamepad emulation requires a compatible host driver.")
                     .font(.caption).foregroundStyle(MoonStyle.secondary)
             }.listRowBackground(MoonStyle.surface)
+            Section("Microphone") {
+                Label("Voice chat on your Mac", systemImage: "mic")
+                Text("Enable Client microphone in Nocturne Server → Sharing and install the microphone input. In Discord or your game, select Nocturne Microphone. Use the microphone button in your stream to unmute.")
+                    .font(.caption).foregroundStyle(MoonStyle.secondary)
+                Text("Each stream starts muted. Backgrounding, disconnecting, resizing the stream, or changing audio devices mutes it again. Headphones are recommended; Bluetooth microphone use can reduce playback quality.")
+                    .font(.caption).foregroundStyle(MoonStyle.secondary)
+            }.listRowBackground(MoonStyle.surface)
             Section("Nocturne Server") {
                 if let name = model.savedServerName {
                     LabeledContent("Paired Mac", value: name)

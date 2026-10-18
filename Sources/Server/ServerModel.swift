@@ -21,6 +21,10 @@ final class ServerModel: ObservableObject {
     var changingDevices: Bool { removingDevice != nil || resettingPairing }
     @Published var terminalEnabled = UserDefaults.standard.bool(forKey: "allowTerminal") { didSet { updatePermissions() } }
     @Published var filesEnabled = UserDefaults.standard.bool(forKey: "allowFiles") { didSet { updatePermissions() } }
+    @Published var microphoneEnabled = UserDefaults.standard.bool(forKey: "allowMicrophone") { didSet { updatePermissions() } }
+    @Published private(set) var microphoneInstalled = VirtualMicrophone.isInstalled
+    @Published private(set) var installingMicrophone = false
+    @Published private(set) var microphoneInstallationMessage: String?
     @Published var address: String
     @Published var sharedFolder: URL
     @Published var display: String {
@@ -109,7 +113,7 @@ final class ServerModel: ObservableObject {
                 let savedDevices = try await engine.pairedDevices()
                 guard generation == epoch, !Task.isCancelled else { return }
                 streamDevices = savedDevices; publishDevices()
-                let host = try WorkspaceServer(folder: sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: terminalEnabled, files: filesEnabled))
+                let host = try WorkspaceServer(folder: sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: terminalEnabled, files: filesEnabled, microphone: microphoneEnabled))
                 if headlessDisplayEnabled {
                     host.displayCommand = { [weak self] packet, connection, name, completion in
                         Task { @MainActor in
@@ -269,7 +273,20 @@ final class ServerModel: ObservableObject {
     }
     private func updatePermissions() {
         UserDefaults.standard.set(terminalEnabled, forKey: "allowTerminal"); UserDefaults.standard.set(filesEnabled, forKey: "allowFiles")
-        server?.updatePermissions(.init(terminal: terminalEnabled, files: filesEnabled))
+        UserDefaults.standard.set(microphoneEnabled, forKey: "allowMicrophone")
+        server?.updatePermissions(.init(terminal: terminalEnabled, files: filesEnabled, microphone: microphoneEnabled))
+    }
+    func installMicrophone() {
+        guard !installingMicrophone else { return }
+        installingMicrophone = true
+        Task {
+            defer { installingMicrophone = false }
+            do {
+                try await MicrophoneInstallation.install()
+                microphoneInstalled = VirtualMicrophone.isInstalled
+                microphoneInstallationMessage = "Installed. Restart your Mac before using Nocturne Microphone."
+            } catch { self.error = error.localizedDescription }
+        }
     }
     private static func localAddresses() -> [String] {
         var result: [String] = []; var first: UnsafeMutablePointer<ifaddrs>?

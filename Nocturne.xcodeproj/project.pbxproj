@@ -14,10 +14,12 @@
 		6CB1570630CD0B0A9A25147E /* NocturneKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3F93AEBE7C3AFC09C5A378B7 /* NocturneKit */; };
 		8CA71A5BFDA3F10A599F386F /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FB3DA98667C93F71F2143D7F /* Cocoa.framework */; };
 		942BE0B4894F60EBDE9703A8 /* Server.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FD5AC1E5BC629B0891C7EADB /* Server.xcassets */; };
+		B196FCCD270C8985170D56B3 /* MicrophoneInstallation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002017491E1EA293A2347E66 /* MicrophoneInstallation.swift */; };
 		EDCBDDE3AB67AAF59ED82753 /* ServerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D8CB2A8DC57528812CE513 /* ServerModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		002017491E1EA293A2347E66 /* MicrophoneInstallation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MicrophoneInstallation.swift; path = Sources/Server/MicrophoneInstallation.swift; sourceTree = "<group>"; };
 		4FECE177EFC02F8D64D35D91 /* NocturneServerApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NocturneServerApp.swift; path = Sources/Server/NocturneServerApp.swift; sourceTree = "<group>"; };
 		74BB712FA3C668265AE12E32 /* ServerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ServerView.swift; path = Sources/Server/ServerView.swift; sourceTree = "<group>"; };
 		89D8CB2A8DC57528812CE513 /* ServerModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ServerModel.swift; path = Sources/Server/ServerModel.swift; sourceTree = "<group>"; };
@@ -82,6 +84,7 @@
 				89D8CB2A8DC57528812CE513 /* ServerModel.swift */,
 				74BB712FA3C668265AE12E32 /* ServerView.swift */,
 				FD5AC1E5BC629B0891C7EADB /* Server.xcassets */,
+				002017491E1EA293A2347E66 /* MicrophoneInstallation.swift */,
 			);
 			name = Server;
 			sourceTree = "<group>";
@@ -185,6 +188,7 @@
 				34C6EABB33D1CAAEB3F3E379 /* NocturneServerApp.swift in Sources */,
 				EDCBDDE3AB67AAF59ED82753 /* ServerModel.swift in Sources */,
 				59AF08C4CE7754ABDC0FED38 /* ServerView.swift in Sources */,
+				B196FCCD270C8985170D56B3 /* MicrophoneInstallation.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

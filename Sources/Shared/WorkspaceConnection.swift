@@ -24,7 +24,9 @@ public final class WorkspaceConnection: ObservableObject {
     private var generation = UUID()
     private let identity: WorkspaceIdentity
     public init(identity: WorkspaceIdentity) { self.identity = identity }
-    public func connect(_ invitation: PairingInvitation) async throws {
+    /// A separately authenticated socket keeps live media independent of file/terminal traffic.
+    public func mediaConnection() -> WorkspaceConnection { WorkspaceConnection(identity: identity) }
+    public func connect(_ invitation: PairingInvitation, restoreTerminalSessions: Bool = true) async throws {
         disconnect(); lastError = nil; state = .connecting; name = invitation.name
         let server = Data(SHA256.hash(data: invitation.secret))
         if terminalServer != server { forgetTerminals(); terminalServer = server }
@@ -55,7 +57,7 @@ public final class WorkspaceConnection: ObservableObject {
             let response = try await request(proof)
             guard generation == epoch else { throw NocturneError.disconnected }
             capabilities = response.capabilities ?? []; name = response.name ?? invitation.name
-            if capabilities.contains("terminal") { try await restoreTerminals() }
+            if capabilities.contains("terminal"), restoreTerminalSessions { try await restoreTerminals() }
             else { terminals = []; terminalID = nil }
             guard generation == epoch else { throw NocturneError.disconnected }
             state = .connected
@@ -70,15 +72,15 @@ public final class WorkspaceConnection: ObservableObject {
         let waiting = pending; pending.removeAll(); deadlines.values.forEach { $0.cancel() }; deadlines.removeAll()
         waiting.values.forEach { $0.resume(throwing: NocturneError.disconnected) }
     }
-    public func request(_ packet: Packet) async throws -> Packet {
+    public func request(_ packet: Packet, timeout: TimeInterval? = nil) async throws -> Packet {
         guard let channel = channel else { throw NocturneError.disconnected }
+        let timeout = timeout ?? (packet.operation == .displayPrepare ? StreamDisplayPreparation.requestTimeout : 15)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 guard !Task.isCancelled else { continuation.resume(throwing: CancellationError()); return }
                 pending[packet.id] = continuation
                 deadlines[packet.id] = Task { [weak self] in
-                    let timeout = packet.operation == .displayPrepare ? StreamDisplayPreparation.requestTimeout : 15
-                    do { try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)) } catch { return }
+                    do { try await Task.sleep(nanoseconds: UInt64(max(0.01, timeout) * 1_000_000_000)) } catch { return }
                     self?.failRequest(packet.id, error: NocturneError.timeout)
                 }
                 channel.send(packet) { [weak self] error in

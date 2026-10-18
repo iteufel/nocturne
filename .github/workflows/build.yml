@@ -69,6 +69,8 @@ jobs:
           scripts/bootstrap.sh
       - name: Test shared and host services
         run: env -u NOCTURNE_ENGINE_EXECUTABLE swift test
+      - name: Test microphone driver with sanitizers
+        run: bash scripts/test-microphone-driver.sh
       - name: Build the unified macOS server
         run: scripts/build.sh mac
 
