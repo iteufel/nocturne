@@ -131,8 +131,9 @@ Verified locally on 2026-10-19: five Rust tests, 40 shared/host Swift tests
 passed. The Mac app and universal iOS simulator app built successfully; native
 Rust libraries also built for physical iOS devices. The Linux Docker image
 built and passed a non-root HTTPS `/ping` check with a test certificate and a
-clean SIGTERM shutdown. No public broker has been deployed or two-network
-physical-device streaming test performed.
+clean SIGTERM shutdown. The public broker at `https://nocturne.alkal.de` also
+passed trusted HTTPS and a 196608-byte encrypted relay round trip with direct
+paths disabled. Two-network physical-device streaming remains unverified.
 
 
 ## Container publication and automatic updates
