@@ -14,6 +14,7 @@
 #import "OnScreenControls.h"
 #import <VideoToolbox/VideoToolbox.h>
 #import <AVFoundation/AVFoundation.h>
+#import <openssl/pem.h>
 #define SDL_MAIN_HANDLED
 #import <SDL.h>
 #include <Limelight.h>
@@ -151,6 +152,20 @@
     return self;
 }
 - (NSData *)workspaceCertificate { return [CryptoManager pemToDer:[CryptoManager readCertFromFile]]; }
+- (NSData *)workspacePrivateKey {
+    NSData *pem = [CryptoManager readKeyFromFile];
+    BIO *bio = BIO_new_mem_buf(pem.bytes, (int)pem.length);
+    if (!bio) return nil;
+    EVP_PKEY *key = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
+    BIO_free(bio);
+    if (!key) return nil;
+    unsigned char *der = NULL;
+    int length = i2d_PrivateKey(key, &der);
+    NSData *result = length > 0 ? [NSData dataWithBytes:der length:(NSUInteger)length] : nil;
+    OPENSSL_clear_free(der, length > 0 ? (size_t)length : 0);
+    EVP_PKEY_free(key);
+    return result;
+}
 - (NSData *)signWorkspaceChallenge:(NSData *)challenge {
     return [[CryptoManager new] signData:challenge withKey:[CryptoManager readKeyFromFile]];
 }

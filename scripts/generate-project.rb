@@ -156,6 +156,41 @@ target.build_configurations.each do |config|
   settings['CODE_SIGN_ENTITLEMENTS'] = '../../Resources/Client.entitlements'
   settings['SUPPORTS_MACCATALYST'] = 'NO'
 end
+files = client.new_target(:app_extension, 'Nocturne Files', :ios, '17.0')
+files_group = client.main_group.new_group('Nocturne Files')
+Dir.glob('Sources/FileProvider/**/*.swift').sort.each do |path|
+  files.source_build_phase.add_file_reference(files_group.new_file('../../' + path))
+end
+product(client, files, kit, 'NocturneKit')
+files.resources_build_phase.add_file_reference(files_group.new_file('../../Resources/PrivacyInfo.xcprivacy'))
+files.build_configurations.each do |config|
+  settings = config.build_settings
+  settings['PRODUCT_NAME'] = 'Nocturne Files'
+  settings['PRODUCT_MODULE_NAME'] = 'NocturneFiles'
+  settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'app.nocturne.client.files'
+  settings['INFOPLIST_FILE'] = '../../Resources/Files-Info.plist'
+  settings['CODE_SIGN_ENTITLEMENTS'] = '../../Resources/Files.entitlements'
+  settings['SWIFT_VERSION'] = '5.0'
+  settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
+  settings['TARGETED_DEVICE_FAMILY'] = '1,2'
+  settings['APPLICATION_EXTENSION_API_ONLY'] = 'YES'
+  settings['SKIP_INSTALL'] = 'YES'
+  settings['MARKETING_VERSION'] = '1.0'
+  settings['CURRENT_PROJECT_VERSION'] = '1'
+  settings['NOCTURNE_CODE_SIGN_STYLE'] = 'Automatic'
+  settings['NOCTURNE_CODE_SIGN_IDENTITY'] = 'Apple Development'
+  settings['CODE_SIGN_STYLE'] = '$(NOCTURNE_CODE_SIGN_STYLE)'
+  settings['CODE_SIGN_IDENTITY'] = '$(NOCTURNE_CODE_SIGN_IDENTITY)'
+  settings['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = '$(NOCTURNE_CODE_SIGN_IDENTITY)'
+  settings['DEVELOPMENT_TEAM'] = '$(NOCTURNE_DEVELOPMENT_TEAM)'
+  settings['PROVISIONING_PROFILE_SPECIFIER'] = '$(NOCTURNE_FILES_PROVISIONING_PROFILE_SPECIFIER)'
+  settings['SUPPORTS_MACCATALYST'] = 'NO'
+end
+target.add_dependency(files)
+embed_files = target.new_copy_files_build_phase('Embed Files extension')
+embed_files.dst_subfolder_spec = '13'
+embed_files.add_file_reference(files.product_reference).settings = { 'ATTRIBUTES' => ['RemoveHeadersOnCopy'] }
+
 client_tests = client.new_target(:unit_test_bundle, 'NocturneClientTests', :ios, '17.0')
 client_tests.add_dependency(target)
 test_group = client.main_group.new_group('Nocturne Client Tests')

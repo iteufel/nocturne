@@ -21,7 +21,10 @@ with open(os.environ['NOCTURNE_EXPORT_OPTIONS'], 'wb') as output:
         'teamID': os.environ['NOCTURNE_DEVELOPMENT_TEAM'],
         'signingStyle': 'manual',
         'signingCertificate': 'Apple Distribution',
-        'provisioningProfiles': {'app.nocturne.client': 'Nocturne App Store'},
+        'provisioningProfiles': {
+            'app.nocturne.client': 'Nocturne App Store',
+            'app.nocturne.client.files': 'Nocturne Files App Store',
+        },
         'manageAppVersionAndBuildNumber': False,
         'uploadSymbols': True,
     }, output)
@@ -33,7 +36,8 @@ xcodebuild archive -workspace Nocturne.xcworkspace -scheme Nocturne \
   NOCTURNE_DEVELOPMENT_TEAM="$NOCTURNE_DEVELOPMENT_TEAM" \
   CURRENT_PROJECT_VERSION="$NOCTURNE_BUILD_NUMBER" \
   NOCTURNE_CODE_SIGN_STYLE=Manual NOCTURNE_CODE_SIGN_IDENTITY='Apple Distribution' \
-  NOCTURNE_PROVISIONING_PROFILE_SPECIFIER='Nocturne App Store'
+  NOCTURNE_PROVISIONING_PROFILE_SPECIFIER='Nocturne App Store' \
+  NOCTURNE_FILES_PROVISIONING_PROFILE_SPECIFIER='Nocturne Files App Store'
 
 xcodebuild -exportArchive -archivePath "$output/Nocturne.xcarchive" \
   -exportPath "$output/export" -exportOptionsPlist "$NOCTURNE_EXPORT_OPTIONS"

@@ -29,7 +29,7 @@ public final class SharedFolder {
             guard kind == S_IFDIR || kind == S_IFREG else { continue }
             let child = path.isEmpty ? name : path + "/" + name
             files.append(RemoteFile(name: name, path: child, isDirectory: kind == S_IFDIR,
-                size: Int64(info.st_size), modified: Date(timeIntervalSince1970: Double(info.st_mtimespec.tv_sec))))
+                size: Int64(info.st_size), modified: Date(timeIntervalSince1970: Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1_000_000_000)))
             guard files.count <= 2_000 else { throw NocturneError.remote("This folder has too many items. Use a smaller shared folder.") }
         }
         return files.sorted { $0.isDirectory != $1.isDirectory ? $0.isDirectory : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -71,7 +71,9 @@ public final class SharedFolder {
     }
     private func directory(_ path: String) throws -> Int32 {
         let parts = try components(path)
-        var fd = dup(root)
+        // dup(root) shares the directory cursor with earlier root enumerations.
+        // Open a new description so each Files refresh starts at the beginning.
+        var fd = openat(root, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw Self.posixError() }
         for part in parts {
             let next = openat(fd, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)

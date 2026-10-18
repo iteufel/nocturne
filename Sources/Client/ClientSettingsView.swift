@@ -61,6 +61,9 @@ struct ClientSettingsView: View {
                     Button("Forget paired Mac", role: .destructive) { confirmForget = true }
                 } else { Button("Pair Nocturne Server") { model.preferServer = true; model.showAdd = true } }
             }.listRowBackground(MoonStyle.surface)
+            FilesIntegrationSettings(integration: model.filesIntegration, paired: model.savedServerName != nil) {
+                Task { await model.reconnectServer() }
+            }
             Section {
                 FeatureRow(icon: "rectangle.expand.vertical", title: "Room to move", subtitle: "Layouts follow your window on iPhone, iPad, and iPhone Duo. Expand for a sidebar; resize or fold back into a compact workspace.")
                 Link("Moonlight open-source project", destination: URL(string: "https://github.com/moonlight-stream/moonlight-ios")!)

@@ -69,8 +69,10 @@ struct FilesWorkspace: View {
                         HStack { Text(transfer.status); Spacer(); Text("\(Int(transfer.progress * 100))%").monospacedDigit() }.font(.caption2).foregroundStyle(MoonStyle.secondary)
                     }.padding(18).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).padding(12)
                 } else {
-                    HStack { Label("Encrypted transfer", systemImage: "lock.shield"); Spacer(); Text(transfer.status).lineLimit(1) }
-                        .font(.system(size: 10)).foregroundStyle(MoonStyle.secondary).padding(18)
+                    VStack(spacing: 8) {
+                        HStack { Label("Encrypted transfer", systemImage: "lock.shield"); Spacer(); Text(transfer.status).lineLimit(1) }
+                        Text("Also browse in Apple Files → Browse → Nocturne.")
+                    }.font(.system(size: 10)).foregroundStyle(MoonStyle.secondary).padding(18)
                 }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background { NocturneBackdrop() }

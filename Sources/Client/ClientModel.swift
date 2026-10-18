@@ -55,6 +55,7 @@ final class ClientModel: ObservableObject {
     let engine = NocturneStreamingService()
     let server: WorkspaceConnection
     let microphone = ClientMicrophone()
+    let filesIntegration = FilesIntegration()
     @Published var hosts: [StreamingHost] = []
     @Published var apps: [StreamingApp] = []
     @Published var selectedHost: StreamingHost?
@@ -136,6 +137,7 @@ final class ClientModel: ObservableObject {
         }
     }
     func start() {
+        filesIntegration.refresh()
         if session == nil { engine.start() }; refreshInputs()
         guard networkTask == nil else { return }
         networkTask = Task { [weak self] in
@@ -322,6 +324,7 @@ final class ClientModel: ObservableObject {
             try SecureStore.write(JSONEncoder().encode(connected), account: "server")
             linkedHostID = nil; UserDefaults.standard.removeObject(forKey: "serverHostID")
             savedServerName = invitation.name; UserDefaults.standard.set(invitation.name, forKey: "serverName")
+            updateFilesLocation(connected)
             showAdd = false
             if server.capabilities.contains("streaming") {
                 pendingStreamAddress = connected.host; busy = true
@@ -335,7 +338,10 @@ final class ClientModel: ObservableObject {
         var generation = serverPairingGeneration
         do {
             if let reconnectTask { try await reconnectTask.value; return }
-            guard server.state == .disconnected else { return }
+            guard server.state == .disconnected else {
+                if let connected = server.connectedInvitation { updateFilesLocation(connected) }
+                return
+            }
             generation = UUID(); serverPairingGeneration = generation
             let attempt = generation
             let task = Task { @MainActor in
@@ -351,6 +357,7 @@ final class ClientModel: ObservableObject {
                 guard self.serverPairingGeneration == attempt, let connected = self.server.connectedInvitation else { return }
                 if let id = self.linkedHostID { self.engine.updateHostAddress(id, address: connected.host) }
                 try SecureStore.write(JSONEncoder().encode(connected), account: "server")
+                self.updateFilesLocation(connected)
             }
             reconnectTask = task
             defer { if serverPairingGeneration == generation { reconnectTask = nil } }
@@ -363,9 +370,15 @@ final class ClientModel: ObservableObject {
         cancelReconnect()
         if let linkedHostID, !removeStreamingHost(linkedHostID) { return }
         do {
+            try filesIntegration.forget()
             try SecureStore.delete("server"); server.disconnect(); server.forgetTerminals(); savedServerName = nil
             UserDefaults.standard.removeObject(forKey: "serverName"); UserDefaults.standard.removeObject(forKey: "serverHostID"); linkedHostID = nil; pendingStreamAddress = nil
         } catch { self.error = error.localizedDescription }
+    }
+    private func updateFilesLocation(_ invitation: PairingInvitation) {
+        filesIntegration.configure(invitation: invitation, certificate: engine.workspaceCertificate(),
+            privateKey: engine.workspacePrivateKey(), deviceName: UIDevice.current.name,
+            enabled: server.capabilities.contains("files"))
     }
     func forgetHost(_ hostID: String) {
         if hostID == linkedHostID { forgetServer() }
