@@ -61,6 +61,9 @@ The distribution identity is imported into a temporary keychain and removed by
 the signing action's cleanup. The current **Nocturne App Store** provisioning
 profile is downloaded for each release; profiles are removed at the end of the
 job. No signed IPA or private signing material is published as a GitHub artifact.
+Archive signing overrides are scoped to the iOS application target so SwiftPM
+build tools and resource bundles do not receive the application's provisioning
+profile.
 
 The initial distribution certificate and provisioning profile expire on
 **18 October 2027**. Before expiry, create a new distribution identity and an

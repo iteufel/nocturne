@@ -95,8 +95,14 @@ target.build_configurations.each do |config|
   settings['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'DarkAppIcon'
   settings['MARKETING_VERSION'] = '1.0'
   settings['CURRENT_PROJECT_VERSION'] = '1'
-  settings['CODE_SIGN_STYLE'] = 'Automatic'
-  settings['DEVELOPMENT_TEAM'] = ''
+  # Archive overrides belong to the app, not SwiftPM tools or resource bundles.
+  settings['NOCTURNE_CODE_SIGN_STYLE'] = 'Automatic'
+  settings['NOCTURNE_CODE_SIGN_IDENTITY'] = 'Apple Development'
+  settings['CODE_SIGN_STYLE'] = '$(NOCTURNE_CODE_SIGN_STYLE)'
+  settings['CODE_SIGN_IDENTITY'] = '$(NOCTURNE_CODE_SIGN_IDENTITY)'
+  settings['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = '$(NOCTURNE_CODE_SIGN_IDENTITY)'
+  settings['DEVELOPMENT_TEAM'] = '$(NOCTURNE_DEVELOPMENT_TEAM)'
+  settings['PROVISIONING_PROFILE_SPECIFIER'] = '$(NOCTURNE_PROVISIONING_PROFILE_SPECIFIER)'
   settings['CODE_SIGN_ENTITLEMENTS'] = '../../Resources/Client.entitlements'
   settings['SUPPORTS_MACCATALYST'] = 'NO'
 end

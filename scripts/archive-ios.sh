@@ -30,10 +30,10 @@ PY
 xcodebuild archive -workspace Nocturne.xcworkspace -scheme Nocturne \
   -configuration Release -destination 'generic/platform=iOS' \
   -derivedDataPath .build/XcodeArchive -archivePath "$output/Nocturne.xcarchive" \
-  DEVELOPMENT_TEAM="$NOCTURNE_DEVELOPMENT_TEAM" \
+  NOCTURNE_DEVELOPMENT_TEAM="$NOCTURNE_DEVELOPMENT_TEAM" \
   CURRENT_PROJECT_VERSION="$NOCTURNE_BUILD_NUMBER" \
-  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' \
-  PROVISIONING_PROFILE_SPECIFIER='Nocturne App Store'
+  NOCTURNE_CODE_SIGN_STYLE=Manual NOCTURNE_CODE_SIGN_IDENTITY='Apple Distribution' \
+  NOCTURNE_PROVISIONING_PROFILE_SPECIFIER='Nocturne App Store'
 
 xcodebuild -exportArchive -archivePath "$output/Nocturne.xcarchive" \
   -exportPath "$output/export" -exportOptionsPlist "$NOCTURNE_EXPORT_OPTIONS"
