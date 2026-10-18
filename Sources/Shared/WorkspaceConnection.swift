@@ -78,6 +78,12 @@ public final class WorkspaceConnection: ObservableObject {
             guard let self, let channel, self.channel === channel, self.generation == epoch else { return }
             self.lastError = error.localizedDescription; self.closeTransport()
         } }
+        let deadline = Task { [weak self, weak channel] in
+            do { try await Task.sleep(nanoseconds: 15_000_000_000) } catch { return }
+            guard let self, let channel, self.channel === channel, self.generation == epoch else { return }
+            self.ready?.resume(throwing: NocturneError.timeout); self.ready = nil
+        }
+        defer { deadline.cancel() }
         try await withCheckedThrowingContinuation { continuation in ready = continuation; channel.start() }
         guard generation == epoch else { throw NocturneError.disconnected }
         var hello = Packet(.hello); hello.version = WorkspaceProtocol.version
@@ -257,14 +263,15 @@ public final class FileTransferModel: ObservableObject {
             }
         }
         task = work
-        do { _ = try await work.value } catch { status = error is CancellationError ? "Transfer cancelled" : error.localizedDescription; throw error }
+        do { _ = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() } }
+        catch { status = error is CancellationError ? "Transfer cancelled" : error.localizedDescription; throw error }
     }
-    public func download(_ file: RemoteFile, using connection: WorkspaceConnection) async throws -> URL {
+    public func download(_ file: RemoteFile, using connection: WorkspaceConnection, temporaryDirectory: URL? = nil) async throws -> URL {
         guard activeName == nil, !file.isDirectory else { throw NocturneError.invalidTransfer }
         activeName = file.name; progress = 0; bytesTransferred = 0; status = "Receiving"
         defer { activeName = nil; task = nil }
         let work = Task<URL?, Error> {
-            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Nocturne-" + UUID().uuidString)
+            let directory = (temporaryDirectory ?? FileManager.default.temporaryDirectory).appendingPathComponent("Nocturne-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             // Treat names from a remote server as untrusted, even after authentication.
             guard !file.name.isEmpty, file.name == URL(fileURLWithPath: file.name).lastPathComponent, !file.name.contains("/"), file.name != ".." else { throw NocturneError.invalidPath }
@@ -287,6 +294,7 @@ public final class FileTransferModel: ObservableObject {
             } catch { try? FileManager.default.removeItem(at: directory); throw error }
         }
         task = work
-        do { return try await work.value! } catch { status = error is CancellationError ? "Transfer cancelled" : error.localizedDescription; throw error }
+        do { return try await withTaskCancellationHandler { try await work.value! } onCancel: { work.cancel() } }
+        catch { status = error is CancellationError ? "Transfer cancelled" : error.localizedDescription; throw error }
     }
 }

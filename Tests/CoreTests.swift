@@ -73,6 +73,16 @@ final class CoreTests: XCTestCase {
         transfer = nil
         XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }
+    func testRepeatedRootListingsHaveIndependentDirectoryCursors() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = try SharedFolder(url: root)
+        try Data("first".utf8).write(to: root.appendingPathComponent("first.txt"))
+        XCTAssertEqual(try folder.list("").map(\.name), ["first.txt"])
+        try Data("second".utf8).write(to: root.appendingPathComponent("second.txt"))
+        XCTAssertEqual(try folder.list("").map(\.name), ["first.txt", "second.txt"])
+        XCTAssertEqual(try folder.list("").map(\.name), ["first.txt", "second.txt"])
+    }
     func testFileCreatedDuringUploadIsNeverOverwritten() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
