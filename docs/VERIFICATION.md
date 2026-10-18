@@ -98,6 +98,14 @@ This pass changed presentation and appearance preferences. The nine protocol/eng
 
 ## Remaining device checks
 
+### Match-device correction and explicit virtual monitor (October 18, 2026)
+
+- Reproduced the client bug with a failing test: when a fixed monitor removed the server's `display` capability, Match device skipped desktop preparation and still launched device-sized video. Missing QR workspace trust caused the same bypass. The regression now passes with actionable errors for both cases.
+- Added **Settings → Displays → Headless virtual monitor**. Migration preserves existing physical-monitor choices and the separate monitor-off preference. Startup and resize now return the virtual display's actual ID to the parent; video capture is selected explicitly and must become ready before the resize is acknowledged.
+- Safe native-driver tests inject framebuffer/layout implementations and exercise startup, portrait/landscape replacement, stable capture targets between streams, and the separate physical-display opt-in. No CoreGraphics display creation or reconfiguration occurs in these tests. Additional tests cover capture readiness, failed capture selection, stale replies after disconnect, and a bounded preparation deadline that heartbeats cannot extend.
+- `swift test`: 31 tests, four hardware/engine checks skipped, zero failures. iPhone simulator: eight pairing/lifecycle tests passed. Both macOS and iOS simulator builds succeeded. The updated Match device guidance was visually checked in the iPad simulator. The first local iOS test build hit a stale precompiled header; moving that generated cache aside resolved it without a source workaround. Logs are in `.build/display-fix-*.log` (ignored).
+- This pass does not verify live device rotation, physical monitor transitions or a headless cold start. Nocturne Server and its display worker were not launched for these checks, and the user's physical-display settings were not changed. Earlier hardware results above do not establish verification of this correction.
+
 Physical iPhone/iPad/iPhone Duo testing, Bluetooth keyboard/mouse/controller input, audible output, HDR, sustained latency, and network interruption/recovery have not been verified. The installed SDK has no dedicated Duo simulator; layouts use scene dimensions and native size classes without inventing a hinge API.
 
 This Mac has no Virtual HID Broker driver, so macOS gamepad emulation is unavailable until a compatible driver is installed. Controller forwarding is integrated in the client. These are development builds, not an App Store/TestFlight or notarized distribution.

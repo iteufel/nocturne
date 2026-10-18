@@ -192,13 +192,14 @@ final class ClientModel: ObservableObject {
                 if current.host.id == linkedHostID {
                     if server.state != .connected { await reconnectServer(reportError: false) }
                     guard server.state == .connected else { throw NocturneError.disconnected }
-                    if server.capabilities.contains("display") {
-                        var packet = Packet(.displayPrepare); packet.sessionID = current.id.uuidString; packet.display = requested
-                        current.hasDisplayLease = true
-                        let reply = try await server.request(packet)
-                        guard reply.display == requested, reply.sessionID == current.id.uuidString else { throw NocturneError.invalidFrame }
-                        if current.heartbeat == nil { startDisplayHeartbeat(current) }
-                    }
+                }
+                if let packet = try StreamDisplayPreparation.request(size: requested, sessionID: current.id.uuidString,
+                    matchesDevice: current.preferences.resolution == "Match device",
+                    workspaceLinked: current.host.id == linkedHostID, capabilities: server.capabilities) {
+                    current.hasDisplayLease = true
+                    let reply = try await server.request(packet)
+                    guard reply.display == requested, reply.sessionID == current.id.uuidString else { throw NocturneError.invalidFrame }
+                    if current.heartbeat == nil { startDisplayHeartbeat(current) }
                 }
                 try Task.checkCancellation()
                 guard session === current else { return }

@@ -12,6 +12,7 @@ private struct DisplayCommand: Codable {
 private struct DisplayReply: Codable {
     let id: String
     var error: String?
+    var displayID: UInt32?
 }
 
 /// Runs the display owner inside the same signed app executable, with no second
@@ -44,10 +45,10 @@ private final class DisplayWorker {
                 var reply = DisplayReply(id: command.id)
                 do {
                     switch command.operation {
-                    case "start": try await self.driver.start()
+                    case "start": reply.displayID = try await self.driver.start()
                     case "apply":
                         guard let size = command.size, size.isValid else { throw NocturneError.invalidFrame }
-                        try await self.driver.apply(size, disablePhysicalDisplays: command.disable)
+                        reply.displayID = try await self.driver.apply(size, disablePhysicalDisplays: command.disable)
                     case "restore": try await self.restore()
                     default: throw NocturneError.invalidFrame
                     }
@@ -99,7 +100,7 @@ private final class DisplayProcessChannel: @unchecked Sendable {
     let process = Process()
     private let input = Pipe(), output = Pipe()
     private let lock = NSLock()
-    private var pending: [String: (Result<Void, Error>) -> Void] = [:]
+    private var pending: [String: (Result<UInt32?, Error>) -> Void] = [:]
     private var closed = false
     init() throws {
         guard let executable = Bundle.main.executableURL else { throw NocturneError.disconnected }
@@ -109,7 +110,7 @@ private final class DisplayProcessChannel: @unchecked Sendable {
             guard let self else { return }
             guard let line, let reply = try? JSONDecoder().decode(DisplayReply.self, from: line) else { self.fail(); return }
             self.lock.lock(); let callback = self.pending.removeValue(forKey: reply.id); self.lock.unlock()
-            callback?(reply.error.map { .failure(NocturneError.remote($0)) } ?? .success(()))
+            callback?(reply.error.map { .failure(NocturneError.remote($0)) } ?? .success(reply.displayID))
         }
         output.fileHandleForReading.readabilityHandler = { handle in reader.receive(handle.availableData) }
         process.terminationHandler = { [weak self] _ in self?.fail() }
@@ -118,7 +119,7 @@ private final class DisplayProcessChannel: @unchecked Sendable {
         // Closing the unused pipe ends makes EOF reliable when either process dies.
         try input.fileHandleForReading.close(); try output.fileHandleForWriting.close()
     }
-    func send(_ command: DisplayCommand, completion: @escaping (Result<Void, Error>) -> Void) {
+    func send(_ command: DisplayCommand, completion: @escaping (Result<UInt32?, Error>) -> Void) {
         lock.lock()
         guard !closed else { lock.unlock(); completion(.failure(NocturneError.disconnected)); return }
         pending[command.id] = completion; lock.unlock()
@@ -147,19 +148,21 @@ private final class DisplayProcessChannel: @unchecked Sendable {
 @MainActor
 final class ProcessStreamingDisplayDriver: StreamingDisplayDriver {
     private var channel: DisplayProcessChannel?
-    func start() async throws {
+    @discardableResult func start() async throws -> UInt32 {
         if channel == nil { channel = try DisplayProcessChannel() }
-        try await request(.init(operation: "start"))
+        return try await requestDisplay(.init(operation: "start"))
     }
-    func apply(_ size: StreamDisplaySize, disablePhysicalDisplays: Bool) async throws {
+    @discardableResult func apply(_ size: StreamDisplaySize, disablePhysicalDisplays: Bool) async throws -> UInt32 {
         guard channel != nil else { throw NocturneError.disconnected }
-        try await request(.init(operation: "apply", size: size, disable: disablePhysicalDisplays))
+        return try await requestDisplay(.init(operation: "apply", size: size, disable: disablePhysicalDisplays))
     }
-    private func request(_ command: DisplayCommand) async throws {
+    private func requestDisplay(_ command: DisplayCommand) async throws -> UInt32 {
         guard let channel else { throw NocturneError.disconnected }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        let display = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<UInt32?, Error>) in
             channel.send(command) { continuation.resume(with: $0) }
         }
+        guard let display, display != 0 else { throw NocturneError.invalidFrame }
+        return display
     }
     func restore() throws {
         guard let channel else { return }
@@ -170,12 +173,12 @@ final class ProcessStreamingDisplayDriver: StreamingDisplayDriver {
             channel.stop(); self.channel = nil
             throw NocturneError.remote("The display controller is recovering your Mac’s displays. Restart the server before streaming again.")
         }
-        try result.value?.get()
+        _ = try result.value?.get()
     }
     func stop() throws { channel?.stop(); channel = nil }
 }
 
 private final class DisplaySynchronousResult: @unchecked Sendable {
     // Written before the semaphore signal, read only after the wait succeeds.
-    var value: Result<Void, Error>?
+    var value: Result<UInt32?, Error>?
 }

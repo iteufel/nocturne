@@ -29,6 +29,12 @@ public final class EmbeddedStreamingEngine {
     private var api: EngineAPI?
     private var generation = UUID()
     private var logHandle: FileHandle?
+    private struct Launch {
+        let executable: URL
+        let name: String
+        let display: String
+    }
+    private var launch: Launch?
     public init(directory: URL) { self.directory = directory }
 
     public func start(executable: URL, name: String, display: String = "") async throws {
@@ -56,7 +62,8 @@ public final class EmbeddedStreamingEngine {
         do {
             try child.run()
             // A successful authenticated API response is the readiness signal, not merely a PID.
-            for _ in 0..<100 {
+            let readinessDeadline = Date().addingTimeInterval(25)
+            while Date() < readinessDeadline {
                 try Task.checkCancellation()
                 guard generation == epoch else { throw CancellationError() }
                 guard child.isRunning else { throw NocturneError.remote("The streaming engine could not start. Check screen permissions and the server log.") }
@@ -65,6 +72,7 @@ public final class EmbeddedStreamingEngine {
                 }
                 if let api, (try? await api.request("/api/pin")) != nil {
                     guard generation == epoch, child.isRunning else { throw CancellationError() }
+                    launch = Launch(executable: executable, name: name, display: display)
                     return
                 }
                 try await Task.sleep(nanoseconds: 250_000_000)
@@ -76,8 +84,19 @@ public final class EmbeddedStreamingEngine {
         }
     }
 
+    /// Sunshine reads output_name at process startup. A replacement framebuffer
+    /// must be selected explicitly; updating its config alone does not switch a
+    /// running encoder. Keep the workspace listener, PTYs and paired keys intact.
+    public func selectDisplay(_ display: UInt32) async throws {
+        guard display != 0, isRunning, let launch else { throw NocturneError.disconnected }
+        let target = String(display)
+        guard launch.display != target else { return }
+        stop()
+        try await start(executable: launch.executable, name: launch.name, display: target)
+    }
+
     public func stop() {
-        generation = UUID(); api?.invalidate(); api = nil
+        generation = UUID(); api?.invalidate(); api = nil; launch = nil
         let child = process; process = nil; child?.terminationHandler = nil
         if let child, child.isRunning {
             child.terminate()

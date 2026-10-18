@@ -54,16 +54,22 @@ struct ServerSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Picker("Stream display", selection: $model.display) {
-                    Text("Nocturne Display · Match device").tag("")
-                    ForEach(NSScreen.screens.filter { $0.localizedName != "Nocturne Display" }, id: \.self) { screen in
-                        if let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
-                            Text(screen.localizedName).tag(number.stringValue)
+                Toggle("Headless virtual monitor", isOn: $model.headlessDisplayEnabled)
+                    .disabled(model.active || (!model.headlessDisplayEnabled && !DisplaySessionManager.isSupported))
+                if model.headlessDisplayEnabled {
+                    LabeledContent("Resolution", value: "Matches the streaming device")
+                } else {
+                    Picker("Stream display", selection: $model.display) {
+                        Text("Main display").tag("")
+                        ForEach(NSScreen.screens.filter { $0.localizedName != "Nocturne Display" }, id: \.self) { screen in
+                            if let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+                                Text(screen.localizedName).tag(number.stringValue)
+                            }
                         }
-                    }
-                }.disabled(model.active)
+                    }.disabled(model.active)
+                }
                 Toggle("Turn off connected Mac displays", isOn: $model.disablePhysicalDisplays)
-                    .disabled(model.active || !model.display.isEmpty || !DisplaySessionManager.canDisableDisplays)
+                    .disabled(model.active || !model.headlessDisplayEnabled || !DisplaySessionManager.canDisableDisplays)
                 if model.displayActive {
                     LabeledContent("Streaming", value: model.displayStatus)
                     Button("Restore Mac displays") { model.displays.restore() }
@@ -71,7 +77,7 @@ struct ServerSettingsView: View {
             } header: {
                 Label("Displays", systemImage: "display.2")
             } footer: {
-                Text("Nocturne Display works without a monitor. Turning off connected displays brings their windows onto the streamed desktop. Displays return when the stream disconnects. Stop the server to change these settings.")
+                Text("The virtual monitor works with or without a physical screen and adapts to your device. Connected displays keep their layout unless you separately enable turning them off. Stop the server to change these settings.")
             }
             Section {
                 Picker("Appearance", selection: $appearance) {

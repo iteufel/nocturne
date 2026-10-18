@@ -13,13 +13,50 @@ private final class RecordingDisplayDriver: StreamingDisplayDriver {
     var stops = 0
     var failApply = false
     var failRestore = false
-    func start() async throws {}
-    func apply(_ size: StreamDisplaySize, disablePhysicalDisplays: Bool) async throws {
+    var displayID: UInt32 = 100
+    @discardableResult func start() async throws -> UInt32 { displayID }
+    @discardableResult func apply(_ size: StreamDisplaySize, disablePhysicalDisplays: Bool) async throws -> UInt32 {
         sizes.append(size); hidesDisplays = disablePhysicalDisplays
         if failApply { throw NocturneError.remote("Display configuration failed") }
+        displayID += 1; return displayID
     }
     func restore() throws { restorations += 1; if failRestore { throw NocturneError.remote("Display restoration failed") } }
     func stop() throws { stops += 1 }
+}
+
+@MainActor
+private final class FakeVirtualDisplay: StreamingVirtualDisplay {
+    let displayID: UInt32
+    var selected = false
+    init(_ id: UInt32) { displayID = id }
+    func selectRequestedMode() throws { selected = true }
+}
+
+@MainActor
+private final class FakeDisplayLayout: StreamingDisplayLayout {
+    var primaryChanges: [UInt32] = []
+    var disabled = false
+    var restorations = 0
+    func makePrimary(_ display: UInt32, disableOthers: Bool) throws {
+        primaryChanges.append(display); disabled = disableOthers
+    }
+    func restore() throws { restorations += 1 }
+}
+
+@MainActor
+private final class FakeDisplayEnvironment {
+    var sizes: [StreamDisplaySize] = []
+    var exclusions: [UInt32] = []
+    var unlocked = true
+    weak var lastDisplay: FakeVirtualDisplay?
+    let layout = FakeDisplayLayout()
+    var environment: StreamingDisplayEnvironment {
+        .init(isSessionAvailable: { self.unlocked }, create: {
+            self.sizes.append($0)
+            let display = FakeVirtualDisplay(UInt32(100 + self.sizes.count))
+            self.lastDisplay = display; return display
+        }, captureLayout: { self.exclusions.append($0); return self.layout })
+    }
 }
 
 @MainActor
@@ -31,6 +68,22 @@ final class DisplayTests: XCTestCase {
     private let landscape = StreamDisplaySize(width: 2868, height: 1320, frameRate: 60)
     private func request(_ operation: NocturneKit.Operation = .displayPrepare, id: String, size: StreamDisplaySize? = nil) -> Packet {
         var packet = Packet(operation); packet.sessionID = id; packet.display = size; return packet
+    }
+    func testMatchDeviceDoesNotSilentlySkipDesktopPreparation() throws {
+        let id = UUID().uuidString
+        // A fixed Mac display currently advertises streaming without display control.
+        // Returning nil here would start device-sized video over an unchanged desktop.
+        XCTAssertThrowsError(try StreamDisplayPreparation.request(size: portrait, sessionID: id,
+            matchesDevice: true, workspaceLinked: true, capabilities: ["streaming"]))
+        XCTAssertThrowsError(try StreamDisplayPreparation.request(size: portrait, sessionID: id,
+            matchesDevice: true, workspaceLinked: false, capabilities: ["display"]))
+        let prepared = try XCTUnwrap(StreamDisplayPreparation.request(size: portrait, sessionID: id,
+            matchesDevice: true, workspaceLinked: true, capabilities: ["display"]))
+        XCTAssertEqual(prepared.operation, .displayPrepare)
+        XCTAssertEqual(prepared.display, portrait)
+        XCTAssertEqual(prepared.sessionID, id)
+        XCTAssertNil(try StreamDisplayPreparation.request(size: landscape, sessionID: id,
+            matchesDevice: false, workspaceLinked: false, capabilities: []))
     }
     func testDevicePixelsFollowOrientationAndWindowSize() throws {
         XCTAssertEqual(StreamDisplaySize.matching(width: 440, height: 956, scale: 3, frameRate: 60), portrait)
@@ -44,6 +97,112 @@ final class DisplayTests: XCTestCase {
         XCTAssertFalse(StreamDisplaySize(width: Int.max, height: 1080, frameRate: 60).isValid)
         XCTAssertFalse(StreamDisplaySize(width: 1919, height: 1080, frameRate: 60).isValid)
         XCTAssertFalse(StreamDisplaySize(width: 1920, height: 1080, frameRate: 1000).isValid)
+    }
+    func testVirtualMonitorStartsResizesAndPersistsWithoutChangingPhysicalLayout() async throws {
+        let environment = FakeDisplayEnvironment()
+        let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+        let initial = try await driver.start()
+        XCTAssertNotEqual(initial, 0)
+        XCTAssertEqual(environment.sizes, [.init(width: 1920, height: 1080, frameRate: 60)])
+        weak var initialDisplay = environment.lastDisplay
+        let first = try await driver.apply(portrait, disablePhysicalDisplays: false)
+        XCTAssertNotEqual(first, initial); XCTAssertNil(initialDisplay)
+        initialDisplay = nil
+        let repeated = try await driver.apply(portrait, disablePhysicalDisplays: false)
+        XCTAssertEqual(repeated, first); XCTAssertEqual(environment.sizes.count, 2)
+        let rotated = try await driver.apply(landscape, disablePhysicalDisplays: false)
+        XCTAssertNotEqual(rotated, first)
+        XCTAssertEqual(environment.sizes.last, landscape)
+        XCTAssertEqual(environment.lastDisplay?.selected, true)
+        weak var current = environment.lastDisplay
+        try driver.restore()
+        XCTAssertNotNil(current, "The encoder must retain a valid capture target between streams")
+        let restarted = try await driver.start()
+        XCTAssertEqual(restarted, rotated)
+        XCTAssertTrue(environment.exclusions.isEmpty)
+        XCTAssertTrue(environment.layout.primaryChanges.isEmpty)
+        XCTAssertEqual(environment.layout.restorations, 0)
+        try driver.stop(); XCTAssertNil(current)
+        current = nil
+    }
+    func testPhysicalDisplayChangesRequireSeparateOptIn() async throws {
+        let environment = FakeDisplayEnvironment()
+        let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+        let initial = try await driver.start()
+        let target = try await driver.apply(portrait, disablePhysicalDisplays: true)
+        XCTAssertEqual(environment.exclusions, [initial])
+        XCTAssertEqual(environment.layout.primaryChanges, [target]); XCTAssertTrue(environment.layout.disabled)
+        try driver.restore(); XCTAssertEqual(environment.layout.restorations, 1)
+        XCTAssertNotNil(environment.lastDisplay)
+        try driver.stop()
+    }
+    func testPhysicalSelectionAndExplicitHeadlessPreferenceSurviveMigration() throws {
+        let suite = "Nocturne-display-preferences-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertTrue(DisplaySettings(defaults: defaults).headlessEnabled)
+        XCTAssertFalse(DisplaySettings(defaults: defaults).disablePhysicalDisplays)
+        defaults.set("1", forKey: "streamDisplay")
+        XCTAssertFalse(DisplaySettings(defaults: defaults).headlessEnabled)
+        defaults.set(true, forKey: "headlessDisplayEnabled")
+        XCTAssertTrue(DisplaySettings(defaults: defaults).headlessEnabled)
+        XCTAssertEqual(DisplaySettings(defaults: defaults).physicalDisplay, "1")
+        defaults.set(false, forKey: "headlessDisplayEnabled")
+        defaults.set("", forKey: "streamDisplay")
+        XCTAssertFalse(DisplaySettings(defaults: defaults).headlessEnabled)
+    }
+    func testDisplayAcknowledgementWaitsForExactCaptureTargetReadiness() async throws {
+        let driver = RecordingDisplayDriver(), connection = UUID(), id = UUID().uuidString
+        var targets: [UInt32] = []
+        var finish: CheckedContinuation<Void, Error>?
+        let preparing = expectation(description: "Preparing capture")
+        let manager = DisplaySessionManager(driver: driver, timeout: 20) { target in
+            targets.append(target); preparing.fulfill()
+            try await withCheckedThrowingContinuation { finish = $0 }
+        }
+        let pending = Task { try await manager.handle(request(id: id, size: portrait), connection: connection, name: "iPhone") }
+        await fulfillment(of: [preparing], timeout: 2)
+        XCTAssertEqual(targets, [driver.displayID]); XCTAssertNil(manager.size)
+        // Initial capture preparation may take longer than an ordinary heartbeat.
+        manager.expire(now: Date().addingTimeInterval(21)); XCTAssertTrue(manager.isActive)
+        finish?.resume()
+        let reply = try await pending.value
+        XCTAssertEqual(reply.display, portrait); XCTAssertEqual(manager.size, portrait)
+        manager.expire(now: Date().addingTimeInterval(21)); XCTAssertFalse(manager.isActive)
+    }
+    func testDisconnectDuringCapturePreparationCannotAcknowledgeStaleDisplay() async throws {
+        let driver = RecordingDisplayDriver(), connection = UUID(), id = UUID().uuidString
+        var finish: CheckedContinuation<Void, Error>?
+        let preparing = expectation(description: "Preparing capture")
+        let manager = DisplaySessionManager(driver: driver, timeout: 20) { _ in
+            preparing.fulfill(); try await withCheckedThrowingContinuation { finish = $0 }
+        }
+        let pending = Task { try await manager.handle(request(id: id, size: portrait), connection: connection, name: "iPhone") }
+        await fulfillment(of: [preparing], timeout: 2)
+        manager.disconnected(connection); finish?.resume()
+        await assertFailure { try await pending.value }
+        XCTAssertFalse(manager.isActive); XCTAssertNil(manager.size); XCTAssertEqual(driver.restorations, 1)
+    }
+    func testFailedCaptureSelectionReleasesLease() async throws {
+        let driver = RecordingDisplayDriver()
+        let manager = DisplaySessionManager(driver: driver, timeout: 20) { _ in throw NocturneError.timeout }
+        await assertFailure { try await manager.handle(request(id: UUID().uuidString, size: portrait), connection: UUID(), name: "iPhone") }
+        XCTAssertFalse(manager.isActive); XCTAssertNil(manager.size); XCTAssertEqual(driver.restorations, 1)
+    }
+    func testPreparationDeadlineCannotBeExtendedByHeartbeats() async throws {
+        let driver = RecordingDisplayDriver(), connection = UUID(), id = UUID().uuidString, start = Date()
+        var finish: CheckedContinuation<Void, Error>?
+        let preparing = expectation(description: "Preparing capture")
+        let manager = DisplaySessionManager(driver: driver, timeout: 20) { _ in
+            preparing.fulfill(); try await withCheckedThrowingContinuation { finish = $0 }
+        }
+        let pending = Task { try await manager.handle(request(id: id, size: portrait), connection: connection, name: "iPhone", now: start) }
+        await fulfillment(of: [preparing], timeout: 2)
+        _ = try await manager.handle(request(.displayHeartbeat, id: id), connection: connection, name: "iPhone", now: start.addingTimeInterval(40))
+        manager.expire(now: start.addingTimeInterval(51))
+        XCTAssertFalse(manager.isActive); XCTAssertEqual(driver.restorations, 1)
+        finish?.resume()
+        await assertFailure { try await pending.value }
     }
     func testLeaseRejectsAnotherConnectionAndStaleMessages() async throws {
         let driver = RecordingDisplayDriver(), connection = UUID(), other = UUID(), id = UUID().uuidString

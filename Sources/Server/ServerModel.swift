@@ -25,15 +25,18 @@ final class ServerModel: ObservableObject {
     @Published var filesEnabled = UserDefaults.standard.bool(forKey: "allowFiles") { didSet { updatePermissions() } }
     @Published var address: String
     @Published var sharedFolder: URL
-    @Published var display = UserDefaults.standard.string(forKey: "streamDisplay") ?? "" {
-        didSet { UserDefaults.standard.set(display, forKey: "streamDisplay") }
+    @Published var display: String {
+        didSet { UserDefaults.standard.set(display, forKey: "streamDisplay"); updateDisplayStatus() }
     }
-    @Published var disablePhysicalDisplays = UserDefaults.standard.bool(forKey: "disablePhysicalDisplays") {
+    @Published var headlessDisplayEnabled: Bool {
+        didSet { UserDefaults.standard.set(headlessDisplayEnabled, forKey: "headlessDisplayEnabled"); updateDisplayStatus() }
+    }
+    @Published var disablePhysicalDisplays: Bool {
         didSet { UserDefaults.standard.set(disablePhysicalDisplays, forKey: "disablePhysicalDisplays") }
     }
-    @Published private(set) var displayStatus = "Matches your device when streaming"
+    @Published private(set) var displayStatus = ""
     @Published private(set) var displayActive = false
-    let displays = DisplaySessionManager()
+    let displays: DisplaySessionManager
     let addresses: [String]
     let name = Host.current().localizedName ?? "My Mac"
     let engine: EmbeddedStreamingEngine
@@ -50,11 +53,17 @@ final class ServerModel: ObservableObject {
     private var generation = UUID()
     private var pairWhenReady = false
     init() {
+        let displaySettings = DisplaySettings()
+        display = displaySettings.physicalDisplay
+        headlessDisplayEnabled = displaySettings.headlessEnabled
+        disablePhysicalDisplays = displaySettings.disablePhysicalDisplays
         addresses = Self.localAddresses(); address = addresses.first ?? "127.0.0.1"
         let savedFolder = UserDefaults.standard.string(forKey: "sharedFolder")
         sharedFolder = savedFolder.map { URL(fileURLWithPath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Nocturne Shared", isDirectory: true)
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        engine = EmbeddedStreamingEngine(directory: support.appendingPathComponent("Nocturne/Engine", isDirectory: true))
+        let engine = EmbeddedStreamingEngine(directory: support.appendingPathComponent("Nocturne/Engine", isDirectory: true))
+        self.engine = engine
+        displays = DisplaySessionManager { display in try await engine.selectDisplay(display) }
         do {
             deviceStore = try WorkspaceDeviceStore(url: support.appendingPathComponent("Nocturne/devices.json"))
             streamDevices = try engine.savedDevices(); publishDevices()
@@ -63,10 +72,16 @@ final class ServerModel: ObservableObject {
         displays.onChange = { [weak self] in
             guard let self else { return }
             self.displayActive = self.displays.isActive
-            if let size = self.displays.size {
-                self.displayStatus = "\(size.width) × \(size.height) · \(self.displays.deviceName ?? "Connected device")"
-            } else { self.displayStatus = "Matches your device when streaming" }
+            self.updateDisplayStatus()
             if let error = self.displays.lastError { self.error = error }
+        }
+        updateDisplayStatus()
+    }
+    private func updateDisplayStatus() {
+        if let size = displays.size {
+            displayStatus = "\(size.width) × \(size.height) · \(displays.deviceName ?? "Connected device")"
+        } else {
+            displayStatus = headlessDisplayEnabled ? "Virtual monitor · Matches your device" : "Physical monitor · Fixed desktop size"
         }
     }
     func start() {
@@ -83,17 +98,21 @@ final class ServerModel: ObservableObject {
                 else { key = try SecureStore.randomKey(); try SecureStore.write(key, account: "server-key") }
                 guard key.count == 32 else { throw NocturneError.invalidInvitation }
                 secret = key
-                if display.isEmpty { displays.disablePhysicalDisplays = disablePhysicalDisplays; try await displays.start() }
+                var captureDisplay = display.isEmpty ? String(CGMainDisplayID()) : display
+                if headlessDisplayEnabled {
+                    displays.disablePhysicalDisplays = disablePhysicalDisplays
+                    captureDisplay = String(try await displays.start())
+                }
                 try Task.checkCancellation()
                 guard generation == epoch else { return }
-                try await engine.start(executable: executable, name: name, display: display)
+                try await engine.start(executable: executable, name: name, display: captureDisplay)
                 try Task.checkCancellation()
                 guard generation == epoch else { return }
                 let savedDevices = try await engine.pairedDevices()
                 guard generation == epoch, !Task.isCancelled else { return }
                 streamDevices = savedDevices; publishDevices()
                 let host = try WorkspaceServer(folder: sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: terminalEnabled, files: filesEnabled))
-                if display.isEmpty {
+                if headlessDisplayEnabled {
                     host.displayCommand = { [weak self] packet, connection, name, completion in
                         Task { @MainActor in
                             guard let self, self.generation == epoch, self.running else { completion(packet.reply(error: NocturneError.disconnected.localizedDescription)); return }

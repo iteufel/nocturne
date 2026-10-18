@@ -77,7 +77,8 @@ public final class WorkspaceConnection: ObservableObject {
                 guard !Task.isCancelled else { continuation.resume(throwing: CancellationError()); return }
                 pending[packet.id] = continuation
                 deadlines[packet.id] = Task { [weak self] in
-                    do { try await Task.sleep(nanoseconds: 15_000_000_000) } catch { return }
+                    let timeout = packet.operation == .displayPrepare ? StreamDisplayPreparation.requestTimeout : 15
+                    do { try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)) } catch { return }
                     self?.failRequest(packet.id, error: NocturneError.timeout)
                 }
                 channel.send(packet) { [weak self] error in
