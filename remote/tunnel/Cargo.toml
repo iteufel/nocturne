@@ -1,0 +1,21 @@
+[package]
+name = "nocturne-remote"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+anyhow.workspace = true
+iroh.workspace = true
+tokio.workspace = true
+bytes = "1"
+# libc 0.2.191 gates in6_ifreq to macOS, but netdev also uses it on iOS.
+# Pin the compatible libc release until netdev handles that platform change.
+libc = "=0.2.186"
+
+[dev-dependencies]
+iroh-relay.workspace = true

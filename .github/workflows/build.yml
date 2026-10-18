@@ -30,6 +30,26 @@ env:
   NOCTURNE_TEST_DISPLAY_SWITCH: '0'
 
 jobs:
+  broker_verify:
+    name: Test the Linux broker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: 1.99.1
+          components: rustfmt, clippy
+      - name: Check and test Rust services
+        run: |
+          cargo fmt --manifest-path remote/Cargo.toml --all --check
+          cargo clippy --manifest-path remote/Cargo.toml --locked --workspace --all-targets -- -D warnings
+          cargo test --manifest-path remote/Cargo.toml --locked --workspace
+      - name: Build the broker image
+        run: docker build -f remote/Dockerfile -t nocturne-broker .
+
   verify:
     name: Test the iPhone and iPad client
     runs-on: xcode-27
@@ -38,6 +58,11 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: 1.99.1
+          components: rustfmt, clippy
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
@@ -62,13 +87,22 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: 1.99.1
+          components: rustfmt, clippy
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
           gem install --user-install xcodeproj -v 1.27.0 --no-document
           scripts/bootstrap.sh
+      - name: Test the broker and remote transport
+        run: |
+          cargo test --manifest-path remote/Cargo.toml --locked --workspace
+          cargo build --manifest-path remote/Cargo.toml --locked -p nocturne-broker
       - name: Test shared and host services
-        run: env -u NOCTURNE_ENGINE_EXECUTABLE swift test
+        run: env -u NOCTURNE_ENGINE_EXECUTABLE NOCTURNE_BROKER_EXECUTABLE="$PWD/remote/target/debug/nocturne-broker" swift test
       - name: Test microphone driver with sanitizers
         run: bash scripts/test-microphone-driver.sh
       - name: Build the unified macOS server
@@ -76,7 +110,7 @@ jobs:
 
   testflight:
     name: Release iOS to TestFlight
-    needs: [verify, macos_verify]
+    needs: [verify, macos_verify, broker_verify]
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' ||
@@ -90,6 +124,11 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: 1.99.1
+          components: rustfmt, clippy
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
@@ -145,7 +184,7 @@ jobs:
 
   macos_release:
     name: Release signed macOS server
-    needs: macos_verify
+    needs: [macos_verify, broker_verify]
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' ||
@@ -161,6 +200,11 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: 1.99.1
+          components: rustfmt, clippy
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version

@@ -119,9 +119,11 @@ public struct PairingInvitation: Codable, Equatable {
     public let name: String
     public let secret: Data
     public let enrollmentToken: Data?
-    public init(host: String, port: UInt16 = WorkspaceProtocol.port, name: String, secret: Data, enrollmentToken: Data? = nil) throws {
+    public let remoteAccess: RemoteAccess?
+    public init(host: String, port: UInt16 = WorkspaceProtocol.port, name: String, secret: Data, enrollmentToken: Data? = nil, remoteAccess: RemoteAccess? = nil) throws {
         guard !host.isEmpty, !host.contains(where: { $0.isWhitespace }), !host.contains("/"), port > 0, secret.count == 32, enrollmentToken == nil || enrollmentToken?.count == 32 else { throw NocturneError.invalidInvitation }
         self.host = host; self.port = port; self.name = name; self.secret = secret; self.enrollmentToken = enrollmentToken
+        self.remoteAccess = remoteAccess
     }
     public init(url: URL) throws {
         guard url.scheme == "nocturne", url.host == "pair",
@@ -129,21 +131,38 @@ public struct PairingInvitation: Codable, Equatable {
               let items = parts.queryItems else { throw NocturneError.invalidInvitation }
         func value(_ key: String) -> String? { items.first(where: { $0.name == key })?.value }
         guard let host = value("host"), let encoded = value("key"), let secret = Data(base64Encoded: encoded),
-              let portString = value("port"), let port = UInt16(portString), ["1", "2"].contains(value("v")) else { throw NocturneError.invalidInvitation }
+              let portString = value("port"), let port = UInt16(portString), ["1", "2", "3"].contains(value("v")),
+              Set(items.map(\.name)).count == items.count else { throw NocturneError.invalidInvitation }
         let token = value("token").flatMap { Data(base64Encoded: $0) }
-        guard value("v") != "2" || token?.count == 32 else { throw NocturneError.invalidInvitation }
-        try self.init(host: host, port: port, name: value("name") ?? host, secret: secret, enrollmentToken: token)
+        guard value("v") == "1" || token?.count == 32 else { throw NocturneError.invalidInvitation }
+        var remote: RemoteAccess?
+        if value("v") == "3" {
+            guard let broker = value("broker"), let endpoint = value("endpoint") else { throw NocturneError.invalidInvitation }
+            remote = try RemoteAccess(brokerURL: broker, endpointID: endpoint)
+        }
+        try self.init(host: host, port: port, name: value("name") ?? host, secret: secret, enrollmentToken: token, remoteAccess: remote)
+    }
+    private enum CodingKeys: String, CodingKey { case host, port, name, secret, enrollmentToken, remoteAccess }
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(host: fields.decode(String.self, forKey: .host), port: fields.decode(UInt16.self, forKey: .port),
+            name: fields.decode(String.self, forKey: .name), secret: fields.decode(Data.self, forKey: .secret),
+            enrollmentToken: fields.decodeIfPresent(Data.self, forKey: .enrollmentToken), remoteAccess: fields.decodeIfPresent(RemoteAccess.self, forKey: .remoteAccess))
     }
     public var url: URL {
         var parts = URLComponents(); parts.scheme = "nocturne"; parts.host = "pair"
-        parts.queryItems = [URLQueryItem(name: "v", value: enrollmentToken == nil ? "1" : "2"), URLQueryItem(name: "host", value: host),
+        parts.queryItems = [URLQueryItem(name: "v", value: remoteAccess != nil ? "3" : enrollmentToken == nil ? "1" : "2"), URLQueryItem(name: "host", value: host),
             URLQueryItem(name: "port", value: String(port)), URLQueryItem(name: "name", value: name),
             URLQueryItem(name: "key", value: secret.base64EncodedString())]
         if let enrollmentToken { parts.queryItems?.append(URLQueryItem(name: "token", value: enrollmentToken.base64EncodedString())) }
+        if let remoteAccess {
+            parts.queryItems?.append(URLQueryItem(name: "broker", value: remoteAccess.brokerURL))
+            parts.queryItems?.append(URLQueryItem(name: "endpoint", value: remoteAccess.endpointID))
+        }
         return parts.url!
     }
     public func replacingAddress(host: String, port: UInt16? = nil) throws -> PairingInvitation {
-        try PairingInvitation(host: host, port: port ?? self.port, name: name, secret: secret, enrollmentToken: enrollmentToken)
+        try PairingInvitation(host: host, port: port ?? self.port, name: name, secret: secret, enrollmentToken: enrollmentToken, remoteAccess: remoteAccess)
     }
 }
 

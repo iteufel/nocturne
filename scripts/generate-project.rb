@@ -67,6 +67,8 @@ def input_methods(source, filename)
   "#import \"NocturneStreamInput.h\"\n" + source.sub(/\n@end\s*\z/, "\n" + File.read("Sources/Client/Bridge/#{filename}") + "\n@end\n")
 end
 overlay(target, group, 'Stream/Connection.m') do |source|
+  # Loopback is the remote QUIC proxy: retain WAN packet sizing and stream behavior.
+  source = replace_once(source, 'if ([Utils isActiveNetworkVPN]) {', 'if ([Utils isActiveNetworkVPN] || [config.host isEqualToString:@"127.0.0.1"]) {')
   source = replace_once(source, "-(void) terminate\n{", "-(void) terminate { [self nocturneTerminateWithCompletion:nil]; }\n\n-(void)nocturneTerminateWithCompletion:(void (^)(void))completion\n{")
   replace_once(source, "        LiStopConnection();\n        [initLock unlock];", "        LiStopConnection();\n        [initLock unlock];\n        if (completion) dispatch_async(dispatch_get_main_queue(), completion);")
 end

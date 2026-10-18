@@ -9,7 +9,10 @@ let package = Package(
         .library(name: "NocturneHostKit", targets: ["NocturneHostKit"])
     ],
     targets: [
-        .target(name: "NocturneKit", path: "Sources/Shared"),
+        .binaryTarget(name: "NocturneRemote", path: "Vendor/NocturneRemote.xcframework"),
+        .target(name: "NocturneKit", dependencies: ["NocturneRemote"], path: "Sources/Shared",
+            linkerSettings: [.linkedFramework("SystemConfiguration"), .linkedFramework("Security"),
+                .linkedFramework("CoreWLAN", .when(platforms: [.macOS])), .linkedLibrary("resolv")]),
         .target(name: "NocturneFiles", dependencies: ["NocturneKit"], path: "Sources/FileProvider"),
         .target(name: "PTYBridge", path: "Sources/PTYBridge", publicHeadersPath: "include"),
         .target(name: "DisplayBridge", path: "Sources/DisplayBridge", publicHeadersPath: "include",

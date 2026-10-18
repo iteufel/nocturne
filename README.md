@@ -8,7 +8,7 @@ Download the signed and notarized Mac server from [GitHub Releases](https://gith
 Quit any older server, unzip the download, and move **Nocturne Server.app** to Applications.
 GitHub builds, Mac releases, and TestFlight automation are documented in [the release guide](docs/RELEASING.md).
 
-Targets iOS 17+ and macOS 14+ on an Apple Silicon Mac. Build with Xcode 26 or newer (iOS 26/macOS 26 SDKs) and Ruby's `xcodeproj` gem. Development here uses Xcode 27 and iOS 27 simulators.
+Targets iOS 17+ and macOS 14+ on an Apple Silicon Mac. Build with Rust 1.91+ (rustup) and Xcode 26 or newer (iOS 26/macOS 26 SDKs) and Ruby's `xcodeproj` gem. Development here uses Xcode 27 and iOS 27 simulators.
 
 ```sh
 gem install xcodeproj -v 1.27.0
@@ -44,7 +44,7 @@ The Mac product is `.build/XcodeMac/Build/Products/Debug/Nocturne Server.app`; t
 
 Nearby computers are discovered automatically. Selecting an unpaired computer opens QR pairing. New devices must scan a QR code from Nocturne Server; manual PIN entry, address-based pairing, pasted links, and external pairing links are not supported. Already paired computers remain available.
 
-Paired Macs are rediscovered when their IP address changes, including after moving both devices to another local network. Update both apps for workspace discovery by a stable pairing identity; existing QR pairings continue to work without scanning again. The client retries workspace connections while foregrounded and saves the authenticated address for video, terminal, files, and microphone access. Bonjour must be available between the devices; this does not provide access across separate networks or the internet. An interrupted video stream or file transfer must be started again.
+Paired Macs are rediscovered when their IP address changes, including after moving both devices to another local network. Update both apps for workspace discovery by a stable pairing identity; existing QR pairings continue to work without scanning again. The client retries workspace connections while foregrounded and saves the authenticated address for video, terminal, files, and microphone access. For access from other networks, enable **Remote access** in the Mac server settings, enter your hosted broker URL, and scan a new QR code. Nocturne tries local connections first, then uses an encrypted Rust transport that attempts peer-to-peer NAT traversal with relay fallback. See [online broker setup](docs/REMOTE_ACCESS.md). An interrupted video stream or file transfer must be started again.
 
 Selecting a discovered computer requires explicit pairing approval before its library or desktop can open. Cached streaming certificates alone cannot grant access. A new video pairing is saved only after both QR workspace authorization and the streaming handshake succeed. **Forget computer** removes its streaming approval, and forgetting the paired Mac also removes its linked video connection.
 

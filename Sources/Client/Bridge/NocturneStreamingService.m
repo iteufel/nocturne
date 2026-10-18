@@ -112,6 +112,7 @@
 @interface NocturneStreamingService () <DiscoveryCallback>
 @property DiscoveryManager *discovery;
 @property NSMutableDictionary<NSString *, TemporaryHost *> *hosts;
+@property NSMutableDictionary<NSString *, NSString *> *addressOverrides;
 @property NSOperationQueue *operations;
 @property NocturnePairingTrust *pairingTrust;
 @property NocturnePairingAttempt *pairingAttempt;
@@ -139,6 +140,7 @@
         static dispatch_once_t mediaRuntimeOnce;
         dispatch_once(&mediaRuntimeOnce, ^{ SDL_SetMainReady(); });
         _hosts = [NSMutableDictionary dictionary];
+        _addressOverrides = [NSMutableDictionary dictionary];
         _pairingTrust = [[NocturnePairingTrust alloc] initWithService:@"app.nocturne.streaming-approval"];
         _operations = [NSOperationQueue new]; _operations.maxConcurrentOperationCount = 1;
         [CryptoManager generateKeyPairUsingSSL]; [IdManager getUniqueId];
@@ -197,6 +199,9 @@
 - (void)publishHosts {
     NSMutableArray *items = [NSMutableArray array];
     for (TemporaryHost *host in self.hosts.allValues) {
+        if (self.addressOverrides[host.uuid]) {
+            host.activeAddress = self.addressOverrides[host.uuid]; host.state = StateOnline;
+        }
         [items addObject:@{@"id":host.uuid ?: @"", @"name":host.name ?: @"Computer", @"address":host.activeAddress ?: host.localAddress ?: @"",
                           @"online":@(host.state == StateOnline), @"paired":@(host.pairState == PairStatePaired && [self hasApprovalForHost:host]), @"runningApp":host.currentGame ?: @"0"}];
     }
@@ -212,8 +217,27 @@
     // Retain the UUID, pinned certificates, and explicit pairing approval.
     TemporaryHost *host = self.hosts[hostID];
     if (!host || !address.length) return;
-    host.address = host.localAddress = host.activeAddress = address;
-    [[DataManager new] updateHost:host];
+    if ([address isEqualToString:@"127.0.0.1"]) {
+        // The tunnel address is valid only in this app process. Preserve the real LAN address.
+        self.addressOverrides[hostID] = address; host.activeAddress = address;
+        [self.discovery pauseDiscoveryForHost:host];
+    } else {
+        BOOL wasRemote = self.addressOverrides[hostID] != nil;
+        [self.addressOverrides removeObjectForKey:hostID];
+        host.address = host.localAddress = host.activeAddress = address;
+        if (wasRemote) [self.discovery resumeDiscoveryForHost:host];
+        [[DataManager new] updateHost:host];
+    }
+    [self publishHosts];
+}
+- (void)clearTemporaryAddress:(NSString *)hostID {
+    if (!self.addressOverrides[hostID]) return;
+    [self.addressOverrides removeObjectForKey:hostID];
+    TemporaryHost *host = self.hosts[hostID];
+    if (host) {
+        host.activeAddress = host.address ?: host.localAddress; host.state = StateOffline;
+        [self.discovery resumeDiscoveryForHost:host];
+    }
     [self publishHosts];
 }
 - (void)addAddress:(NSString *)address {
@@ -232,10 +256,14 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             // Preserve the saved certificate and pairing state when re-adding an existing host.
             TemporaryHost *host = self.hosts[resolved.uuid] ?: resolved;
-            host.address = host.activeAddress = address; host.localAddress = resolved.localAddress;
+            host.activeAddress = address; host.localAddress = resolved.localAddress;
+            if ([address isEqualToString:@"127.0.0.1"]) {
+                host.address = resolved.localAddress; self.addressOverrides[resolved.uuid] = address;
+            } else { host.address = address; [self.addressOverrides removeObjectForKey:resolved.uuid]; }
             host.httpsPort = resolved.httpsPort; host.state = StateOnline; host.name = resolved.name;
             self.hosts[host.uuid] = host;
             [self.discovery addHostToDiscovery:host]; [[DataManager new] updateHost:host]; [self publishHosts];
+            if (self.addressOverrides[host.uuid]) [self.discovery pauseDiscoveryForHost:host];
             if (self.pairingFinished) self.pairingFinished();
             if (self.addressDiscovered) self.addressDiscovered(host.uuid, address);
         });
@@ -243,6 +271,7 @@
 }
 - (void)selectHost:(NSString *)hostID {
     TemporaryHost *host = self.hosts[hostID]; if (!host) return;
+    if (self.addressOverrides[hostID]) host.activeAddress = self.addressOverrides[hostID];
     BOOL qrAuthorized = self.canPairHost && self.canPairHost(hostID);
     if (![self hasApprovalForHost:host] && !qrAuthorized) { [self requireQRPairing]; return; }
     NocturnePairingAttempt *attempt = [NocturnePairingAttempt new];
@@ -250,17 +279,19 @@
     attempt.clientCertificate = [CryptoManager readCertFromFile];
     attempt.qrAuthorized = qrAuthorized;
     self.pairingAttempt = attempt;
+    NSString *connectionAddress = [host.activeAddress copy];
+    BOOL remote = self.addressOverrides[hostID] != nil;
     [self.operations addOperationWithBlock:^{
         if (self.pairingAttempt != attempt) return;
         [self.discovery pauseDiscoveryForHost:host];
         // Cached transport credentials and discovery's PairStatus are not consent.
         // Without a receipt, QR authorization is required for a fresh handshake.
-        HttpManager *manager = [[HttpManager alloc] initWithAddress:host.activeAddress httpsPort:host.httpsPort
+        HttpManager *manager = [[HttpManager alloc] initWithAddress:connectionAddress httpsPort:host.httpsPort
                                                        serverCert:[self hasApprovalForHost:host] ? host.serverCert : nil];
         ServerInfoResponse *info = [ServerInfoResponse new];
         [manager executeRequestSynchronously:[HttpRequest requestForResponse:info withUrlRequest:[manager newServerInfoRequest:NO]
                                                              fallbackError:401 fallbackRequest:[manager newHttpServerInfoRequest]]];
-        [self.discovery resumeDiscoveryForHost:host];
+        if (!remote) [self.discovery resumeDiscoveryForHost:host];
         if (self.pairingAttempt != attempt) return;
         if (![info isStatusOk]) { [attempt pairFailed:info.statusMessage ?: @"Cannot reach this computer. Check that Nocturne Server is running."]; return; }
         if (![[[info getStringTag:TAG_UNIQUE_ID] trim] isEqualToString:attempt.hostID]) {
@@ -384,6 +415,7 @@
         host.serverCert = nil; host.pairState = PairStateUnpaired; host.appList = [NSSet set];
         [self.discovery removeHostFromDiscovery:host]; [[DataManager new] removeHost:host];
     }
+    [self.addressOverrides removeObjectForKey:hostID];
     [self.hosts removeObjectForKey:hostID]; [self publishHosts];
     return YES;
 }
@@ -402,7 +434,7 @@
         useFramePacing:pacing enableHdr:hdr btMouseSupport:YES absoluteTouchMode:[settings[@"absolute"] boolValue]
         statsOverlay:[settings[@"statistics"] boolValue]];
     StreamConfiguration *config = [StreamConfiguration new];
-    config.host = host.activeAddress; config.httpsPort = host.httpsPort; config.serverCert = host.serverCert;
+    config.host = self.addressOverrides[hostID] ?: host.activeAddress; config.httpsPort = host.httpsPort; config.serverCert = host.serverCert;
     config.appID = chosen.id; config.appName = chosen.name; config.serverCodecModeSupport = host.serverCodecModeSupport;
     config.width = width; config.height = height; config.frameRate = MIN(fps, (int)UIScreen.mainScreen.maximumFramesPerSecond);
     config.bitRate = bitrate; config.useFramePacing = pacing; config.multiController = multi;

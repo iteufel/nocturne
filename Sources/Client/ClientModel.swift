@@ -138,6 +138,7 @@ final class ClientModel: ObservableObject {
             Task { @MainActor in
                 guard let self, self.server.state != .connected else { return }
                 self.microphone.stop(); self.hostApps.reset()
+                if let id = self.linkedHostID { self.engine.clearTemporaryAddress(id) }
             }
         }
     }
@@ -332,10 +333,11 @@ final class ClientModel: ObservableObject {
             updateFilesLocation(connected)
             showAdd = false
             if server.capabilities.contains("streaming") {
-                pendingStreamAddress = connected.host; busy = true
+                let address = server.streamingAddress ?? connected.host
+                pendingStreamAddress = address; busy = true
                 try await Task.sleep(nanoseconds: 350_000_000)
                 guard serverPairingGeneration == generation else { return }
-                engine.addAddress(connected.host)
+                engine.addAddress(address)
             }
         } catch { if serverPairingGeneration == generation { self.error = error.localizedDescription } }
     }
@@ -354,13 +356,13 @@ final class ClientModel: ObservableObject {
                 var invitation = try JSONDecoder().decode(PairingInvitation.self, from: data)
                 // Also recover older servers (without the workspace Bonjour ID) using
                 // the already-paired video host. TLS still verifies the workspace key.
-                if let host = self.hosts.first(where: { $0.id == self.linkedHostID && $0.online && $0.paired }), !host.address.isEmpty {
+                if let host = self.hosts.first(where: { $0.id == self.linkedHostID && $0.online && $0.paired }), !host.address.isEmpty, host.address != "127.0.0.1" {
                     invitation = try invitation.replacingAddress(host: host.address)
                 }
                 try await self.server.connect(invitation, rediscover: true)
                 try Task.checkCancellation()
                 guard self.serverPairingGeneration == attempt, let connected = self.server.connectedInvitation else { return }
-                if let id = self.linkedHostID { self.engine.updateHostAddress(id, address: connected.host) }
+                if let id = self.linkedHostID { self.engine.updateHostAddress(id, address: self.server.streamingAddress ?? connected.host) }
                 try SecureStore.write(JSONEncoder().encode(connected), account: "server")
                 self.updateFilesLocation(connected)
             }
