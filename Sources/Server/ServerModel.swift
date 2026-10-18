@@ -28,6 +28,12 @@ final class ServerModel: ObservableObject {
     @Published var display = UserDefaults.standard.string(forKey: "streamDisplay") ?? "" {
         didSet { UserDefaults.standard.set(display, forKey: "streamDisplay") }
     }
+    @Published var disablePhysicalDisplays = UserDefaults.standard.bool(forKey: "disablePhysicalDisplays") {
+        didSet { UserDefaults.standard.set(disablePhysicalDisplays, forKey: "disablePhysicalDisplays") }
+    }
+    @Published private(set) var displayStatus = "Matches your device when streaming"
+    @Published private(set) var displayActive = false
+    let displays = DisplaySessionManager()
     let addresses: [String]
     let name = Host.current().localizedName ?? "My Mac"
     let engine: EmbeddedStreamingEngine
@@ -54,9 +60,18 @@ final class ServerModel: ObservableObject {
             streamDevices = try engine.savedDevices(); publishDevices()
         } catch { devicesError = error.localizedDescription }
         engine.onUnexpectedExit = { [weak self] message in self?.stop(); self?.error = message }
+        displays.onChange = { [weak self] in
+            guard let self else { return }
+            self.displayActive = self.displays.isActive
+            if let size = self.displays.size {
+                self.displayStatus = "\(size.width) × \(size.height) · \(self.displays.deviceName ?? "Connected device")"
+            } else { self.displayStatus = "Matches your device when streaming" }
+            if let error = self.displays.lastError { self.error = error }
+        }
     }
     func start() {
         guard !active else { return }
+        guard DisplaySessionManager.isSessionAvailable else { error = "Unlock this Mac before starting the server."; return }
         starting = true; status = "Starting"; error = nil
         let epoch = UUID(); generation = epoch
         startTask = Task { [self] in
@@ -68,6 +83,9 @@ final class ServerModel: ObservableObject {
                 else { key = try SecureStore.randomKey(); try SecureStore.write(key, account: "server-key") }
                 guard key.count == 32 else { throw NocturneError.invalidInvitation }
                 secret = key
+                if display.isEmpty { displays.disablePhysicalDisplays = disablePhysicalDisplays; try await displays.start() }
+                try Task.checkCancellation()
+                guard generation == epoch else { return }
                 try await engine.start(executable: executable, name: name, display: display)
                 try Task.checkCancellation()
                 guard generation == epoch else { return }
@@ -75,6 +93,18 @@ final class ServerModel: ObservableObject {
                 guard generation == epoch, !Task.isCancelled else { return }
                 streamDevices = savedDevices; publishDevices()
                 let host = try WorkspaceServer(folder: sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: terminalEnabled, files: filesEnabled))
+                if display.isEmpty {
+                    host.displayCommand = { [weak self] packet, connection, name, completion in
+                        Task { @MainActor in
+                            guard let self, self.generation == epoch, self.running else { completion(packet.reply(error: NocturneError.disconnected.localizedDescription)); return }
+                            do { completion(try await self.displays.handle(packet, connection: connection, name: name)) }
+                            catch { completion(packet.reply(error: error.localizedDescription)) }
+                        }
+                    }
+                    host.displayDisconnected = { [weak self] connection in
+                        Task { @MainActor in guard self?.generation == epoch else { return }; self?.displays.disconnected(connection) }
+                    }
+                }
                 host.pairStream = { [weak self] pin, name, address, deviceID, completion in
                     Task { @MainActor in
                         guard let self, self.running, self.generation == epoch, self.removingDevice != deviceID, !self.resettingPairing,
@@ -106,6 +136,7 @@ final class ServerModel: ObservableObject {
                 pollTask = Task { [weak self] in
                     while !Task.isCancelled {
                         guard let self, self.generation == epoch else { return }
+                        self.displays.expire()
                         if let requests = try? await self.engine.pendingPairings(), self.generation == epoch { self.pendingPairings = requests }
                         await self.refreshDevices()
                         do { try await Task.sleep(nanoseconds: 1_500_000_000) } catch { return }
@@ -122,6 +153,7 @@ final class ServerModel: ObservableObject {
         deviceRevision = UUID()
         pairingTasks.values.forEach { $0.cancel() }; pairingTasks.removeAll()
         server?.onStatus = nil; server?.onDevices = nil; server?.stop(); server = nil; engine.stop()
+        displays.stop()
         deviceStore?.cancelInvitation(); workspaceConnections = []; publishDevices()
         running = false; starting = false; status = "Stopped"; connections = 0
         invitation = nil; showPairing = false; pairWhenReady = false; pendingPairings = []

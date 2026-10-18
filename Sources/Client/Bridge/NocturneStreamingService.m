@@ -1,5 +1,6 @@
 #import "NocturneStreamingService.h"
 #import "NocturnePairingTrust.h"
+#import "NocturneStreamLifecycle.h"
 #import "DiscoveryManager.h"
 #import "DataManager.h"
 #import "PairManager.h"
@@ -18,6 +19,7 @@
 
 @interface StreamFrameViewController (DarkLifecycle)
 - (void)returnToMainFrame;
+- (void)nocturneStopWithCompletion:(void (^)(void))completion;
 @end
 
 @interface MDStreamController : StreamFrameViewController
@@ -27,7 +29,9 @@
 - (void)shutdown;
 @end
 @implementation MDStreamController
-- (void)returnToMainFrame { [super returnToMainFrame]; if (self.onExit) self.onExit(); }
+- (void)returnToMainFrame { if (!self.cleanedUp && self.onExit) self.onExit(); }
+- (void)launchFailed:(NSString *)message { if (!self.cleanedUp) [super launchFailed:message]; }
+- (void)connectionTerminated:(int)errorCode { if (!self.cleanedUp) [super connectionTerminated:errorCode]; }
 - (void)shutdown {
     if (self.cleanedUp) return;
     self.cleanedUp = YES;
@@ -323,4 +327,9 @@
     return controller;
 }
 - (void)stopController:(UIViewController *)controller { if ([controller isKindOfClass:MDStreamController.class]) [(MDStreamController *)controller shutdown]; }
+- (void)stopController:(UIViewController *)controller completion:(void (^)(void))completion {
+    [self stopController:controller];
+    if ([controller isKindOfClass:MDStreamController.class]) [(MDStreamController *)controller nocturneStopWithCompletion:completion];
+    else completion();
+}
 @end

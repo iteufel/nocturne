@@ -22,11 +22,22 @@ struct StreamingApp: Identifiable {
     }
     var icon: String { name.lowercased().contains("desktop") ? "macwindow" : "gamecontroller" }
 }
-struct StreamSession: Identifiable {
+@MainActor
+final class StreamSession: ObservableObject, Identifiable {
     let id = UUID()
     let host: StreamingHost
     let app: StreamingApp
-    let controller: UIViewController
+    let preferences: StreamPreferences
+    @Published var controller: UIViewController?
+    @Published var status = "Preparing your display…"
+    @Published var size: StreamDisplaySize?
+    var desiredSize: StreamDisplaySize?
+    var reconfigure: Task<Void, Never>?
+    var heartbeat: Task<Void, Never>?
+    var hasDisplayLease = false
+    init(host: StreamingHost, app: StreamingApp, preferences: StreamPreferences) {
+        self.host = host; self.app = app; self.preferences = preferences
+    }
 }
 enum ClientPage: String, CaseIterable, Identifiable {
     case computers = "Computers", terminal = "Terminal", files = "Files", settings = "Settings"
@@ -64,6 +75,7 @@ final class ClientModel: ObservableObject {
     private var pendingStreamAddress: String?
     private var linkedHostID = UserDefaults.standard.string(forKey: "serverHostID")
     private var pendingStream: Task<Void, Never>?
+    private var closingStream: Task<Void, Never>?
     private var serverPairingGeneration = UUID()
     private var inputObservers: [NSObjectProtocol] = []
     init() {
@@ -115,6 +127,7 @@ final class ClientModel: ObservableObject {
         }
     }
     func suspend() {
+        endStream()
         engine.pause()
         // The Mac retains the PTYs. Only the transport belongs to this scene.
         server.disconnect()
@@ -135,9 +148,6 @@ final class ClientModel: ObservableObject {
     func stream(_ app: StreamingApp) {
         guard session == nil, pendingStream == nil, let host = selectedHost else { return }
         let p = preferences
-        let values: [String: Any] = ["width":p.dimensions.width, "height":p.dimensions.height, "fps":p.frameRate,
-            "bitrate":p.bitrate, "hdr":p.hdr, "pacing":p.framePacing, "touch":p.touchControls,
-            "absolute":p.absolutePointer, "statistics":p.statistics, "multi":p.multiController]
         showLibrary = false
         // Avoid presenting a second controller during the sheet's dismissal transition.
         // Check approval at launch, after the delay, so forgetting cannot race presentation.
@@ -145,16 +155,103 @@ final class ClientModel: ObservableObject {
             do { try await Task.sleep(nanoseconds: 350_000_000) } catch { return }
             defer { self.pendingStream = nil }
             guard self.selectedHost?.id == host.id else { return }
-            guard let controller = self.engine.streamHost(host.id, app: app.id, settings: values, onExit: { [weak self] in self?.endStream() }) else {
-                self.error = "Pair with this computer again before starting a stream."; return
-            }
-            self.session = StreamSession(host: host, app: app, controller: controller)
+            self.session = StreamSession(host: host, app: app, preferences: p)
         }
+    }
+    func streamViewport(_ size: CGSize, scale: CGFloat, session current: StreamSession) {
+        guard session === current else { return }
+        let p = current.preferences
+        let fps = min(p.frameRate, UIScreen.main.maximumFramesPerSecond >= 120 ? 120 : 60)
+        let requested = p.resolution == "Match device"
+            ? StreamDisplaySize.matching(width: size.width, height: size.height, scale: scale, frameRate: fps)
+            : StreamDisplaySize(width: p.dimensions.width, height: p.dimensions.height, frameRate: fps)
+        guard let requested, requested.isValid, requested != current.desiredSize else { return }
+        current.desiredSize = requested
+        if current.reconfigure == nil {
+            current.reconfigure = Task { [weak self] in await self?.configureStream(current) }
+        }
+    }
+    private func configureStream(_ current: StreamSession) async {
+        defer { current.reconfigure = nil }
+        do {
+            guard session === current, !Task.isCancelled else { return }
+            await closingStream?.value
+            while session === current, let requested = current.desiredSize {
+                // Coalesce rotation, Split View, Stage Manager, and tool-panel layout events.
+                try await Task.sleep(nanoseconds: 600_000_000)
+                guard session === current else { return }
+                if requested != current.desiredSize { continue }
+                if current.size == requested, current.controller != nil { return }
+                current.status = current.size == nil ? "Preparing your display…" : "Matching your display…"
+                if let old = current.controller {
+                    current.controller = nil
+                    await stopVideo(old)
+                }
+                try Task.checkCancellation()
+                guard session === current else { return }
+                if current.host.id == linkedHostID {
+                    if server.state != .connected { await reconnectServer(reportError: false) }
+                    guard server.state == .connected else { throw NocturneError.disconnected }
+                    if server.capabilities.contains("display") {
+                        var packet = Packet(.displayPrepare); packet.sessionID = current.id.uuidString; packet.display = requested
+                        current.hasDisplayLease = true
+                        let reply = try await server.request(packet)
+                        guard reply.display == requested, reply.sessionID == current.id.uuidString else { throw NocturneError.invalidFrame }
+                        if current.heartbeat == nil { startDisplayHeartbeat(current) }
+                    }
+                }
+                try Task.checkCancellation()
+                guard session === current else { return }
+                let p = current.preferences
+                let values: [String: Any] = ["width":requested.width, "height":requested.height, "fps":requested.frameRate,
+                    "bitrate":p.bitrate, "hdr":p.hdr, "pacing":p.framePacing, "touch":p.touchControls,
+                    "absolute":p.absolutePointer, "statistics":p.statistics, "multi":p.multiController]
+                guard let controller = engine.streamHost(current.host.id, app: current.app.id, settings: values, onExit: { [weak self, weak current] in
+                    guard let self, let current, self.session === current else { return }; self.endStream()
+                }) else { throw NocturneError.remote("Pair with this computer again before starting a stream.") }
+                current.size = requested; current.controller = controller
+                if current.desiredSize == requested { return }
+            }
+        } catch {
+            guard session === current else { return }
+            if !(error is CancellationError) { self.error = error.localizedDescription }
+            endStream()
+        }
+    }
+    private func startDisplayHeartbeat(_ current: StreamSession) {
+        current.heartbeat = Task { [weak self, weak current] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                    guard let self, let current, self.session === current else { return }
+                    var ping = Packet(.displayHeartbeat); ping.sessionID = current.id.uuidString
+                    _ = try await self.server.request(ping)
+                } catch {
+                    guard !Task.isCancelled, let self, let current, self.session === current else { return }
+                    self.error = "The display connection was lost. Reconnect to start a new stream."
+                    self.endStream(); return
+                }
+            }
+        }
+    }
+    private func stopVideo(_ controller: UIViewController) async {
+        await withCheckedContinuation { continuation in engine.stopController(controller, completion: { continuation.resume() }) }
     }
     func endStream() {
         pendingStream?.cancel(); pendingStream = nil
-        if let session { engine.stopController(session.controller) }
-        session = nil; engine.start()
+        guard let current = session else { return }
+        session = nil; current.reconfigure?.cancel(); current.heartbeat?.cancel(); current.heartbeat = nil
+        if let controller = current.controller { engine.stopController(controller) }
+        closingStream = Task { [weak self] in
+            guard let self else { return }
+            await current.reconfigure?.value
+            if let controller = current.controller { await self.stopVideo(controller); current.controller = nil }
+            if current.hasDisplayLease, self.server.state == .connected {
+                var release = Packet(.displayRelease); release.sessionID = current.id.uuidString
+                _ = try? await self.server.request(release)
+            }
+            if UIApplication.shared.applicationState == .active, self.session == nil { self.engine.start() }
+        }
     }
     func receiveInvitation(_ url: URL) {
         guard url.scheme == "nocturne" else { return }

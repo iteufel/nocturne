@@ -126,15 +126,9 @@ struct ServerView: View {
             MoonPanel {
                 VStack(alignment: .leading, spacing: 14) {
                     Label("Stream display", systemImage: "display").font(.headline)
-                    Picker("Display", selection: $model.display) {
-                        Text("Automatic").tag("")
-                        ForEach(NSScreen.screens, id: \.localizedName) { screen in
-                            if let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
-                                Text(screen.localizedName).tag(number.stringValue)
-                            }
-                        }
-                    }.disabled(model.active)
-                    Text("Stop the server to change the display. Resolution and frame rate are chosen on your device.").font(.caption).foregroundStyle(MoonStyle.secondary)
+                    Text(model.display.isEmpty ? "Nocturne Display" : "Connected Mac display").font(.title3)
+                    Text(model.display.isEmpty ? model.displayStatus : "Uses the selected display’s desktop dimensions.").font(.caption).foregroundStyle(MoonStyle.secondary)
+                    SettingsLink { Label("Display settings…", systemImage: "slider.horizontal.3") }
                 }
             }
             MoonPanel {

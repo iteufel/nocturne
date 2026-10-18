@@ -3,7 +3,8 @@ import NocturneKit
 
 struct StreamWorkspace: View {
     @ObservedObject var model: ClientModel
-    let session: StreamSession
+    @ObservedObject var session: StreamSession
+    @Environment(\.displayScale) private var displayScale
     @State private var showTools = false
     @State private var tool = 0
     var body: some View {
@@ -12,11 +13,18 @@ struct StreamWorkspace: View {
             // would cover almost all of their short video viewport.
             let wide = geometry.size.width >= 900 || (geometry.size.width >= 700 && geometry.size.width > geometry.size.height)
             let toolHeight = min(340, geometry.size.height / 2)
+            let viewport = CGSize(width: wide && showTools ? geometry.size.width - 340 : geometry.size.width,
+                height: !wide && showTools ? geometry.size.height - toolHeight : geometry.size.height)
             ZStack(alignment: .topLeading) {
                 Color.black.ignoresSafeArea()
-                StreamSurface(controller: session.controller, engine: model.engine)
-                    .frame(width: wide && showTools ? geometry.size.width - 340 : geometry.size.width,
-                           height: !wide && showTools ? geometry.size.height - toolHeight : geometry.size.height)
+                Group {
+                    if let controller = session.controller {
+                        StreamSurface(controller: controller, engine: model.engine).id(ObjectIdentifier(controller))
+                    } else {
+                        VStack(spacing: 14) { ProgressView(); Text(session.status).font(.callout).foregroundStyle(.secondary) }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }.frame(width: viewport.width, height: viewport.height)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if showTools {
                     VStack(spacing: 0) {
@@ -35,6 +43,7 @@ struct StreamWorkspace: View {
                 HStack(spacing: 8) {
                     Menu {
                         Text(session.app.name + " · " + session.host.name)
+                        if let size = session.size { Text("\(size.width) × \(size.height) · \(size.frameRate) fps") }
                         Button("Terminal", systemImage: "terminal") { tool = 0; showTools = true }
                         Button("Files", systemImage: "folder") { tool = 1; showTools = true }
                         Button(showTools ? "Hide tools" : "Show tools", systemImage: "sidebar.right") { showTools.toggle() }
@@ -43,7 +52,8 @@ struct StreamWorkspace: View {
                     } label: { Image(systemName: "moon.fill").font(.system(size: 17)).frame(width: 44, height: 44) }
                         .nocturneGlass(in: Circle(), interactive: true).accessibilityLabel("Stream controls")
                 }.padding(.leading, geometry.safeAreaInsets.leading + 10).padding(.top, geometry.safeAreaInsets.top + 8)
-            }
+            }.onChange(of: viewport, initial: true) { _, size in model.streamViewport(size, scale: displayScale, session: session) }
+                .onChange(of: displayScale) { _, scale in model.streamViewport(viewport, scale: scale, session: session) }
         }.ignoresSafeArea().tint(MoonStyle.accent).preferredColorScheme(.dark).persistentSystemOverlays(.hidden)
     }
 }

@@ -16,7 +16,11 @@ struct ClientSettingsView: View {
                 }
             }.listRowBackground(MoonStyle.surface)
             Section("Picture & sound") {
-                Picker("Resolution", selection: $model.preferences.resolution) { ForEach(["720p", "1080p", "1440p", "4K"], id: \.self) { Text($0) } }
+                Picker("Resolution", selection: $model.preferences.resolution) { ForEach(["Match device", "720p", "1080p", "1440p", "4K"], id: \.self) { Text($0) } }
+                if model.preferences.resolution == "Match device" {
+                    Text("Matches your display and follows rotation and window resizing. Nocturne Server adjusts the Mac desktop too. Video briefly reconnects when the size changes.")
+                        .font(.caption).foregroundStyle(MoonStyle.secondary)
+                }
                 Picker("Frame rate", selection: $model.preferences.frameRate) { Text("30 fps").tag(30); Text("60 fps").tag(60); Text("120 fps").tag(120) }
                 VStack(alignment: .leading, spacing: 10) {
                     HStack { Text("Bitrate"); Spacer(); Text("\(model.preferences.bitrate) Mbps").monospacedDigit().foregroundStyle(MoonStyle.secondary) }

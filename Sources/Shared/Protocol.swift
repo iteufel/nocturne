@@ -1,7 +1,7 @@
 import Foundation
 
 public enum WorkspaceProtocol {
-    public static let version = 3
+    public static let version = 4
     public static let port: UInt16 = 48555
     public static let service = "_nocturne._tcp"
     public static let maximumFrame = 1_048_576
@@ -13,6 +13,7 @@ public enum WorkspaceProtocol {
 public enum Operation: String, Codable {
     case hello, authenticate, ping, pairStream, list, read, uploadBegin, uploadChunk, uploadCommit, uploadCancel
     case terminalList, terminalAttach, terminalOpen, terminalInput, terminalResize, terminalClose, terminalOutput, terminalExit, terminalClosed
+    case displayPrepare, displayHeartbeat, displayRelease
 }
 
 public struct RemoteTerminal: Codable, Identifiable, Equatable {
@@ -61,6 +62,7 @@ public struct Packet: Codable {
     public var certificate: Data? = nil
     public var signature: Data? = nil
     public var enrollmentToken: Data? = nil
+    public var display: StreamDisplaySize? = nil
     public init(_ operation: Operation, id: String = UUID().uuidString) { self.operation = operation; self.id = id }
     public func reply(error: String? = nil) -> Packet {
         var result = Packet(operation, id: id); result.error = error; return result
@@ -133,7 +135,7 @@ public struct PairingInvitation: Codable, Equatable {
 }
 
 public struct StreamPreferences: Codable, Equatable {
-    public var resolution = "1080p"
+    public var resolution = "Match device"
     public var frameRate = 60
     public var bitrate = 20
     public var hdr = false

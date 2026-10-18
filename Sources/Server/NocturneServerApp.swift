@@ -1,6 +1,13 @@
 import SwiftUI
+import NocturneHostKit
 
 @main
+enum NocturneServerMain {
+    @MainActor static func main() {
+        if !DisplayControlProcess.runIfRequested() { NocturneServerApp.main() }
+    }
+}
+
 struct NocturneServerApp: App {
     @NSApplicationDelegateAdaptor(NocturneServerDelegate.self) private var delegate
     @AppStorage("nocturne.appearance") private var appearance = NocturneAppearance.system
@@ -10,7 +17,7 @@ struct NocturneServerApp: App {
                 .frame(minWidth: 780, minHeight: 620)
         }.defaultSize(width: 1_040, height: 760).windowToolbarStyle(.unified)
         Settings {
-            ServerSettingsView().tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
+            ServerSettingsView(model: delegate.model).tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
         }
         MenuBarExtra("Nocturne Server", systemImage: "moon.fill") {
             ServerMenu(model: delegate.model)
@@ -33,6 +40,7 @@ struct ServerMenu: View {
         Button("Open Nocturne Server") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
         Button(model.active ? "Stop server" : "Start server") { model.active ? model.stop() : model.start() }
         Button("Pair a device") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true); model.pair() }
+        Button("Restore Mac displays") { model.displays.restore() }.disabled(!model.displayActive && model.displays.lastError == nil)
         Divider()
         SettingsLink { Text("Settings…") }
         Divider()
@@ -41,9 +49,30 @@ struct ServerMenu: View {
 }
 
 struct ServerSettingsView: View {
+    @ObservedObject var model: ServerModel
     @AppStorage("nocturne.appearance") private var appearance = NocturneAppearance.system
     var body: some View {
         Form {
+            Section {
+                Picker("Stream display", selection: $model.display) {
+                    Text("Nocturne Display · Match device").tag("")
+                    ForEach(NSScreen.screens.filter { $0.localizedName != "Nocturne Display" }, id: \.self) { screen in
+                        if let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+                            Text(screen.localizedName).tag(number.stringValue)
+                        }
+                    }
+                }.disabled(model.active)
+                Toggle("Turn off connected Mac displays", isOn: $model.disablePhysicalDisplays)
+                    .disabled(model.active || !model.display.isEmpty || !DisplaySessionManager.canDisableDisplays)
+                if model.displayActive {
+                    LabeledContent("Streaming", value: model.displayStatus)
+                    Button("Restore Mac displays") { model.displays.restore() }
+                }
+            } header: {
+                Label("Displays", systemImage: "display.2")
+            } footer: {
+                Text("Nocturne Display works without a monitor. Turning off connected displays brings their windows onto the streamed desktop. Displays return when the stream disconnects. Stop the server to change these settings.")
+            }
             Section {
                 Picker("Appearance", selection: $appearance) {
                     ForEach(NocturneAppearance.allCases) { style in Text(style.title).tag(style) }
@@ -54,6 +83,6 @@ struct ServerSettingsView: View {
                 Text("System follows your Mac’s Light or Dark appearance.")
             }
         }.formStyle(.grouped).scrollContentBackground(.hidden)
-            .background { NocturneBackdrop() }.frame(width: 480, height: 200)
+            .background { NocturneBackdrop() }.frame(width: 540, height: 460)
     }
 }

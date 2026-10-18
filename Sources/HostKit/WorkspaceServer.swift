@@ -16,6 +16,8 @@ public struct WorkspaceDeviceConnection: Identifiable, Equatable {
 
 public final class WorkspaceServer {
     public var pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?
+    public var displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?
+    public var displayDisconnected: ((UUID) -> Void)?
     public var onDevices: (([WorkspaceDeviceConnection]) -> Void)?
     public var onStatus: ((String, Int) -> Void)?
     public let folder: SharedFolder
@@ -40,7 +42,7 @@ public final class WorkspaceServer {
             guard let self = self, self.listener != nil, self.sessions.count < 8 else { connection.cancel(); return }
             let id = UUID()
             let channel = SecureChannel(connection: connection, queue: self.queue)
-            let session = HostSession(channel: channel, terminals: self.terminals, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, pairStream: self.pairStream)
+            let session = HostSession(channel: channel, terminals: self.terminals, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected)
             self.sessions[id] = session
             session.onClose = { [weak self] in self?.sessions.removeValue(forKey: id); self?.publish("Ready") }
             session.onAuthenticated = { [weak self] in self?.publish("Connected") }
@@ -102,8 +104,11 @@ private final class HostSession {
     private var closed = false
     private var pairing = false
     private let pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?
-    init(channel: SecureChannel, terminals: TerminalRegistry, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?) {
+    private let displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?
+    private let displayDisconnected: ((UUID) -> Void)?
+    init(channel: SecureChannel, terminals: TerminalRegistry, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?, displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?, displayDisconnected: ((UUID) -> Void)?) {
         self.pairStream = pairStream; self.terminals = terminals
+        self.displayCommand = displayCommand; self.displayDisconnected = displayDisconnected
         self.channel = channel; self.devices = devices; self.folder = folder; self.name = name; self.permissions = permissions
         channel.onPacket = { [weak self] packet in self?.handle(packet) }
         channel.onClose = { [weak self] _ in self?.closed = true; self?.device = nil; self?.cleanup(); self?.onClose?() }
@@ -115,6 +120,7 @@ private final class HostSession {
     func close() { closed = true; device = nil; cleanup(); channel.cancel() }
     private func cleanup() {
         transfers.removeAll(); terminals.detach(connectionID)
+        displayDisconnected?(connectionID)
     }
     private func handle(_ packet: Packet) {
         do {
@@ -137,8 +143,19 @@ private final class HostSession {
                 device = WorkspaceDeviceConnection(id: id, name: authorized.name, address: "\(address)")
                 result.version = WorkspaceProtocol.version; result.name = name
                 onAuthenticated?()
-                result.capabilities = [permissions.files ? "files" : nil, permissions.terminal ? "terminal" : nil, pairStream != nil ? "streaming" : nil].compactMap { $0 }
+                result.capabilities = [permissions.files ? "files" : nil, permissions.terminal ? "terminal" : nil, pairStream != nil ? "streaming" : nil, displayCommand != nil ? "display" : nil].compactMap { $0 }
             case .ping: break
+            case .displayPrepare, .displayHeartbeat, .displayRelease:
+                guard let displayCommand, let device else { throw NocturneError.permissionDenied }
+                let connection = connectionID, disconnected = displayDisconnected
+                displayCommand(packet, connection, device.name) { [weak self] reply in
+                    guard let self else { disconnected?(connection); return }
+                    self.channel.queue.async {
+                        guard !self.closed else { disconnected?(connection); return }
+                        self.channel.send(reply)
+                    }
+                }
+                return
             case .pairStream:
                 guard let pairStream, !pairing, let data = packet.data, data.count == 4,
                       let pin = String(data: data, encoding: .utf8), pin.utf8.allSatisfy({ (48...57).contains($0) }),

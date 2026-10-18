@@ -40,6 +40,36 @@ target.source_build_phase.files.to_a.each do |build|
   build.remove_from_project if build.file_ref&.path&.end_with?('OnScreenControls.m')
 end
 target.source_build_phase.add_file_reference(group.new_file('../../.build/EngineOverrides/OnScreenControls.m'))
+# Deterministic lifecycle overlays provide a completion after LiStopConnection.
+# Resizing must never start a new global decoder while the old one is stopping.
+def overlay(client_target, client_group, filename)
+  source = File.read("Vendor/moonlight-ios/Limelight/#{filename}")
+  revised = yield(source)
+  name = File.basename(filename)
+  File.write(".build/EngineOverrides/#{name}", "#import \"NocturneStreamLifecycle.h\"\n" + revised)
+  client_target.source_build_phase.files.to_a.each do |build|
+    build.remove_from_project if build.file_ref&.path&.end_with?(name)
+  end
+  client_target.source_build_phase.add_file_reference(client_group.new_file("../../.build/EngineOverrides/#{name}"))
+end
+def replace_once(source, before, after)
+  raise 'Upstream streaming lifecycle changed; review the overlay.' unless source.scan(before).length == 1
+  source.sub(before, after)
+end
+overlay(target, group, 'Stream/Connection.m') do |source|
+  source = replace_once(source, "-(void) terminate\n{", "-(void) terminate { [self nocturneTerminateWithCompletion:nil]; }\n\n-(void)nocturneTerminateWithCompletion:(void (^)(void))completion\n{")
+  replace_once(source, "        LiStopConnection();\n        [initLock unlock];", "        LiStopConnection();\n        [initLock unlock];\n        if (completion) dispatch_async(dispatch_get_main_queue(), completion);")
+end
+overlay(target, group, 'Stream/StreamManager.m') do |source|
+  source = replace_once(source, '    Connection* _connection;', "    Connection* _connection;\n    BOOL _nocturneStopping, _nocturneStopped;\n    NSMutableArray *_nocturneStopCallbacks;")
+  source = replace_once(source, "- (void)main {", "- (void)main {\n    if (self.cancelled) return;")
+  source = replace_once(source, '    // resumeApp and launchApp handle calling launchFailed', "    if (self.cancelled) return;\n    // resumeApp and launchApp handle calling launchFailed")
+  source = replace_once(source, "    dispatch_async(dispatch_get_main_queue(), ^{\n        VideoDecoderRenderer*", "    dispatch_async(dispatch_get_main_queue(), ^{\n        if (self.cancelled) return;\n        VideoDecoderRenderer*")
+  replace_once(source, "- (void) stopStream\n{\n    [_connection terminate];\n}", File.read('Sources/Client/Bridge/StreamManagerStop.inc'))
+end
+overlay(target, group, 'ViewControllers/StreamFrameViewController.m') do |source|
+  replace_once(source, '- (void)willMoveToParentViewController:(UIViewController *)parent {', "- (void)nocturneStopWithCompletion:(void (^)(void))completion {\n    if (_streamMan) [_streamMan nocturneStopWithCompletion:completion];\n    else if (completion) completion();\n}\n\n- (void)willMoveToParentViewController:(UIViewController *)parent {")
+end
 Dir.glob('{Sources/Client,Sources/Design}/**/*.{swift,m,h}').sort.each do |path|
   reference = group.new_file('../../' + path)
   target.source_build_phase.add_file_reference(reference) unless path.end_with?('.h')
