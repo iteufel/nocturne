@@ -14,7 +14,7 @@ Open <http://localhost:8765>. Check the desktop layout and a narrow phone viewpo
 
 ## Publish
 
-Changes to `site/` on `main` deploy through `.github/workflows/pages.yml`. The workflow can also be started manually in GitHub Actions. GitHub Pages must use **GitHub Actions** as its publishing source. Only `site/` is included in the deployment artifact.
+Changes to `site/` on `main` deploy through `.github/workflows/pages.yml`. The workflow can also be started manually in GitHub Actions. GitHub Pages must use **GitHub Actions** as its publishing source. Only `site/` is included in the deployment artifact. The CSS and JavaScript URLs in `index.html` carry the first 12 characters of their SHA-256 content hashes; update those query values when either file changes so returning visitors receive matching assets.
 
 The app icon is copied unchanged from the client asset catalog. The hero and Mac section use real app captures. The terminal drawing and folder artwork are decorative illustrations; the terminal is explicitly labeled as an illustration. Do not substitute drawn or generated interfaces for app screenshots.
 
