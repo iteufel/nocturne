@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Text;
+using System.Text.Json;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Nocturne.Host.Tests;
 
@@ -11,7 +13,7 @@ public sealed class WindowsFactAttribute : FactAttribute
 }
 
 [SupportedOSPlatform("windows")]
-public sealed class WindowsPlatformTests
+public sealed class WindowsPlatformTests(ITestOutputHelper output)
 {
     [WindowsFact]
     public void TransfersAreHiddenBoundedAndNeverOverwrite()
@@ -64,6 +66,11 @@ public sealed class WindowsPlatformTests
             }
             Assert.True(File.Exists(Path.Combine(outside, "secret")));
         }
+        catch (Exception error)
+        {
+            output.WriteLine("[DEBUG-pr7-junction] Failure before cleanup: " + error);
+            throw;
+        }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); if (Directory.Exists(outside)) Directory.Delete(outside, true); }
     }
 
@@ -80,7 +87,12 @@ public sealed class WindowsPlatformTests
         terminal.Input(Encoding.UTF8.GetBytes("[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Tk9DVFVSTkVfUFRZX09L')); exit\r"));
         await ended.Task.WaitAsync(TimeSpan.FromSeconds(20));
         await terminal.Completion;
-        lock (gate) Assert.Contains("NOCTURNE_PTY_OK", Encoding.UTF8.GetString(output.ToArray()));
+        lock (gate)
+        {
+            var captured = Encoding.UTF8.GetString(output.ToArray());
+            Assert.True(captured.Contains("NOCTURNE_PTY_OK", StringComparison.Ordinal),
+                "ConPTY output did not contain the command result: " + JsonSerializer.Serialize(captured));
+        }
     }
 
     [WindowsFact]
