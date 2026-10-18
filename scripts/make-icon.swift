@@ -2,8 +2,15 @@ import AppKit
 import Foundation
 
 func drawIcon(size: Int) -> Data {
-    let image = NSImage(size: NSSize(width: size, height: size))
-    image.lockFocus()
+    // An explicit RGB bitmap keeps the App Store icon opaque and pixel-exact,
+    // independently of the build machine's display scale or WindowServer.
+    let context = CGContext(data: nil, width: size, height: size,
+                            bitsPerComponent: 8, bytesPerRow: size * 4,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+    defer { NSGraphicsContext.restoreGraphicsState() }
     let s = CGFloat(size)
     NSColor(red: 0.055, green: 0.07, blue: 0.12, alpha: 1).setFill()
     NSBezierPath(rect: NSRect(x: 0, y: 0, width: s, height: s)).fill()
@@ -13,8 +20,8 @@ func drawIcon(size: Int) -> Data {
     NSBezierPath(ovalIn: NSRect(x: s * 0.39, y: s * 0.36, width: s * 0.48, height: s * 0.48)).fill()
     NSColor(red: 0.72, green: 0.8, blue: 1, alpha: 0.8).setFill()
     NSBezierPath(ovalIn: NSRect(x: s * 0.69, y: s * 0.25, width: s * 0.032, height: s * 0.032)).fill()
-    image.unlockFocus()
-    let rep = NSBitmapImageRep(data: image.tiffRepresentation!)!
+    let rep = NSBitmapImageRep(cgImage: context.makeImage()!)
+    precondition(!rep.hasAlpha)
     return rep.representation(using: .png, properties: [:])!
 }
 let fm = FileManager.default

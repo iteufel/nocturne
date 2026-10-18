@@ -6,6 +6,11 @@ checks without release credentials. Code changes pushed to `main` run the checks
 then archive, sign, export, and upload the iOS app to App Store Connect. A manual
 run can disable the upload with **publish_testflight**.
 
+Each job installs Xcode's Metal Toolchain, which the SwiftTerm renderer needs and
+the runner image does not include. Bootstrap generates pixel-exact, opaque RGB
+icons. The iOS bundle includes required-reason privacy declarations for app
+preferences, local/user-selected file metadata, and media timers.
+
 The store listing is **Nocturne Remote**, app ID `6824278979`, bundle ID
 `app.nocturne.client`. The installed app is named **Nocturne**. The shorter store
 name was already taken. TestFlight is at

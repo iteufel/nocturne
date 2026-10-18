@@ -76,6 +76,7 @@ Dir.glob('{Sources/Client,Sources/Design}/**/*.{swift,m,h}').sort.each do |path|
 end
 icons = group.new_file('../../Resources/Client.xcassets')
 target.resources_build_phase.add_file_reference(icons)
+target.resources_build_phase.add_file_reference(group.new_file('../../Resources/PrivacyInfo.xcprivacy'))
 kit = package(client, '../..'); terminal = package(client, '../SwiftTerm')
 product(client, target, kit, 'NocturneKit'); product(client, target, terminal, 'SwiftTerm')
 target.build_configurations.each do |config|

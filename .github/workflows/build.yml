@@ -37,6 +37,7 @@ jobs:
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
+          xcodebuild -downloadComponent MetalToolchain
           gem install --user-install xcodeproj -v 1.27.0 --no-document
           scripts/bootstrap.sh
       - name: Test shared and host services
@@ -91,6 +92,7 @@ jobs:
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
+          xcodebuild -downloadComponent MetalToolchain
           gem install --user-install xcodeproj -v 1.27.0 --no-document
           scripts/bootstrap.sh
       - name: Import the distribution identity
