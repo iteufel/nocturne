@@ -56,13 +56,13 @@ struct ServerSettingsView: View {
             Section {
                 Toggle("Connect over the internet", isOn: $model.remoteAccessEnabled).disabled(model.active)
                 if model.remoteAccessEnabled {
-                    TextField("Broker URL", text: $model.brokerURL, prompt: Text("https://broker.example.com"))
+                    TextField("Broker URL", text: $model.brokerURL, prompt: Text("https://nocturne.alkal.de"))
                         .disabled(model.active)
                 }
             } header: {
                 Label("Remote access", systemImage: "network")
             } footer: {
-                Text("Use your hosted Nocturne broker to connect from other networks. Devices try peer to peer and use an encrypted relay when needed. After enabling this, scan a new pairing QR code on your device. Stop the server to change these settings.")
+                Text("Use the default Nocturne broker or enter your own to connect from other networks. Devices try peer to peer and use an encrypted relay when needed. After enabling this, scan a new pairing QR code on your device. Stop the server to change these settings.")
             }
             Section {
                 Toggle("Headless virtual monitor", isOn: $model.headlessDisplayEnabled)
