@@ -61,6 +61,8 @@
 	<string>Scan the pairing QR code displayed by Nocturne Server on your Mac.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Find your computers and connect directly for streaming, terminal access, and file transfer.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Send your microphone to your paired Mac for voice chat in Discord and games when you unmute a stream.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -25,6 +25,7 @@
 
 @interface MDStreamController : StreamFrameViewController
 @property (nonatomic, copy) void (^onExit)(void);
+@property (nonatomic, copy) void (^onStarted)(UIViewController *controller);
 @property (nonatomic) BOOL cleanedUp;
 @property (nonatomic) CGSize lastControlSize;
 @property (nonatomic) BOOL absoluteTouchMode;
@@ -45,6 +46,10 @@
     if (notification.userInfo[UIPointerLockStateSceneUserInfoKey] == self.view.window.windowScene) [self nocturneReleaseInput];
 }
 - (void)returnToMainFrame { if (!self.cleanedUp && self.onExit) self.onExit(); }
+- (void)connectionStarted {
+    [super connectionStarted];
+    dispatch_async(dispatch_get_main_queue(), ^{ if (!self.cleanedUp && self.onStarted) self.onStarted(self); });
+}
 - (void)launchFailed:(NSString *)message { if (!self.cleanedUp) [super launchFailed:message]; }
 - (void)connectionTerminated:(int)errorCode { if (!self.cleanedUp) [super connectionTerminated:errorCode]; }
 - (void)shutdown {
@@ -387,6 +392,7 @@
     }
     MDStreamController *controller = [MDStreamController new]; controller.streamConfig = config; controller.onExit = onExit;
     controller.absoluteTouchMode = [settings[@"absolute"] boolValue];
+    controller.onStarted = self.streamStarted;
     [self pause];
     return controller;
 }

@@ -5,7 +5,10 @@ import NocturneKit
 public struct HostPermissions {
     public var terminal: Bool
     public var files: Bool
-    public init(terminal: Bool = false, files: Bool = false) { self.terminal = terminal; self.files = files }
+    public var microphone: Bool
+    public init(terminal: Bool = false, files: Bool = false, microphone: Bool = false) {
+        self.terminal = terminal; self.files = files; self.microphone = microphone
+    }
 }
 
 public struct WorkspaceDeviceConnection: Identifiable, Equatable {
@@ -26,11 +29,14 @@ public final class WorkspaceServer {
     private var listenerCancelled: DispatchSemaphore?
     private var sessions: [UUID: HostSession] = [:]
     private let terminals = TerminalRegistry()
+    private let microphone: MicrophoneSession
+    private var microphoneTimer: DispatchSourceTimer?
     private var permissions: HostPermissions
     private let name: String
     private let devices: WorkspaceDeviceStore
-    public init(folder: URL, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions = .init()) throws {
+    public init(folder: URL, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions = .init(), microphoneOutput: MicrophoneOutput = VirtualMicrophone()) throws {
         self.folder = try SharedFolder(url: folder); self.name = name; self.devices = devices; self.permissions = permissions
+        microphone = MicrophoneSession(output: microphoneOutput)
     }
     public func start(secret: Data, port: UInt16 = WorkspaceProtocol.port) throws {
         guard listener == nil else { return }
@@ -42,7 +48,7 @@ public final class WorkspaceServer {
             guard let self = self, self.listener != nil, self.sessions.count < 8 else { connection.cancel(); return }
             let id = UUID()
             let channel = SecureChannel(connection: connection, queue: self.queue)
-            let session = HostSession(channel: channel, terminals: self.terminals, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected)
+            let session = HostSession(channel: channel, terminals: self.terminals, microphone: self.microphone, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected)
             self.sessions[id] = session
             session.onClose = { [weak self] in self?.sessions.removeValue(forKey: id); self?.publish("Ready") }
             session.onAuthenticated = { [weak self] in self?.publish("Connected") }
@@ -57,11 +63,16 @@ public final class WorkspaceServer {
             }
         }
         listener.start(queue: queue)
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
+        timer.setEventHandler { [weak self] in self?.microphone.expire() }
+        microphoneTimer = timer; timer.resume()
     }
     public func updatePermissions(_ permissions: HostPermissions) {
         queue.async {
             self.permissions = permissions
             if !permissions.terminal { self.terminals.closeAll() }
+            if !permissions.microphone { self.microphone.stop() }
             self.sessions.values.forEach { $0.updatePermissions(permissions) }
         }
     }
@@ -70,9 +81,11 @@ public final class WorkspaceServer {
         queue.sync {
             cancelled = listenerCancelled; listenerCancelled = nil
             listener?.cancel(); listener = nil
+            microphoneTimer?.cancel(); microphoneTimer = nil
             let active = Array(sessions.values); sessions.removeAll()
             active.forEach { $0.close() }
             terminals.closeAll()
+            microphone.stop()
         }
         // NWListener.cancel() is asynchronous. Wait for the listening socket to be
         // released before a server restart tries to bind the same port.
@@ -98,6 +111,7 @@ private final class HostSession {
     private var permissions: HostPermissions
     private var transfers: [String: IncomingTransfer] = [:]
     private let terminals: TerminalRegistry
+    private let microphone: MicrophoneSession
     private let connectionID = UUID()
     private let devices: WorkspaceDeviceStore
     private var challenge: Data?
@@ -106,8 +120,9 @@ private final class HostSession {
     private let pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?
     private let displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?
     private let displayDisconnected: ((UUID) -> Void)?
-    init(channel: SecureChannel, terminals: TerminalRegistry, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?, displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?, displayDisconnected: ((UUID) -> Void)?) {
+    init(channel: SecureChannel, terminals: TerminalRegistry, microphone: MicrophoneSession, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?, displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?, displayDisconnected: ((UUID) -> Void)?) {
         self.pairStream = pairStream; self.terminals = terminals
+        self.microphone = microphone
         self.displayCommand = displayCommand; self.displayDisconnected = displayDisconnected
         self.channel = channel; self.devices = devices; self.folder = folder; self.name = name; self.permissions = permissions
         channel.onPacket = { [weak self] packet in self?.handle(packet) }
@@ -120,6 +135,7 @@ private final class HostSession {
     func close() { closed = true; device = nil; cleanup(); channel.cancel() }
     private func cleanup() {
         transfers.removeAll(); terminals.detach(connectionID)
+        microphone.disconnected(connectionID)
         displayDisconnected?(connectionID)
     }
     private func handle(_ packet: Packet) {
@@ -143,8 +159,11 @@ private final class HostSession {
                 device = WorkspaceDeviceConnection(id: id, name: authorized.name, address: "\(address)")
                 result.version = WorkspaceProtocol.version; result.name = name
                 onAuthenticated?()
-                result.capabilities = [permissions.files ? "files" : nil, permissions.terminal ? "terminal" : nil, pairStream != nil ? "streaming" : nil, displayCommand != nil ? "display" : nil].compactMap { $0 }
+                result.capabilities = [permissions.files ? "files" : nil, permissions.terminal ? "terminal" : nil, pairStream != nil ? "streaming" : nil, displayCommand != nil ? "display" : nil, permissions.microphone ? MicrophoneFormat.capability : nil].compactMap { $0 }
             case .ping: break
+            case .microphoneStart, .microphoneAudio, .microphoneStop:
+                guard permissions.microphone else { throw NocturneError.permissionDenied }
+                result = try microphone.handle(packet, connection: connectionID)
             case .displayPrepare, .displayHeartbeat, .displayRelease:
                 guard let displayCommand, let device else { throw NocturneError.permissionDenied }
                 let connection = connectionID, disconnected = displayDisconnected

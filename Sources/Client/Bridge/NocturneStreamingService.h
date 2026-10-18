@@ -12,6 +12,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy, nullable) void (^pairingRequired)(void);
 @property (nonatomic, copy, nullable) void (^pairingFinished)(void);
 @property (nonatomic, copy, nullable) void (^failed)(NSString *message);
+@property (nonatomic, copy, nullable) void (^streamStarted)(UIViewController *controller);
 - (NSData *)workspaceCertificate;
 - (NSData *)signWorkspaceChallenge:(NSData *)challenge;
 - (void)start;

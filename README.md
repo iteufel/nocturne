@@ -70,6 +70,21 @@ Virtual display creation and monitor disabling use runtime-checked private macOS
 - The bundled engine uses VideoToolbox for H.264/HEVC, with client controls for resolution, bitrate, frame rate, HDR, pacing, touch input, and statistics. Hardware and network conditions determine supported combinations.
 - macOS gamepad emulation requires a compatible **Virtual HID Broker** installation/driver. Nocturne includes controller forwarding; this Mac does not have that driver. Physical controller forwarding, latency, HDR, and system-audio playback require device testing.
 
+## Microphone and voice chat
+
+Forward the iPhone/iPad microphone (including its current wired, USB, or Bluetooth headset input) to Discord or a game **on the Mac**:
+
+1. In **Nocturne Server → Sharing**, choose **Install microphone input…**, approve the macOS administrator prompt, and restart the Mac. The driver is bundled with Nocturne Server; no separate audio-routing app is needed.
+2. Enable **Client microphone** in Sharing. Pair the client using the Nocturne Server QR code and reconnect it after enabling this feature.
+3. In Discord or your game’s audio settings, choose **Nocturne Microphone** as the input. Keep the game’s output on its normal device so it continues through the video stream.
+4. Start a stream, tap its microphone button, and allow iOS microphone access. **Mic on** indicates capture; tap again to mute.
+
+Each stream starts muted. Backgrounding, disconnecting, changing audio devices, audio interruptions, or a video reconnect during resizing mutes it again. Unmute explicitly to resume. One client can own the Mac input at a time. Disabling Client microphone, removing the device, or stopping the server flushes its audio. Use headphones to reduce game-audio feedback; Bluetooth hands-free microphone use may lower playback quality.
+
+This feature requires both Nocturne apps and an authenticated workspace connection; standard Sunshine/GameStream-only hosts do not expose it. Traffic is encrypted, uses a separate socket from terminal/files, and is not recorded. The input driver stays available to Mac apps and produces silence while muted. It does not change the Mac’s default input or output.
+
+The installation is `/Library/Audio/Plug-Ins/HAL/NocturneMicrophone.driver`. To uninstall, move only that bundle to Trash using Finder with administrator approval, then restart the Mac. Driver installation/restart is a user action; building or running tests does not install it.
+
 ## Terminal and files
 
 The terminal is SwiftTerm connected to a real `/bin/zsh -l` PTY on the Mac. Open up to eight independent tabs with **+**, switch between them, and close a single shell with its tab’s **×**. Tabs are available in both the Terminal workspace and the stream tools panel. Escape, Tab, Control, and arrows come from the terminal keyboard’s built-in accessory; there is no duplicate shortcut strip.
@@ -86,6 +101,7 @@ Streaming approval is stored separately in Keychain and bound to the computer ID
 
 ```sh
 swift test
+bash scripts/test-microphone-driver.sh
 NOCTURNE_ENGINE_EXECUTABLE="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne Server.app/Contents/MacOS/nocturne-stream-host" swift test
 ```
 

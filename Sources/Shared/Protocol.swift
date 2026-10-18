@@ -14,6 +14,7 @@ public enum Operation: String, Codable {
     case hello, authenticate, ping, pairStream, list, read, uploadBegin, uploadChunk, uploadCommit, uploadCancel
     case terminalList, terminalAttach, terminalOpen, terminalInput, terminalResize, terminalClose, terminalOutput, terminalExit, terminalClosed
     case displayPrepare, displayHeartbeat, displayRelease
+    case microphoneStart, microphoneAudio, microphoneStop
 }
 
 public struct RemoteTerminal: Codable, Identifiable, Equatable {

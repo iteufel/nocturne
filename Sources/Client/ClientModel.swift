@@ -1,5 +1,6 @@
 import SwiftUI
 import GameController
+import Combine
 import NocturneKit
 
 struct StreamingHost: Identifiable, Equatable {
@@ -31,6 +32,7 @@ final class StreamSession: ObservableObject, Identifiable {
     @Published var controller: UIViewController?
     @Published var status = "Preparing your display…"
     @Published var size: StreamDisplaySize?
+    @Published var videoReady = false
     var desiredSize: StreamDisplaySize?
     var reconfigure: Task<Void, Never>?
     var heartbeat: Task<Void, Never>?
@@ -52,6 +54,7 @@ final class ClientModel: ObservableObject {
     static let shared = ClientModel()
     let engine = NocturneStreamingService()
     let server: WorkspaceConnection
+    let microphone = ClientMicrophone()
     @Published var hosts: [StreamingHost] = []
     @Published var apps: [StreamingApp] = []
     @Published var selectedHost: StreamingHost?
@@ -76,6 +79,7 @@ final class ClientModel: ObservableObject {
     private var closingStream: Task<Void, Never>?
     private var serverPairingGeneration = UUID()
     private var inputObservers: [NSObjectProtocol] = []
+    private var workspaceObserver: AnyCancellable?
     init() {
         let streamingEngine = engine
         server = WorkspaceConnection(identity: WorkspaceIdentity(certificate: streamingEngine.workspaceCertificate(),
@@ -114,6 +118,10 @@ final class ClientModel: ObservableObject {
             }
         }
         engine.pairingFinished = { [weak self] in self?.busy = false }
+        engine.streamStarted = { [weak self] controller in
+            guard let self, let current = self.session, current.controller === controller else { return }
+            current.videoReady = true
+        }
         engine.failed = { [weak self] message in self?.error = message; self?.busy = false }
         for notification in [NSNotification.Name.GCControllerDidConnect, .GCControllerDidDisconnect, .GCKeyboardDidConnect, .GCKeyboardDidDisconnect, .GCMouseDidConnect, .GCMouseDidDisconnect] {
             inputObservers.append(NotificationCenter.default.addObserver(forName: notification, object: nil, queue: .main) { [weak self] _ in
@@ -121,6 +129,10 @@ final class ClientModel: ObservableObject {
             })
         }
         refreshInputs()
+        workspaceObserver = server.$state.sink { [weak self] state in
+            guard state != .connected else { return }
+            Task { @MainActor in self?.microphone.stop() }
+        }
     }
     func start() {
         if session == nil { engine.start() }; refreshInputs()
@@ -191,6 +203,7 @@ final class ClientModel: ObservableObject {
                 if current.size == requested, current.controller != nil { return }
                 current.status = current.size == nil ? "Preparing your display…" : "Matching your display…"
                 if let old = current.controller {
+                    microphone.stop(); current.videoReady = false
                     current.controller = nil
                     await stopVideo(old)
                 }
@@ -246,6 +259,7 @@ final class ClientModel: ObservableObject {
         await withCheckedContinuation { continuation in engine.stopController(controller, completion: { continuation.resume() }) }
     }
     func endStream() {
+        microphone.stop()
         pendingStream?.cancel(); pendingStream = nil
         guard let current = session else { return }
         session = nil; current.reconfigure?.cancel(); current.heartbeat?.cancel(); current.heartbeat = nil
@@ -260,6 +274,18 @@ final class ClientModel: ObservableObject {
             }
             if UIApplication.shared.applicationState == .active, self.session == nil { self.engine.start() }
         }
+    }
+    var canUseMicrophone: Bool {
+        session?.host.id == linkedHostID && session?.videoReady == true && server.state == .connected
+            && server.capabilities.contains(MicrophoneFormat.capability)
+    }
+    func toggleMicrophone() {
+        if microphone.active || microphone.starting { microphone.stop(); return }
+        guard canUseMicrophone else { return }
+        do {
+            guard let data = try SecureStore.read("server") else { throw NocturneError.disconnected }
+            microphone.start(invitation: try JSONDecoder().decode(PairingInvitation.self, from: data), connection: server.mediaConnection())
+        } catch { self.error = error.localizedDescription }
     }
     func pairScannedServer(_ text: String) async {
         let generation = UUID(); serverPairingGeneration = generation

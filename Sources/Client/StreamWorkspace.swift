@@ -55,10 +55,45 @@ struct StreamWorkspace: View {
                         Button("Disconnect stream", systemImage: "xmark", role: .destructive) { model.endStream() }
                     } label: { Image(systemName: "moon.fill").font(.system(size: 17)).frame(width: 44, height: 44) }
                         .nocturneGlass(in: Circle(), interactive: true).accessibilityLabel("Stream controls")
+                    StreamMicrophoneControl(model: model, session: session, microphone: model.microphone, connection: model.server)
                 }.padding(.leading, geometry.safeAreaInsets.leading + 10).padding(.top, geometry.safeAreaInsets.top + 8)
             }.onChange(of: viewport, initial: true) { _, size in model.streamViewport(size, scale: displayScale, session: session) }
                 .onChange(of: displayScale) { _, scale in model.streamViewport(viewport, scale: scale, session: session) }
         }.ignoresSafeArea().tint(MoonStyle.accent).preferredColorScheme(.dark).persistentSystemOverlays(.hidden)
+    }
+}
+
+private struct StreamMicrophoneControl: View {
+    @ObservedObject var model: ClientModel
+    @ObservedObject var session: StreamSession
+    @ObservedObject var microphone: ClientMicrophone
+    @ObservedObject var connection: WorkspaceConnection
+    @State private var showInfo = false
+    var body: some View {
+        Button {
+            if microphone.active || microphone.starting || model.canUseMicrophone { model.toggleMicrophone() }
+            else { showInfo = true }
+        } label: {
+            HStack(spacing: 6) {
+                if microphone.starting { ProgressView().tint(.white) }
+                else { Image(systemName: microphone.active ? "mic.fill" : "mic.slash.fill") }
+                if microphone.active { Text("Mic on").font(.caption.weight(.semibold)) }
+            }.frame(minWidth: 44, minHeight: 44).padding(.horizontal, microphone.active ? 10 : 0)
+                .foregroundStyle(microphone.active ? Color.green : Color.white)
+        }.nocturneGlass(in: Capsule(), interactive: true)
+            .accessibilityLabel(microphone.starting ? "Cancel microphone connection" : microphone.active ? "Mute microphone" : "Unmute microphone")
+            .accessibilityValue(microphone.active ? microphone.inputName : "Muted")
+            .onChange(of: microphone.error) { _, error in if error != nil { showInfo = true } }
+            .popover(isPresented: $showInfo) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Client microphone", systemImage: "mic").font(.headline)
+                    if let error = microphone.error { Text(error) }
+                    else if !session.videoReady { Text("Your stream is still connecting. Unmute after it starts.") }
+                    else { Text("Pair this computer using a Nocturne Server pairing link. On your Mac, open Sharing, enable Client microphone, and install the microphone input. Reconnect this device after enabling it.") }
+                    Text("Choose Nocturne Microphone as the input in Discord or your game. Headphones help keep game audio out of voice chat.").foregroundStyle(.secondary)
+                    Button("Done") { showInfo = false }.buttonStyle(NocturneGlassButtonStyle())
+                }.font(.callout).padding(20).frame(maxWidth: 320).presentationCompactAdaptation(.popover)
+            }
     }
 }
 
