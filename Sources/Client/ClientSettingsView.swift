@@ -30,11 +30,14 @@ struct ClientSettingsView: View {
                 Toggle("Smooth frame pacing", isOn: $model.preferences.framePacing)
             }.listRowBackground(MoonStyle.surface)
             Section {
+                Picker("Input mode", selection: Binding(get: { model.preferences.inputMode }, set: model.setInputMode)) {
+                    ForEach(StreamInputMode.allCases) { mode in Label(mode.title, systemImage: mode.symbol).tag(mode) }
+                }.accessibilityIdentifier("streamInputMode")
+                Text(model.preferences.inputMode.explanation).font(.caption).foregroundStyle(MoonStyle.secondary)
                 Toggle("Onscreen game controls", isOn: $model.preferences.touchControls)
-                Toggle("Touch points directly", isOn: $model.preferences.absolutePointer)
                 Toggle("Multiple controllers", isOn: $model.preferences.multiController)
                 Toggle("Stream statistics", isOn: $model.preferences.statistics)
-            } header: { Text("Controls") } footer: { Text("Turn off “Touch points directly” to use the screen as a trackpad. During streaming, a three-finger tap opens the keyboard.") }
+            } header: { Text("Controls") } footer: { Text("You can also change input mode from the stream controls menu. A three-finger tap opens the keyboard. Mouse and trackpad accessories work in either mode.") }
                 .listRowBackground(MoonStyle.surface)
             Section("Connected accessories") {
                 inputStatus("Keyboard", symbol: "keyboard", connected: model.keyboardConnected)

@@ -134,6 +134,18 @@ public struct PairingInvitation: Codable, Equatable {
     }
 }
 
+public enum StreamInputMode: String, CaseIterable, Identifiable {
+    case touch, trackpad
+    public var id: String { rawValue }
+    public var title: String { self == .touch ? "Touch" : "Trackpad" }
+    public var symbol: String { self == .touch ? "hand.point.up.left" : "rectangle.and.hand.point.up.left" }
+    public var explanation: String {
+        self == .touch
+            ? "Tap where you want to click. Move your finger to drag; hold still for a right-click. Pinch with two fingers to zoom."
+            : "Slide one finger to move the pointer. Tap to click, tap with two fingers to right-click, or slide two fingers to scroll. Hold one finger, then move it to drag."
+    }
+}
+
 public struct StreamPreferences: Codable, Equatable {
     public var resolution = "Match device"
     public var frameRate = 60
@@ -144,6 +156,11 @@ public struct StreamPreferences: Codable, Equatable {
     public var absolutePointer = false
     public var statistics = false
     public var multiController = true
+    // Preserve the existing stored key so saved touch/trackpad choices survive upgrades.
+    public var inputMode: StreamInputMode {
+        get { absolutePointer ? .touch : .trackpad }
+        set { absolutePointer = newValue == .touch }
+    }
     public init() {}
     public var dimensions: (width: Int, height: Int) {
         switch resolution { case "720p": return (1280, 720); case "1440p": return (2560, 1440); case "4K": return (3840, 2160); default: return (1920, 1080) }

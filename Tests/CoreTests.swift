@@ -4,6 +4,20 @@ import NocturneKit
 import NocturneHostKit
 
 final class CoreTests: XCTestCase {
+    func testTouchAndTrackpadModesPreserveExistingSavedPreferences() throws {
+        let saved = Data(#"{"resolution":"1440p","frameRate":120,"bitrate":35,"hdr":true,"framePacing":false,"touchControls":true,"absolutePointer":true,"statistics":true,"multiController":false}"#.utf8)
+        var preferences = try JSONDecoder().decode(StreamPreferences.self, from: saved)
+        XCTAssertEqual(preferences.inputMode, .touch)
+        preferences.inputMode = .trackpad
+        let restored = try JSONDecoder().decode(StreamPreferences.self, from: JSONEncoder().encode(preferences))
+        XCTAssertEqual(restored.inputMode, .trackpad)
+        XCTAssertEqual(restored.bitrate, 35)
+        XCTAssertEqual(restored.resolution, "1440p")
+        XCTAssertTrue(restored.hdr)
+        preferences.inputMode = .touch
+        XCTAssertEqual(preferences, try JSONDecoder().decode(StreamPreferences.self, from: saved))
+        XCTAssertEqual(StreamPreferences().inputMode, .trackpad)
+    }
     func testInvitationRoundTripAndValidation() throws {
         let invitation = try PairingInvitation(host: "fe80::abcd%en0", name: "Studio Mac", secret: Data(repeating: 0x42, count: 32))
         XCTAssertEqual(try PairingInvitation(url: invitation.url), invitation)
