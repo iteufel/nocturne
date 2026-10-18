@@ -47,6 +47,7 @@ struct ClientRootView: View {
             Group {
                 switch page {
                 case .computers: ComputersView(model: model)
+                case .hostApps: HostAppsWorkspace(client: model, model: model.hostApps, connection: model.server)
                 case .terminal: TerminalWorkspace(connection: model.server, connect: { Task { await model.reconnectServer() } })
                 case .files: FilesWorkspace(connection: model.server, connect: { model.showAdd = true })
                 case .settings: ClientSettingsView(model: model)
@@ -164,6 +165,7 @@ struct WorkspaceCard: View {
                     .font(.system(size: 13)).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
                 NocturneGlassGroup { HStack(spacing: 12) {
                     if connection.state == .connected {
+                        Button { model.page = .hostApps } label: { Label("Apps", systemImage: "square.grid.2x2") }
                         Button { model.page = .terminal } label: { Label("Terminal", systemImage: "terminal") }
                         Button { model.page = .files } label: { Label("Files", systemImage: "folder") }
                     } else if model.savedServerName != nil {

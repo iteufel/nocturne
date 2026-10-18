@@ -207,6 +207,7 @@ client_tests.build_configurations.each do |config|
   settings['HEADER_SEARCH_PATHS'] = target.build_configurations.first.build_settings['HEADER_SEARCH_PATHS'] + ['$(CONFIGURATION_TEMP_DIR)/Nocturne.build/DerivedSources', '$(CONFIGURATION_TEMP_DIR)/Nocturne.build/DerivedSources/CoreDataGenerated/Limelight']
   settings['CLANG_ENABLE_MODULES'] = 'YES'
   settings['CLANG_ENABLE_OBJC_ARC'] = 'YES'
+  settings['SWIFT_VERSION'] = '5.0'
   settings['TARGETED_DEVICE_FAMILY'] = '1,2'
   settings['CODE_SIGN_STYLE'] = 'Automatic'
   settings['DEVELOPMENT_TEAM'] = ''
@@ -271,7 +272,12 @@ info['NSBluetoothAlwaysUsageDescription'] = 'Connect compatible Bluetooth mice a
 info['NSBluetoothPeripheralUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
 info['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Nocturne Server on your Mac.'
 info['NSMicrophoneUsageDescription'] = 'Send your microphone to your paired Mac for voice chat in Discord and games when you unmute a stream.'
-info['UIApplicationSceneManifest'] = {'UIApplicationSupportsMultipleScenes' => false}
+info['UIApplicationSceneManifest'] = {
+  'UIApplicationSupportsMultipleScenes' => true,
+  'UISceneConfigurations' => {'UIWindowSceneSessionRoleApplication' => [
+    {'UISceneConfigurationName' => 'Nocturne', 'UISceneDelegateClassName' => '$(PRODUCT_MODULE_NAME).DarkSceneDelegate'}
+  ]}
+}
 info.delete('CFBundleURLTypes') # Pairing invitations are accepted only by the in-app QR scanner.
 orientations = %w[UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown]
 info['UISupportedInterfaceOrientations'] = orientations

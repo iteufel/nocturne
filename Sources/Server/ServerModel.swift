@@ -6,6 +6,7 @@ import Darwin
 
 @MainActor
 final class ServerModel: ObservableObject {
+    private let appWindows = AppWindowSessionManager(host: NativeAppWindowHost())
     @Published private(set) var running = false
     @Published private(set) var starting = false
     @Published private(set) var status = "Stopped"
@@ -113,7 +114,7 @@ final class ServerModel: ObservableObject {
                 let savedDevices = try await engine.pairedDevices()
                 guard generation == epoch, !Task.isCancelled else { return }
                 streamDevices = savedDevices; publishDevices()
-                let host = try WorkspaceServer(folder: sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: terminalEnabled, files: filesEnabled, microphone: microphoneEnabled))
+                let host = try WorkspaceServer(folder: sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: terminalEnabled, files: filesEnabled, microphone: microphoneEnabled), appWindows: appWindows)
                 if headlessDisplayEnabled {
                     host.displayCommand = { [weak self] packet, connection, name, completion in
                         Task { @MainActor in
@@ -169,6 +170,7 @@ final class ServerModel: ObservableObject {
         }
     }
     func stop() {
+        appWindows.stop()
         generation = UUID(); startTask?.cancel(); startTask = nil; pollTask?.cancel(); pollTask = nil
         deviceRevision = UUID()
         pairingTasks.values.forEach { $0.cancel() }; pairingTasks.removeAll()
