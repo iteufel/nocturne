@@ -21,6 +21,9 @@ name was already taken. TestFlight is at
 The first job runs the Swift package tests, the client regression tests on an
 iPhone and iPad simulator, and a build of the unified Mac server. Tests that
 change physical displays or launch the real streaming engine are disabled.
+CI boots one temporary simulator at a time and waits for startup before testing,
+then shuts down and deletes that simulator. This avoids concurrent startup
+timeouts on the hosted runner and does not affect local development simulators.
 It retains client test results and a zipped **development** Mac build for seven
 days. This Mac artifact is ad-hoc signed, not notarized, and is not a public
 release installer. The Mac app's private display APIs require direct distribution;

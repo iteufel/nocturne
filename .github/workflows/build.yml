@@ -43,13 +43,7 @@ jobs:
       - name: Test shared and host services
         run: env -u NOCTURNE_ENGINE_EXECUTABLE swift test
       - name: Test the iPhone and iPad client
-        run: |
-          xcodebuild test -workspace Nocturne.xcworkspace -scheme Nocturne \
-            -destination 'platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0' \
-            -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5),OS=27.0' \
-            -derivedDataPath .build/Xcode -resultBundlePath .build/ClientTests.xcresult \
-            -parallel-testing-enabled NO -only-testing:NocturneClientTests \
-            CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=
+        run: scripts/test-ios-ci.sh
       - name: Build the unified macOS server
         run: scripts/build.sh mac
       - name: Package macOS development build
@@ -70,7 +64,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ClientTests
-          path: .build/ClientTests.xcresult
+          path: .build/ClientTests
           retention-days: 7
 
   testflight:
