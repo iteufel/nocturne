@@ -14,6 +14,7 @@
 
 @interface NocturneStreamingService (PairingTests)
 - (void)publishHosts;
+- (void)updateAllHosts:(NSArray *)hosts;
 - (void)pairSuccessful:(NSData *)certificate attempt:(id)attempt;
 - (void)alreadyPaired:(id)attempt;
 - (void)startPairing:(NSString *)challenge attempt:(id)attempt;
@@ -99,6 +100,36 @@
     XCTAssertFalse([reopened isApprovedHost:self.host.uuid serverCertificate:other clientCertificate:client]);
     XCTAssertFalse([reopened isApprovedHost:self.host.uuid serverCertificate:self.host.serverCert clientCertificate:other]);
     XCTAssertFalse([reopened isApprovedHost:self.host.uuid serverCertificate:nil clientCertificate:client]);
+}
+- (void)testRediscoveryAndSelectionKeepTheCurrentAddress {
+    [self approveFixture];
+    self.host.address = @"192.0.2.10";
+    self.host.activeAddress = self.host.localAddress = @"192.0.2.20";
+    [self.engine updateAllHosts:@[self.host]];
+    [self drainPairingCallbacks];
+    XCTAssertEqualObjects(self.host.activeAddress, @"192.0.2.20");
+
+    NSOperationQueue *operations = [self.engine valueForKey:@"operations"];
+    operations.suspended = YES;
+    [self.engine selectHost:self.host.uuid];
+    XCTAssertEqualObjects(self.host.activeAddress, @"192.0.2.20", @"Selection must not restore the obsolete QR address");
+    [self.engine cancelPairing];
+    [operations cancelAllOperations]; operations.suspended = NO;
+}
+- (void)testAuthenticatedAddressUpdatePreservesApprovalAndCannotApproveAnotherHost {
+    [self approveFixture];
+    NSData *certificate = self.host.serverCert;
+    [self.engine updateHostAddress:self.host.uuid address:@"192.0.2.30"];
+    XCTAssertEqualObjects(self.host.activeAddress, @"192.0.2.30");
+    XCTAssertEqualObjects(self.host.address, @"192.0.2.30");
+    XCTAssertEqualObjects(self.host.localAddress, @"192.0.2.30");
+    XCTAssertEqualObjects(self.host.serverCert, certificate);
+    XCTAssertNotNil([self streamController]);
+    [self.engine updateHostAddress:NSUUID.UUID.UUIDString address:@"192.0.2.40"];
+    XCTAssertEqualObjects(self.host.activeAddress, @"192.0.2.30");
+    XCTAssertTrue([self.trust forgetHost:self.host.uuid error:nil]);
+    [self.engine updateHostAddress:self.host.uuid address:@"192.0.2.50"];
+    XCTAssertNil([self streamController], @"An address update must never grant pairing approval");
 }
 - (void)testApprovedHostCanStreamButRediscoveryAfterForgetCannot {
     [self approveFixture];

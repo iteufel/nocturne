@@ -12,6 +12,8 @@ public final class WorkspaceConnection: ObservableObject {
     @Published public private(set) var lastError: String?
     @Published public private(set) var terminals: [TerminalTab] = []
     @Published public private(set) var terminalID: String?
+    /// The address actually used by an authenticated connection, including Bonjour resolution.
+    public private(set) var connectedInvitation: PairingInvitation?
     private var terminalServer: Data?
     public func selectTerminal(_ id: String) {
         if terminals.contains(where: { $0.id == id }) { terminalID = id }
@@ -22,51 +24,88 @@ public final class WorkspaceConnection: ObservableObject {
     private var pending: [String: CheckedContinuation<Packet, Error>] = [:]
     private var deadlines: [String: Task<Void, Never>] = [:]
     private var generation = UUID()
+    private let discovery = WorkspaceDiscovery()
     private let identity: WorkspaceIdentity
     public init(identity: WorkspaceIdentity) { self.identity = identity }
     /// A separately authenticated socket keeps live media independent of file/terminal traffic.
     public func mediaConnection() -> WorkspaceConnection { WorkspaceConnection(identity: identity) }
-    public func connect(_ invitation: PairingInvitation, restoreTerminalSessions: Bool = true) async throws {
+    public func connect(_ invitation: PairingInvitation, restoreTerminalSessions: Bool = true, rediscover: Bool = false) async throws {
+        try Task.checkCancellation()
         disconnect(); lastError = nil; state = .connecting; name = invitation.name
         let server = Data(SHA256.hash(data: invitation.secret))
         if terminalServer != server { forgetTerminals(); terminalServer = server }
-        let epoch = UUID(); generation = epoch
-        let connection = NWConnection(host: NWEndpoint.Host(invitation.host), port: NWEndpoint.Port(rawValue: invitation.port)!, using: SecureTransport.parameters(secret: invitation.secret))
-        let channel = SecureChannel(connection: connection); self.channel = channel
-        channel.onReady = { [weak self] in Task { @MainActor in
-            guard let self = self, self.generation == epoch else { return }
-            self.ready?.resume(); self.ready = nil
-        } }
-        channel.onPacket = { [weak self] packet in Task { @MainActor in
-            guard let self = self, self.generation == epoch else { return }; self.received(packet)
-        } }
-        channel.onClose = { [weak self] error in Task { @MainActor in
-            guard let self = self, self.generation == epoch else { return }
-            self.lastError = error.localizedDescription; self.disconnect()
-        } }
-        do {
-            try await withCheckedThrowingContinuation { continuation in ready = continuation; channel.start() }
-            guard generation == epoch else { throw NocturneError.disconnected }
-            var hello = Packet(.hello); hello.version = WorkspaceProtocol.version
-            let greeting = try await request(hello)
-            guard greeting.version == WorkspaceProtocol.version, let challenge = greeting.data, challenge.count == 32 else {
-                throw NocturneError.remote("Update Nocturne Server before connecting this device.")
+        let epoch = generation
+        try await withTaskCancellationHandler {
+            do {
+                try Task.checkCancellation()
+                var endpoints = [NWEndpoint.hostPort(host: NWEndpoint.Host(invitation.host), port: NWEndpoint.Port(rawValue: invitation.port)!)]
+                if rediscover, let endpoint = await discovery.find(secret: invitation.secret) { endpoints.insert(endpoint, at: 0) }
+                for (index, endpoint) in endpoints.enumerated() {
+                    try Task.checkCancellation()
+                    guard generation == epoch else { throw NocturneError.disconnected }
+                    do {
+                        try await establish(invitation, endpoint: endpoint, restoreTerminalSessions: restoreTerminalSessions, epoch: epoch)
+                        return
+                    } catch {
+                        guard generation == epoch else { throw error }
+                        closeTransport()
+                        if index == endpoints.count - 1 { throw error }
+                    }
+                }
+            } catch {
+                if generation == epoch { lastError = error.localizedDescription; disconnect() }
+                throw error
             }
-            var proof = Packet(.authenticate); proof.certificate = identity.certificate; proof.name = identity.name
-            proof.signature = try identity.sign(WorkspaceIdentity.message(for: channel.boundChallenge(challenge))); proof.enrollmentToken = invitation.enrollmentToken
-            let response = try await request(proof)
-            guard generation == epoch else { throw NocturneError.disconnected }
-            capabilities = response.capabilities ?? []; name = response.name ?? invitation.name
-            if capabilities.contains("terminal"), restoreTerminalSessions { try await restoreTerminals() }
-            else { terminals = []; terminalID = nil }
-            guard generation == epoch else { throw NocturneError.disconnected }
-            state = .connected
-        } catch {
-            if generation == epoch { lastError = error.localizedDescription; disconnect() }; throw error
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self, self.generation == epoch else { return }
+                self.disconnect()
+            }
         }
     }
+    private func establish(_ invitation: PairingInvitation, endpoint: NWEndpoint, restoreTerminalSessions: Bool, epoch: UUID) async throws {
+        state = .connecting
+        let connection = NWConnection(to: endpoint, using: SecureTransport.parameters(secret: invitation.secret))
+        let channel = SecureChannel(connection: connection); self.channel = channel
+        channel.onReady = { [weak self, weak channel] in Task { @MainActor in
+            guard let self, let channel, self.channel === channel, self.generation == epoch else { return }
+            self.ready?.resume(); self.ready = nil
+        } }
+        channel.onPacket = { [weak self, weak channel] packet in Task { @MainActor in
+            guard let self, let channel, self.channel === channel, self.generation == epoch else { return }; self.received(packet)
+        } }
+        channel.onClose = { [weak self, weak channel] error in Task { @MainActor in
+            guard let self, let channel, self.channel === channel, self.generation == epoch else { return }
+            self.lastError = error.localizedDescription; self.closeTransport()
+        } }
+        try await withCheckedThrowingContinuation { continuation in ready = continuation; channel.start() }
+        guard generation == epoch else { throw NocturneError.disconnected }
+        var hello = Packet(.hello); hello.version = WorkspaceProtocol.version
+        let greeting = try await request(hello)
+        guard greeting.version == WorkspaceProtocol.version, let challenge = greeting.data, challenge.count == 32 else {
+            throw NocturneError.remote("Update Nocturne Server before connecting this device.")
+        }
+        var proof = Packet(.authenticate); proof.certificate = identity.certificate; proof.name = identity.name
+        proof.signature = try identity.sign(WorkspaceIdentity.message(for: channel.boundChallenge(challenge))); proof.enrollmentToken = invitation.enrollmentToken
+        let response = try await request(proof)
+        guard generation == epoch else { throw NocturneError.disconnected }
+        capabilities = response.capabilities ?? []; name = response.name ?? invitation.name
+        if capabilities.contains("terminal"), restoreTerminalSessions { try await restoreTerminals() }
+        else { terminals = []; terminalID = nil }
+        guard generation == epoch else { throw NocturneError.disconnected }
+        try Task.checkCancellation()
+        guard self.channel === channel else { throw NocturneError.disconnected }
+        if case .hostPort(let host, let port) = connection.currentPath?.remoteEndpoint {
+            connectedInvitation = try invitation.replacingAddress(host: "\(host)", port: port.rawValue)
+        } else { connectedInvitation = invitation }
+        lastError = nil
+        state = .connected
+    }
     public func disconnect() {
-        generation = UUID(); channel?.cancel(); channel = nil; state = .disconnected
+        generation = UUID(); discovery.cancel(); closeTransport()
+    }
+    private func closeTransport() {
+        channel?.cancel(); channel = nil; state = .disconnected; connectedInvitation = nil
         capabilities = []
         ready?.resume(throwing: NocturneError.disconnected); ready = nil
         let waiting = pending; pending.removeAll(); deadlines.values.forEach { $0.cancel() }; deadlines.removeAll()

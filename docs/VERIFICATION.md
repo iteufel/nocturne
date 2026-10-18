@@ -126,3 +126,10 @@ This pass changed presentation and appearance preferences. The nine protocol/eng
 Physical iPhone/iPad/iPhone Duo testing, Bluetooth keyboard/mouse/controller input, audible output, HDR, sustained latency, and network interruption/recovery have not been verified. The installed SDK has no dedicated Duo simulator; layouts use scene dimensions and native size classes without inventing a hinge API.
 
 This Mac has no Virtual HID Broker driver, so macOS gamepad emulation is unavailable until a compatible driver is installed. Controller forwarding is integrated in the client. These are development builds, not an App Store/TestFlight or notarized distribution.
+
+## Server address changes (October 19, 2026)
+
+- Added workspace Bonjour identity derived from the existing pairing key, authenticated address refresh, foreground retries, and propagation to video and microphone connections. Existing stored invitations need no migration. Removed video selection's override of the freshly discovered address with the original saved address.
+- Real Bonjour/TLS regressions cover a stale IP and port, duplicate Mac names, terminal restoration without re-enrollment, a separate media connection at the refreshed address, legacy saved-address fallback, cancellation racing a replacement connection, and rejection of an unpaired device. The changed-address test initially exposed a Bonjour name collision delay; unique service names corrected it.
+- Shared/server suite: 41 tests, four hardware/engine checks skipped, zero failures. All 30 iOS client tests passed, including two new video-address/approval regressions. macOS and iOS Simulator builds passed. An initial iOS test build hit a stale precompiled header; regenerating that build cache resolved it.
+- Verification used isolated workspace listeners and the iOS simulator. It did not launch the Mac streaming engine or change physical displays. Moving real devices between Wi-Fi networks, live video recovery, and internet connectivity were not tested. Both devices must be able to reach each other; Bonjour rediscovery is local-network discovery. Interrupted video streams and transfers still require restarting.
