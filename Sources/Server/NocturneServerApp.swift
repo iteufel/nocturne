@@ -54,6 +54,17 @@ struct ServerSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Toggle("Connect over the internet", isOn: $model.remoteAccessEnabled).disabled(model.active)
+                if model.remoteAccessEnabled {
+                    TextField("Broker URL", text: $model.brokerURL, prompt: Text("https://nocturne.alkal.de"))
+                        .disabled(model.active)
+                }
+            } header: {
+                Label("Remote access", systemImage: "network")
+            } footer: {
+                Text("Use the default Nocturne broker or enter your own to connect from other networks. Devices try peer to peer and use an encrypted relay when needed. After enabling this, scan a new pairing QR code on your device. Stop the server to change these settings.")
+            }
+            Section {
                 Toggle("Headless virtual monitor", isOn: $model.headlessDisplayEnabled)
                     .disabled(model.active || (!model.headlessDisplayEnabled && !DisplaySessionManager.isSupported))
                 if model.headlessDisplayEnabled {
@@ -89,6 +100,6 @@ struct ServerSettingsView: View {
                 Text("System follows your Mac’s Light or Dark appearance.")
             }
         }.formStyle(.grouped).scrollContentBackground(.hidden)
-            .background { NocturneBackdrop() }.frame(width: 540, height: 460)
+            .background { NocturneBackdrop() }.frame(width: 540, height: 620)
     }
 }

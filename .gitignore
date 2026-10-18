@@ -10,6 +10,8 @@ artifacts/
 Windows/**/bin/
 Windows/**/obj/
 TestResults/
+remote/target/
+remote/certs/
 *.p8
 *.p12
 *.mobileprovision

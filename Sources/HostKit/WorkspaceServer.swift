@@ -23,6 +23,7 @@ public final class WorkspaceServer {
     public var displayDisconnected: ((UUID) -> Void)?
     public var onDevices: (([WorkspaceDeviceConnection]) -> Void)?
     public var onStatus: ((String, Int) -> Void)?
+    public var authorizeRemoteDevice: ((UInt16, String) throws -> Void)?
     public let folder: SharedFolder
     private let queue = DispatchQueue(label: "nocturne.host", qos: .userInitiated)
     private var listener: NWListener?
@@ -30,12 +31,14 @@ public final class WorkspaceServer {
     private var sessions: [UUID: HostSession] = [:]
     private let terminals = TerminalRegistry()
     private let microphone: MicrophoneSession
+    private let appWindows: AppWindowSessionManager?
     private var microphoneTimer: DispatchSourceTimer?
     private var permissions: HostPermissions
     private let name: String
     private let devices: WorkspaceDeviceStore
-    public init(folder: URL, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions = .init(), microphoneOutput: MicrophoneOutput = VirtualMicrophone()) throws {
+    public init(folder: URL, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions = .init(), microphoneOutput: MicrophoneOutput = VirtualMicrophone(), appWindows: AppWindowSessionManager? = nil) throws {
         self.folder = try SharedFolder(url: folder); self.name = name; self.devices = devices; self.permissions = permissions
+        self.appWindows = appWindows
         microphone = MicrophoneSession(output: microphoneOutput)
     }
     public func start(secret: Data, port: UInt16 = WorkspaceProtocol.port) throws {
@@ -47,11 +50,12 @@ public final class WorkspaceServer {
         listener.service = NWListener.Service(name: "Nocturne-" + discoveryID.prefix(32), type: WorkspaceProtocol.service,
             txtRecord: NWTXTRecord(["id": discoveryID]))
         listener.newConnectionHandler = { [weak self] connection in
-            guard let self = self, self.listener != nil, self.sessions.count < 8 else { connection.cancel(); return }
+            guard let self = self, self.listener != nil, self.sessions.count < 32 else { connection.cancel(); return }
             let id = UUID()
             let channel = SecureChannel(connection: connection, queue: self.queue)
-            let session = HostSession(channel: channel, terminals: self.terminals, microphone: self.microphone, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected)
+            let session = HostSession(channel: channel, terminals: self.terminals, microphone: self.microphone, appWindows: self.appWindows, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected)
             self.sessions[id] = session
+            session.authorizeRemoteDevice = self.authorizeRemoteDevice
             session.onClose = { [weak self] in self?.sessions.removeValue(forKey: id); self?.publish("Ready") }
             session.onAuthenticated = { [weak self] in self?.publish("Connected") }
             channel.start()
@@ -67,7 +71,10 @@ public final class WorkspaceServer {
         listener.start(queue: queue)
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
-        timer.setEventHandler { [weak self] in self?.microphone.expire() }
+        timer.setEventHandler { [weak self] in
+            self?.microphone.expire()
+            if let apps = self?.appWindows { Task { @MainActor in apps.expire() } }
+        }
         microphoneTimer = timer; timer.resume()
     }
     public func updatePermissions(_ permissions: HostPermissions) {
@@ -106,6 +113,7 @@ public final class WorkspaceServer {
 private final class HostSession {
     var onClose: (() -> Void)?
     var onAuthenticated: (() -> Void)?
+    var authorizeRemoteDevice: ((UInt16, String) throws -> Void)?
     private(set) var device: WorkspaceDeviceConnection?
     private let channel: SecureChannel
     private let folder: SharedFolder
@@ -114,17 +122,20 @@ private final class HostSession {
     private var transfers: [String: IncomingTransfer] = [:]
     private let terminals: TerminalRegistry
     private let microphone: MicrophoneSession
+    private let appWindows: AppWindowSessionManager?
     private let connectionID = UUID()
     private let devices: WorkspaceDeviceStore
     private var challenge: Data?
     private var closed = false
     private var pairing = false
+    private let appConnection = AppWindowConnectionState()
     private let pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?
     private let displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?
     private let displayDisconnected: ((UUID) -> Void)?
-    init(channel: SecureChannel, terminals: TerminalRegistry, microphone: MicrophoneSession, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?, displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?, displayDisconnected: ((UUID) -> Void)?) {
+    init(channel: SecureChannel, terminals: TerminalRegistry, microphone: MicrophoneSession, appWindows: AppWindowSessionManager?, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?, displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?, displayDisconnected: ((UUID) -> Void)?) {
         self.pairStream = pairStream; self.terminals = terminals
         self.microphone = microphone
+        self.appWindows = appWindows
         self.displayCommand = displayCommand; self.displayDisconnected = displayDisconnected
         self.channel = channel; self.devices = devices; self.folder = folder; self.name = name; self.permissions = permissions
         channel.onPacket = { [weak self] packet in self?.handle(packet) }
@@ -136,9 +147,11 @@ private final class HostSession {
     }
     func close() { closed = true; device = nil; cleanup(); channel.cancel() }
     private func cleanup() {
+        appConnection.close()
         transfers.removeAll(); terminals.detach(connectionID)
         microphone.disconnected(connectionID)
         displayDisconnected?(connectionID)
+        if let appWindows { let id = connectionID; Task { @MainActor in appWindows.disconnected(id) } }
     }
     private func handle(_ packet: Packet) {
         do {
@@ -154,15 +167,32 @@ private final class HostSession {
             case .authenticate:
                 guard device == nil, let nonce = challenge, let certificate = packet.certificate,
                       let signature = packet.signature, let deviceName = packet.name,
-                      case .hostPort(let address, _) = channel.connection.endpoint else { throw NocturneError.invalidFrame }
+                      case .hostPort(let address, let port) = channel.connection.endpoint else { throw NocturneError.invalidFrame }
                 challenge = nil
                 let id = try WorkspaceIdentity.verify(certificate: certificate, signature: signature, challenge: channel.boundChallenge(nonce))
                 let authorized = try devices.authorize(id: id, name: deviceName, token: packet.enrollmentToken)
+                // Only a loopback socket created by the tunnel can authorize its QUIC peer.
+                if ["127.0.0.1", "::1", "::ffff:127.0.0.1"].contains("\(address)") {
+                    try authorizeRemoteDevice?(port.rawValue, id)
+                }
                 device = WorkspaceDeviceConnection(id: id, name: authorized.name, address: "\(address)")
                 result.version = WorkspaceProtocol.version; result.name = name
                 onAuthenticated?()
                 result.capabilities = [permissions.files ? "files" : nil, permissions.terminal ? "terminal" : nil, pairStream != nil ? "streaming" : nil, displayCommand != nil ? "display" : nil, permissions.microphone ? MicrophoneFormat.capability : nil].compactMap { $0 }
+                if appWindows != nil { result.capabilities?.append(AppStreaming.capability) }
             case .ping: break
+            case .appList, .appIcon, .appLaunch, .appOpen, .appResize, .appInput, .appHeartbeat, .appClose:
+                guard let appWindows, let device else { throw NocturneError.permissionDenied }
+                let connection = connectionID, channel = channel, state = appConnection
+                Task { @MainActor in
+                    let reply: Packet
+                    do {
+                        reply = try await appWindows.handle(packet, connection: connection, device: device.id, isConnected: { state.isOpen },
+                            send: { packet, completion in channel.send(packet, completion: completion) })
+                    } catch { reply = packet.reply(error: error.localizedDescription) }
+                    if state.isOpen { channel.send(reply) }
+                }
+                return
             case .microphoneStart, .microphoneAudio, .microphoneStop:
                 guard permissions.microphone else { throw NocturneError.permissionDenied }
                 result = try microphone.handle(packet, connection: connectionID)
@@ -230,7 +260,7 @@ private final class HostSession {
                     try terminals.close(packet.sessionID, owner: device.id); result.sessionID = packet.sessionID
                 default: break
                 }
-            case .terminalOutput, .terminalExit, .terminalClosed: throw NocturneError.invalidFrame
+            case .terminalOutput, .terminalExit, .terminalClosed, .appVideo, .appEnded: throw NocturneError.invalidFrame
             }
             channel.send(result)
         } catch {
@@ -240,4 +270,11 @@ private final class HostSession {
             } else { channel.send(packet.reply(error: error.localizedDescription)) }
         }
     }
+}
+
+private final class AppWindowConnectionState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var open = true
+    var isOpen: Bool { lock.lock(); defer { lock.unlock() }; return open }
+    func close() { lock.lock(); open = false; lock.unlock() }
 }

@@ -30,7 +30,7 @@ final class HostFileProvider: NSObject {
         try Task.checkCancellation()
         let credentials = try account()
         guard credentials.domainIdentifier == domain.identifier.rawValue else { throw NSFileProviderError(.notAuthenticated) }
-        let connection = WorkspaceConnection(identity: try credentials.identity())
+        let connection = WorkspaceConnection(identity: try credentials.identity(), remoteStreaming: false)
         defer { connection.disconnect() }
         try await connection.connect(credentials.invitation, restoreTerminalSessions: false, rediscover: true)
         guard connection.capabilities.contains("files") else { throw CocoaError(.fileReadNoPermission) }

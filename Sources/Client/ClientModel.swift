@@ -42,10 +42,10 @@ final class StreamSession: ObservableObject, Identifiable {
     }
 }
 enum ClientPage: String, CaseIterable, Identifiable {
-    case computers = "Computers", terminal = "Terminal", files = "Files", settings = "Settings"
+    case computers = "Computers", hostApps = "Apps", terminal = "Terminal", files = "Files", settings = "Settings"
     var id: String { rawValue }
     var symbol: String {
-        switch self { case .computers: return "desktopcomputer"; case .terminal: return "terminal"; case .files: return "folder"; case .settings: return "slider.horizontal.3" }
+        switch self { case .computers: return "desktopcomputer"; case .hostApps: return "square.grid.2x2"; case .terminal: return "terminal"; case .files: return "folder"; case .settings: return "slider.horizontal.3" }
     }
 }
 
@@ -54,6 +54,7 @@ final class ClientModel: ObservableObject {
     static let shared = ClientModel()
     let engine = NocturneStreamingService()
     let server: WorkspaceConnection
+    let hostApps: HostAppsModel
     let microphone = ClientMicrophone()
     let filesIntegration = FilesIntegration()
     @Published var hosts: [StreamingHost] = []
@@ -86,6 +87,7 @@ final class ClientModel: ObservableObject {
         let streamingEngine = engine
         server = WorkspaceConnection(identity: WorkspaceIdentity(certificate: streamingEngine.workspaceCertificate(),
             name: UIDevice.current.name) { streamingEngine.signWorkspaceChallenge($0) })
+        hostApps = HostAppsModel(connection: server)
         preferences = UserDefaults.standard.data(forKey: "streamPreferences").flatMap { try? JSONDecoder().decode(StreamPreferences.self, from: $0) } ?? .init()
         savedServerName = UserDefaults.standard.string(forKey: "serverName")
         engine.hostsChanged = { [weak self] hosts in self?.hosts = hosts.map(StreamingHost.init) }
@@ -133,7 +135,11 @@ final class ClientModel: ObservableObject {
         refreshInputs()
         workspaceObserver = server.$state.sink { [weak self] state in
             guard state != .connected else { return }
-            Task { @MainActor in self?.microphone.stop() }
+            Task { @MainActor in
+                guard let self, self.server.state != .connected else { return }
+                self.microphone.stop(); self.hostApps.reset()
+                if let id = self.linkedHostID { self.engine.clearTemporaryAddress(id) }
+            }
         }
     }
     func start() {
@@ -327,10 +333,11 @@ final class ClientModel: ObservableObject {
             updateFilesLocation(connected)
             showAdd = false
             if server.capabilities.contains("streaming") {
-                pendingStreamAddress = connected.host; busy = true
+                let address = server.streamingAddress ?? connected.host
+                pendingStreamAddress = address; busy = true
                 try await Task.sleep(nanoseconds: 350_000_000)
                 guard serverPairingGeneration == generation else { return }
-                engine.addAddress(connected.host)
+                engine.addAddress(address)
             }
         } catch { if serverPairingGeneration == generation { self.error = error.localizedDescription } }
     }
@@ -349,13 +356,13 @@ final class ClientModel: ObservableObject {
                 var invitation = try JSONDecoder().decode(PairingInvitation.self, from: data)
                 // Also recover older servers (without the workspace Bonjour ID) using
                 // the already-paired video host. TLS still verifies the workspace key.
-                if let host = self.hosts.first(where: { $0.id == self.linkedHostID && $0.online && $0.paired }), !host.address.isEmpty {
+                if let host = self.hosts.first(where: { $0.id == self.linkedHostID && $0.online && $0.paired }), !host.address.isEmpty, host.address != "127.0.0.1" {
                     invitation = try invitation.replacingAddress(host: host.address)
                 }
                 try await self.server.connect(invitation, rediscover: true)
                 try Task.checkCancellation()
                 guard self.serverPairingGeneration == attempt, let connected = self.server.connectedInvitation else { return }
-                if let id = self.linkedHostID { self.engine.updateHostAddress(id, address: connected.host) }
+                if let id = self.linkedHostID { self.engine.updateHostAddress(id, address: self.server.streamingAddress ?? connected.host) }
                 try SecureStore.write(JSONEncoder().encode(connected), account: "server")
                 self.updateFilesLocation(connected)
             }
@@ -371,6 +378,7 @@ final class ClientModel: ObservableObject {
         if let linkedHostID, !removeStreamingHost(linkedHostID) { return }
         do {
             try filesIntegration.forget()
+            AppWindowScenes.disconnectAll()
             try SecureStore.delete("server"); server.disconnect(); server.forgetTerminals(); savedServerName = nil
             UserDefaults.standard.removeObject(forKey: "serverName"); UserDefaults.standard.removeObject(forKey: "serverHostID"); linkedHostID = nil; pendingStreamAddress = nil
         } catch { self.error = error.localizedDescription }
@@ -379,6 +387,22 @@ final class ClientModel: ObservableObject {
         filesIntegration.configure(invitation: invitation, certificate: engine.workspaceCertificate(),
             privateKey: engine.workspacePrivateKey(), deviceName: UIDevice.current.name,
             enabled: server.capabilities.contains("files"))
+    }
+    func appWindowInvitation(serverID: String? = nil) throws -> PairingInvitation {
+        guard let data = try SecureStore.read("server") else {
+            throw NocturneError.remote("Pair your Mac in Nocturne before opening an app window.")
+        }
+        let invitation = try JSONDecoder().decode(PairingInvitation.self, from: data)
+        guard serverID == nil || WorkspaceIdentity.fingerprint(invitation.secret) == serverID else {
+            throw NocturneError.remote("This window belongs to a different Mac. Open an app from your currently paired Mac.")
+        }
+        return invitation
+    }
+    func makeAppWindowStream(_ route: AppWindowRoute) -> AppWindowStreamModel {
+        AppWindowStreamModel(route: route, connection: server.mediaConnection()) { [weak self] in
+            guard let self else { throw NocturneError.disconnected }
+            return try self.appWindowInvitation(serverID: route.serverID)
+        }
     }
     func forgetHost(_ hostID: String) {
         if hostID == linkedHostID { forgetServer() }

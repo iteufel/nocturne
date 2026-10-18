@@ -131,6 +131,26 @@
     [self.engine updateHostAddress:self.host.uuid address:@"192.0.2.50"];
     XCTAssertNil([self streamController], @"An address update must never grant pairing approval");
 }
+- (void)testRemoteProxySurvivesDiscoveryWithoutReplacingTheSavedLANAddress {
+    [self approveFixture];
+    self.host.address = self.host.localAddress = @"192.0.2.30";
+    [self.engine updateHostAddress:self.host.uuid address:@"127.0.0.1"];
+    XCTAssertEqualObjects(self.host.activeAddress, @"127.0.0.1");
+    XCTAssertEqualObjects(self.host.address, @"192.0.2.30");
+    XCTAssertEqualObjects(self.host.localAddress, @"192.0.2.30");
+    self.host.activeAddress = @"192.0.2.30";
+    [self.engine updateAllHosts:@[self.host]];
+    [self drainPairingCallbacks];
+    XCTAssertEqualObjects(self.host.activeAddress, @"127.0.0.1");
+    XCTAssertNotNil([self streamController]);
+    [self.engine clearTemporaryAddress:self.host.uuid];
+    XCTAssertEqualObjects(self.host.activeAddress, @"192.0.2.30");
+    XCTAssertEqual(self.host.state, StateOffline);
+    [self.engine updateHostAddress:self.host.uuid address:@"192.0.2.40"];
+    [self.engine publishHosts];
+    XCTAssertEqualObjects(self.host.activeAddress, @"192.0.2.40");
+    XCTAssertEqualObjects(self.host.address, @"192.0.2.40");
+}
 - (void)testApprovedHostCanStreamButRediscoveryAfterForgetCannot {
     [self approveFixture];
     XCTAssertNotNil([self streamController], @"A successfully approved computer remains usable");

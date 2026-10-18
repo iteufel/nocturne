@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p Vendor
+scripts/build-remote.sh
 fetch() {
   local directory="$1" url="$2" revision="$3"
   if [ ! -d "$directory/.git" ]; then

@@ -1,0 +1,22 @@
+services:
+  broker:
+    build:
+      context: ..
+      dockerfile: remote/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:8080/tcp"
+      - "443:8443/tcp"
+      - "7842:7842/udp"
+    environment:
+      NOCTURNE_BROKER_CERT: /certs/fullchain.pem
+      NOCTURNE_BROKER_KEY: /certs/privkey.pem
+      NOCTURNE_BROKER_BYTES_PER_SECOND: "12500000"
+      RUST_LOG: info
+    volumes:
+      - ./certs:/certs:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 64

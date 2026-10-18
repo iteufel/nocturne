@@ -16,7 +16,7 @@ public struct FilesProviderAccount: Codable {
 
     public init(invitation: PairingInvitation, certificate: Data, privateKey: Data, deviceName: String) throws {
         self.invitation = try PairingInvitation(host: invitation.host, port: invitation.port,
-            name: invitation.name, secret: invitation.secret)
+            name: invitation.name, secret: invitation.secret, remoteAccess: invitation.remoteAccess)
         self.certificate = certificate; self.privateKey = privateKey; self.deviceName = deviceName
         // Catch an invalid export or mismatched certificate before publishing a Files location.
         let identity = try identity()

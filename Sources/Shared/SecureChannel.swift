@@ -38,7 +38,7 @@ public final class SecureChannel {
     public init(connection: NWConnection, queue: DispatchQueue = DispatchQueue(label: "nocturne.channel")) {
         self.connection = connection; self.queue = queue
     }
-    public func start() {
+    public func start(timeout: TimeInterval = 12) {
         connection.stateUpdateHandler = { [weak self] state in
             guard let self = self else { return }
             switch state {
@@ -50,7 +50,7 @@ public final class SecureChannel {
             }
         }
         connection.start(queue: queue)
-        queue.asyncAfter(deadline: .now() + 12) { [weak self] in
+        queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
             guard let self = self, self.connection.state != .ready else { return }
             self.finish(NocturneError.timeout)
         }

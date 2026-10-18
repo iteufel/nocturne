@@ -47,6 +47,7 @@ struct ClientRootView: View {
             Group {
                 switch page {
                 case .computers: ComputersView(model: model)
+                case .hostApps: HostAppsWorkspace(client: model, model: model.hostApps, connection: model.server)
                 case .terminal: TerminalWorkspace(connection: model.server, connect: { Task { await model.reconnectServer() } })
                 case .files: FilesWorkspace(connection: model.server, connect: { model.showAdd = true })
                 case .settings: ClientSettingsView(model: model)
@@ -124,7 +125,7 @@ struct ComputersView: View {
                 }
                 HStack(spacing: 7) {
                     Image(systemName: "network").font(.system(size: 11))
-                    Text("Direct to your computer. No account needed.").font(.system(size: 11))
+                    Text("Encrypted access to your computer. No account needed.").font(.system(size: 11))
                 }.foregroundStyle(MoonStyle.secondary.opacity(0.7)).frame(maxWidth: .infinity).padding(.bottom, 10)
             }.padding(.horizontal, sizeClass == .regular ? 36 : 22).padding(.top, 18).padding(.bottom, 24)
                 .frame(maxWidth: 1_100).frame(maxWidth: .infinity)
@@ -140,7 +141,7 @@ struct HostCard: View {
                 HStack { Image(systemName: "desktopcomputer").font(.system(size: 32, weight: .light)).foregroundStyle(MoonStyle.accent); Spacer(); StatusPill(label: host.online ? "Online" : "Offline", active: host.online) }
                 VStack(alignment: .leading, spacing: 6) {
                     Text(host.name).font(.system(size: 20, weight: .semibold, design: .rounded)).foregroundStyle(MoonStyle.silver)
-                    Text(host.address).font(.system(size: 11, design: .monospaced)).foregroundStyle(MoonStyle.secondary)
+                    Text(host.address == "127.0.0.1" ? "Remote connection" : host.address).font(.system(size: 11, design: .monospaced)).foregroundStyle(MoonStyle.secondary)
                 }
                 HStack { Text(host.paired ? "Open library" : "Pair computer"); Spacer(); Image(systemName: "arrow.up.right") }
                     .font(.system(size: 13, weight: .semibold)).foregroundStyle(MoonStyle.accent)
@@ -158,12 +159,17 @@ struct WorkspaceCard: View {
                 HStack {
                     Label("Your workspace", systemImage: "sparkles").font(.system(size: 15, weight: .semibold))
                     Spacer()
-                    if connection.state == .connected { StatusPill(label: "Connected", active: true) }
+                    if connection.state == .connected {
+                        TimelineView(.periodic(from: .now, by: 2)) { _ in
+                            StatusPill(label: connection.connectionRoute ?? "Connected", active: true)
+                        }
+                    }
                 }
                 Text(connection.state == .connected ? "\(connection.name) is connected. Your terminal and shared files are a tap away." : "Connect to Nocturne Server for streaming, your terminal, and shared files.")
                     .font(.system(size: 13)).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
                 NocturneGlassGroup { HStack(spacing: 12) {
                     if connection.state == .connected {
+                        Button { model.page = .hostApps } label: { Label("Apps", systemImage: "square.grid.2x2") }
                         Button { model.page = .terminal } label: { Label("Terminal", systemImage: "terminal") }
                         Button { model.page = .files } label: { Label("Files", systemImage: "folder") }
                     } else if model.savedServerName != nil {
