@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# The caller writes credentials with umask 077. Distributed app files must also
+# be readable by other users when the app is installed in shared Applications.
+umask 022
 
 : "${NOCTURNE_DEVELOPER_ID:?Set the Developer ID Application signing identity}"
 : "${NOCTURNE_DEVELOPMENT_TEAM:?Set the Apple Developer team ID}"
