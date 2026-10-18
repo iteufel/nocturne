@@ -27,7 +27,7 @@ final class StreamSession: ObservableObject, Identifiable {
     let id = UUID()
     let host: StreamingHost
     let app: StreamingApp
-    let preferences: StreamPreferences
+    @Published var preferences: StreamPreferences
     @Published var controller: UIViewController?
     @Published var status = "Preparing your display…"
     @Published var size: StreamDisplaySize?
@@ -139,6 +139,14 @@ final class ClientModel: ObservableObject {
     func refreshInputs() {
         controllers = GCController.controllers().map { $0.vendorName ?? "Game controller" }
         keyboardConnected = GCKeyboard.coalesced != nil; mouseConnected = !GCMouse.mice().isEmpty
+    }
+    func setInputMode(_ mode: StreamInputMode) {
+        preferences.inputMode = mode
+        guard let current = session else { return }
+        current.preferences.inputMode = mode
+        if let controller = current.controller {
+            engine.setTouchMode(mode == .touch, controller: controller)
+        }
     }
     func select(_ host: StreamingHost) {
         guard !busy, session == nil, pendingStream == nil else { return }

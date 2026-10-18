@@ -1,6 +1,7 @@
 #import "NocturneStreamingService.h"
 #import "NocturnePairingTrust.h"
 #import "NocturneStreamLifecycle.h"
+#import "NocturneStreamInput.h"
 #import "DiscoveryManager.h"
 #import "DataManager.h"
 #import "PairManager.h"
@@ -26,15 +27,30 @@
 @property (nonatomic, copy) void (^onExit)(void);
 @property (nonatomic) BOOL cleanedUp;
 @property (nonatomic) CGSize lastControlSize;
+@property (nonatomic) BOOL absoluteTouchMode;
 - (void)shutdown;
 @end
 @implementation MDStreamController
+- (void)setAbsoluteTouchMode:(BOOL)absolute {
+    _absoluteTouchMode = absolute;
+    if (self.isViewLoaded) [self nocturneSetAbsoluteTouchMode:absolute];
+}
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    [self nocturneSetAbsoluteTouchMode:self.absoluteTouchMode];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(pointerLockChanged:)
+        name:UIPointerLockStateDidChangeNotification object:nil];
+}
+- (void)pointerLockChanged:(NSNotification *)notification {
+    if (notification.userInfo[UIPointerLockStateSceneUserInfoKey] == self.view.window.windowScene) [self nocturneReleaseInput];
+}
 - (void)returnToMainFrame { if (!self.cleanedUp && self.onExit) self.onExit(); }
 - (void)launchFailed:(NSString *)message { if (!self.cleanedUp) [super launchFailed:message]; }
 - (void)connectionTerminated:(int)errorCode { if (!self.cleanedUp) [super connectionTerminated:errorCode]; }
 - (void)shutdown {
     if (self.cleanedUp) return;
     self.cleanedUp = YES;
+    if (self.isViewLoaded) [self nocturneReleaseInput];
     [self updatePreferredDisplayMode:NO];
     [super willMoveToParentViewController:nil];
 }
@@ -370,8 +386,14 @@
         if (hdr && (AVPlayer.availableHDRModes & AVPlayerHDRModeHDR10)) config.supportedVideoFormats |= VIDEO_FORMAT_H265_MAIN10;
     }
     MDStreamController *controller = [MDStreamController new]; controller.streamConfig = config; controller.onExit = onExit;
+    controller.absoluteTouchMode = [settings[@"absolute"] boolValue];
     [self pause];
     return controller;
+}
+- (void)setTouchMode:(BOOL)absolute controller:(UIViewController *)controller {
+    if ([controller isKindOfClass:MDStreamController.class] && !((MDStreamController *)controller).cleanedUp) {
+        ((MDStreamController *)controller).absoluteTouchMode = absolute;
+    }
 }
 - (void)stopController:(UIViewController *)controller { if ([controller isKindOfClass:MDStreamController.class]) [(MDStreamController *)controller shutdown]; }
 - (void)stopController:(UIViewController *)controller completion:(void (^)(void))completion {

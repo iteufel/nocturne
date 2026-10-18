@@ -21,6 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)cancelPairing;
 - (BOOL)forgetHost:(NSString *)hostID;
 - (nullable UIViewController *)streamHost:(NSString *)hostID app:(NSString *)appID settings:(NSDictionary *)settings onExit:(void (^)(void))onExit;
+- (void)setTouchMode:(BOOL)absolute controller:(UIViewController *)controller NS_SWIFT_NAME(setTouchMode(_:controller:));
 - (void)stopController:(UIViewController *)controller NS_SWIFT_NAME(stopController(_:));
 - (void)stopController:(UIViewController *)controller completion:(void (^)(void))completion NS_SWIFT_NAME(stopController(_:completion:));
 @end

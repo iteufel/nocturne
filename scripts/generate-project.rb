@@ -56,6 +56,16 @@ def replace_once(source, before, after)
   raise 'Upstream streaming lifecycle changed; review the overlay.' unless source.scan(before).length == 1
   source.sub(before, after)
 end
+def replace_section(source, first, following, replacement)
+  raise 'Upstream input changed; review the overlay.' unless source.scan(first).length == 1 && source.scan(following).length == 1
+  start = source.index(first); finish = source.index(following)
+  raise 'Upstream input section changed; review the overlay.' unless finish > start
+  source[0...start] + replacement + source[finish..]
+end
+def input_methods(source, filename)
+  raise 'Upstream input implementation changed; review the overlay.' unless source.match?(/\n@end\s*\z/)
+  "#import \"NocturneStreamInput.h\"\n" + source.sub(/\n@end\s*\z/, "\n" + File.read("Sources/Client/Bridge/#{filename}") + "\n@end\n")
+end
 overlay(target, group, 'Stream/Connection.m') do |source|
   source = replace_once(source, "-(void) terminate\n{", "-(void) terminate { [self nocturneTerminateWithCompletion:nil]; }\n\n-(void)nocturneTerminateWithCompletion:(void (^)(void))completion\n{")
   replace_once(source, "        LiStopConnection();\n        [initLock unlock];", "        LiStopConnection();\n        [initLock unlock];\n        if (completion) dispatch_async(dispatch_get_main_queue(), completion);")
@@ -68,7 +78,47 @@ overlay(target, group, 'Stream/StreamManager.m') do |source|
   replace_once(source, "- (void) stopStream\n{\n    [_connection terminate];\n}", File.read('Sources/Client/Bridge/StreamManagerStop.inc'))
 end
 overlay(target, group, 'ViewControllers/StreamFrameViewController.m') do |source|
-  replace_once(source, '- (void)willMoveToParentViewController:(UIViewController *)parent {', "- (void)nocturneStopWithCompletion:(void (^)(void))completion {\n    if (_streamMan) [_streamMan nocturneStopWithCompletion:completion];\n    else if (completion) completion();\n}\n\n- (void)willMoveToParentViewController:(UIViewController *)parent {")
+  source = replace_once(source, '- (void)willMoveToParentViewController:(UIViewController *)parent {', "- (void)nocturneStopWithCompletion:(void (^)(void))completion {\n    if (_streamMan) [_streamMan nocturneStopWithCompletion:completion];\n    else if (completion) completion();\n}\n\n- (void)willMoveToParentViewController:(UIViewController *)parent {")
+  source = replace_section(source, '    // Only enable scroll and zoom in absolute touch mode', '    [self.view addSubview:_stageLabel];', "    [self nocturneSetAbsoluteTouchMode:_settings.absoluteTouchMode];\n\n")
+  input_methods(source, 'StreamFrameInput.inc')
+end
+# Keep all input changes in reviewed overlays, leaving the pinned dependency intact.
+overlay(target, group, 'Input/StreamView.m') do |source|
+  source = replace_once(source, '    NSInteger lastMouseButtonMask;', "    NSInteger lastMouseButtonMask;\n    NSMapTable<UITouch *, NSNumber *> *nocturneMouseTouches;\n    NSMutableSet<UITouch *> *nocturneActiveTouches;\n    NSHashTable<UITouch *> *nocturneIgnoredTouches;")
+  source = replace_section(source, '- (BOOL)handleMouseButtonEvent:', '- (void)touchesMoved:', '')
+  raise 'Upstream mouse routing changed; review the overlay.' unless source.scan('if ([GCMouse current] != nil)').length == 2
+  source = source.gsub('if ([GCMouse current] != nil)', 'if (NocturneUsesRelativeMouse(self))')
+  source = replace_once(source, '    Log(LOG_D, @"Touch down");', "    if (nocturneIgnoredTouches.count) {\n        for (UITouch *touch in touches) [nocturneIgnoredTouches addObject:touch];\n        return;\n    }\n    if (!nocturneActiveTouches) nocturneActiveTouches = [NSMutableSet set];\n    [nocturneActiveTouches unionSet:touches];\n    Log(LOG_D, @\"Touch down\");")
+  source = replace_once(source, "    if (![onScreenControls handleTouchMovedEvent:touches]) {", "    if (nocturneIgnoredTouches.count) return;\n    if (![onScreenControls handleTouchMovedEvent:touches]) {")
+  source = replace_once(source, '    Log(LOG_D, @"Touch up");', "    if (nocturneIgnoredTouches.count) {\n        for (UITouch *touch in touches) [nocturneIgnoredTouches removeObject:touch];\n        return;\n    }\n    [nocturneActiveTouches minusSet:touches];\n    Log(LOG_D, @\"Touch up\");")
+  source = replace_once(source, "- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {\n", "- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {\n    if ([self handleMouseButtonEvent:BUTTON_ACTION_RELEASE forTouches:touches withEvent:event]) return;\n    if (nocturneIgnoredTouches.count) {\n        for (UITouch *touch in touches) [nocturneIgnoredTouches removeObject:touch];\n        return;\n    }\n    [nocturneActiveTouches minusSet:touches];\n    [onScreenControls handleTouchUpEvent:touches];\n")
+  source = source.gsub(/LiSendMouseButtonEvent\((BUTTON_ACTION_(?:PRESS|RELEASE)), (\[self buttonFromX1ButtonCode:button\])\);/, '[self nocturneSendMouseButton:\1 button:\2];')
+  input_methods(source, 'StreamViewInput.inc')
+end
+overlay(target, group, 'Input/ControllerSupport.m') do |source|
+  source = replace_once(source, '@implementation ControllerSupport {', "@implementation ControllerSupport {\n    NSUInteger nocturneMouseButtons;")
+  source = replace_once(source, '        self->accumulatedDeltaX += deltaX / MOUSE_SPEED_DIVISOR;', "        if (![self nocturneUsesRelativeMouse]) return;\n        self->accumulatedDeltaX += deltaX / MOUSE_SPEED_DIVISOR;")
+  raise 'Upstream mouse buttons changed; review the overlay.' unless source.scan('LiSendMouseButtonEvent(pressed ? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE,').length == 5
+  source = source.gsub(/LiSendMouseButtonEvent\(pressed \? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE, (BUTTON_\w+)\);/, '[self nocturneHandleMouseButton:pressed ? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE button:\1];')
+  source = replace_once(source, "-(void) unregisterMouseCallbacks:(GCMouse*)mouse API_AVAILABLE(ios(14.0)) {", "-(void) unregisterMouseCallbacks:(GCMouse*)mouse API_AVAILABLE(ios(14.0)) {\n    [self nocturneReleaseMouseButtons];")
+  source = replace_once(source, "-(void) cleanup\n{", "-(void) cleanup\n{\n    [self nocturneReleaseMouseButtons];")
+  input_methods(source, 'ControllerMouseInput.inc')
+end
+overlay(target, group, 'Input/RelativeTouchHandler.m') do |source|
+  source = replace_once(source, '    UIView* view;', "    __weak UIView* view;\n    NSUInteger nocturneTapGeneration;\n    int nocturneTapButton;")
+  source = replace_once(source, "- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {", "- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {\n    [self nocturneCancelTap];")
+  source = replace_once(source, '    peakTouchCount = [[event allTouches] count];', '    peakTouchCount = MAX(peakTouchCount, [[event allTouches] count]);')
+  source = replace_section(source, '- (void)touchesEnded:', '- (void)touchesCancelled:', '')
+  source = replace_once(source, "- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {", "- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {\n    [self nocturneCancelTap];")
+  source = source.gsub(/LiSendMouseButtonEvent\((BUTTON_ACTION_(?:PRESS|RELEASE)), (BUTTON_\w+)\);/, '[(StreamView *)view nocturneSendMouseButton:\1 button:\2];')
+  input_methods(source, 'RelativeTouchInput.inc')
+end
+overlay(target, group, 'Input/AbsoluteTouchHandler.m') do |source|
+  source = replace_once(source, '    StreamView* view;', '    __weak StreamView* view;')
+  source = replace_once(source, '    if ([[event allTouches] count] == [touches count]) {', '    if ([touches containsObject:lastTouchDown] || [[event allTouches] count] == [touches count]) {')
+  source = replace_once(source, "    // Treat this as a normal touchesEnded event\n    [self touchesEnded:touches withEvent:event];", "    [longPressTimer invalidate]; longPressTimer = nil;\n    [view nocturneSendMouseButton:BUTTON_ACTION_RELEASE button:BUTTON_LEFT];\n    [view nocturneSendMouseButton:BUTTON_ACTION_RELEASE button:BUTTON_RIGHT];\n    lastTouchDown = lastTouchUp = nil;")
+  source = source.gsub(/LiSendMouseButtonEvent\((BUTTON_ACTION_(?:PRESS|RELEASE)), (BUTTON_\w+)\);/, '[view nocturneSendMouseButton:\1 button:\2];')
+  "#import \"NocturneStreamInput.h\"\n" + source
 end
 Dir.glob('{Sources/Client,Sources/Design}/**/*.{swift,m,h}').sort.each do |path|
   reference = group.new_file('../../' + path)
@@ -119,7 +169,7 @@ client_tests.build_configurations.each do |config|
   settings['GENERATE_INFOPLIST_FILE'] = 'YES'
   settings['TEST_HOST'] = '$(BUILT_PRODUCTS_DIR)/Nocturne.app/Nocturne'
   settings['BUNDLE_LOADER'] = '$(TEST_HOST)'
-  settings['HEADER_SEARCH_PATHS'] = target.build_configurations.first.build_settings['HEADER_SEARCH_PATHS'] + ['$(CONFIGURATION_TEMP_DIR)/Nocturne.build/DerivedSources/CoreDataGenerated/Limelight']
+  settings['HEADER_SEARCH_PATHS'] = target.build_configurations.first.build_settings['HEADER_SEARCH_PATHS'] + ['$(CONFIGURATION_TEMP_DIR)/Nocturne.build/DerivedSources', '$(CONFIGURATION_TEMP_DIR)/Nocturne.build/DerivedSources/CoreDataGenerated/Limelight']
   settings['CLANG_ENABLE_MODULES'] = 'YES'
   settings['CLANG_ENABLE_OBJC_ARC'] = 'YES'
   settings['TARGETED_DEVICE_FAMILY'] = '1,2'

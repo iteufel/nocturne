@@ -44,6 +44,10 @@ struct StreamWorkspace: View {
                     Menu {
                         Text(session.app.name + " · " + session.host.name)
                         if let size = session.size { Text("\(size.width) × \(size.height) · \(size.frameRate) fps") }
+                        Picker("Input mode", selection: Binding(get: { session.preferences.inputMode }, set: model.setInputMode)) {
+                            ForEach(StreamInputMode.allCases) { mode in Label(mode.title, systemImage: mode.symbol).tag(mode) }
+                        }
+                        Divider()
                         Button("Terminal", systemImage: "terminal") { tool = 0; showTools = true }
                         Button("Files", systemImage: "folder") { tool = 1; showTools = true }
                         Button(showTools ? "Hide tools" : "Show tools", systemImage: "sidebar.right") { showTools.toggle() }
