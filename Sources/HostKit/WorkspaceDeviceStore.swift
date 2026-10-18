@@ -14,7 +14,6 @@ public final class WorkspaceDeviceStore {
     private let url: URL
     private let lock = NSLock()
     private var records: [String: WorkspaceDevice]
-    private var streaming: Set<String> = []
     private var blocked: [String: String] = [:]
     private var invitation: (token: Data, expires: Date)?
 
@@ -39,14 +38,11 @@ public final class WorkspaceDeviceStore {
     public func cancelInvitation() {
         lock.lock(); defer { lock.unlock() }; invitation = nil
     }
-    public func updateStreamingIdentities(_ fingerprints: Set<String>) {
-        lock.lock(); defer { lock.unlock() }; streaming = fingerprints
-    }
     public func authorize(id: String, name: String, token: Data?) throws -> WorkspaceDevice {
         lock.lock(); defer { lock.unlock() }
         guard blocked[id] == nil else { throw NocturneError.remote("This device is being removed.") }
         let enrolling = token != nil && token == invitation?.token && (invitation?.expires ?? .distantPast) > Date()
-        guard records[id] != nil || streaming.contains(id) || enrolling else {
+        guard records[id] != nil || enrolling else {
             throw NocturneError.remote("This device is no longer paired. Scan a new code in Nocturne Server → Devices.")
         }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,10 +57,10 @@ public final class WorkspaceDeviceStore {
     /// Block first and keep the block if persistence or engine revocation fails. Retrying is safe.
     public func remove(_ id: String, name: String? = nil) throws {
         lock.lock(); defer { lock.unlock() }
-        blocked[id] = name ?? records[id]?.name ?? "Device"; streaming.remove(id)
+        blocked[id] = name ?? records[id]?.name ?? "Device"
         invitation = nil
         try save(records, blocked: blocked)
-        // An unconsumed link copied before removal must not authorize the device again.
+        // An unconsumed QR invitation must not authorize the device after removal.
         invitation = nil
     }
     public func finishRemoval(_ id: String) throws {
@@ -75,7 +71,7 @@ public final class WorkspaceDeviceStore {
     }
     public func reset() throws {
         lock.lock(); defer { lock.unlock() }
-        try save([:], blocked: [:]); records = [:]; streaming = []; blocked = [:]; invitation = nil
+        try save([:], blocked: [:]); records = [:]; blocked = [:]; invitation = nil
     }
     private func save(_ records: [String: WorkspaceDevice], blocked: [String: String]) throws {
         let fm = FileManager.default

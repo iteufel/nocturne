@@ -5,7 +5,11 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy, nullable) void (^hostsChanged)(NSArray<NSDictionary *> *hosts);
 @property (nonatomic, copy, nullable) void (^appsChanged)(NSString *hostID, NSArray<NSDictionary *> *apps);
 @property (nonatomic, copy, nullable) void (^addressDiscovered)(NSString *hostID, NSString *address);
-@property (nonatomic, copy, nullable) void (^pairingPIN)(NSString *pin);
+// These callbacks run on the main queue. Only an authenticated QR workspace may
+// authorize a new video handshake; the protocol's challenge is never displayed.
+@property (nonatomic, copy, nullable) BOOL (^canPairHost)(NSString *hostID);
+@property (nonatomic, copy, nullable) void (^authorizePairing)(NSString *hostID, NSString *challenge, void (^completion)(BOOL approved));
+@property (nonatomic, copy, nullable) void (^pairingRequired)(void);
 @property (nonatomic, copy, nullable) void (^pairingFinished)(void);
 @property (nonatomic, copy, nullable) void (^failed)(NSString *message);
 - (NSData *)workspaceCertificate;
@@ -14,6 +18,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)pause;
 - (void)addAddress:(NSString *)address;
 - (void)selectHost:(NSString *)hostID;
+- (void)cancelPairing;
 - (BOOL)forgetHost:(NSString *)hostID;
 - (nullable UIViewController *)streamHost:(NSString *)hostID app:(NSString *)appID settings:(NSDictionary *)settings onExit:(void (^)(void))onExit;
 - (void)stopController:(UIViewController *)controller NS_SWIFT_NAME(stopController(_:));

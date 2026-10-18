@@ -4,10 +4,9 @@ import Security
 import NocturneKit
 import Darwin
 
-public struct StreamPairingRequest: Identifiable, Equatable {
-    public let id: String
-    public let name: String
-    public let address: String
+private struct StreamPairingRequest {
+    let id: String
+    let address: String
 }
 
 public struct StreamDevice: Identifiable, Equatable {
@@ -109,37 +108,37 @@ public final class EmbeddedStreamingEngine {
         try? logHandle?.close(); logHandle = nil
     }
 
-    public func pendingPairings() async throws -> [StreamPairingRequest] {
+    private func pendingPairings() async throws -> [StreamPairingRequest] {
         guard let api else { throw NocturneError.disconnected }
         let response = try await api.request("/api/pin")
         return (response["pairings"] as? [[String: Any]] ?? []).compactMap {
             guard let id = $0["id"] as? String, let address = $0["address"] as? String else { return nil }
-            return StreamPairingRequest(id: id, name: $0["name"] as? String ?? "Device", address: address)
+            return StreamPairingRequest(id: id, address: address)
         }
     }
 
-    public func approve(_ request: StreamPairingRequest, pin: String, name: String) async throws {
+    private func approve(_ request: StreamPairingRequest, pin: String, name: String) async throws {
         guard pin.utf8.count == 4, pin.utf8.allSatisfy({ (48...57).contains($0) }), !name.isEmpty, name.utf8.count <= 128 else {
-            throw NocturneError.remote("Enter the four-digit PIN shown on your device.")
+            throw NocturneError.invalidFrame
         }
         guard let api else { throw NocturneError.disconnected }
         let result = try await api.request("/api/pin", body: ["pairing_id": request.id, "pin": pin, "name": name])
-        guard result["status"] as? Bool == true else { throw NocturneError.remote("Pairing did not complete. Check the PIN and try again.") }
+        guard result["status"] as? Bool == true else { throw NocturneError.remote("Pairing did not complete. Scan a new QR code and try again.") }
     }
 
     /// A QR-authorized client may approve only a pending video pairing from its own IP address.
-    /// Ambiguous requests require the native PIN screen instead of approving another device.
+    /// Ambiguous requests fail closed instead of approving another device.
     public func pairAuthorizedClient(pin: String, name: String, address: String) async throws {
         let epoch = generation
         for _ in 0..<24 {
             try Task.checkCancellation()
             guard generation == epoch else { throw NocturneError.disconnected }
             let requests = try await pendingPairings().filter { Self.normalizedAddress($0.address) == Self.normalizedAddress(address) }
-            if requests.count > 1 { throw NocturneError.remote("Several devices are pairing at this address. Enter the PIN in Nocturne Server → Devices.") }
+            if requests.count > 1 { throw NocturneError.remote("Several devices are pairing at this address. Wait for them to finish, then scan a new QR code on one device at a time.") }
             if let request = requests.first { try await approve(request, pin: pin, name: name); return }
             try await Task.sleep(nanoseconds: 250_000_000)
         }
-        throw NocturneError.remote("The video pairing request was not found. Enter the PIN in Nocturne Server → Devices.")
+        throw NocturneError.remote("The video pairing request was not found. Scan a new QR code on your Mac and try again.")
     }
 
     public func resetPairing() async throws {

@@ -36,10 +36,6 @@ struct ClientRootView: View {
         .tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
         .sheet(isPresented: $model.showAdd) { AddComputerView(model: model) }
         .sheet(isPresented: $model.showLibrary) { AppLibraryView(model: model) }
-        .sheet(isPresented: Binding(get: { model.pin != nil }, set: { _ in })) {
-            PairingView(pin: model.pin ?? "", host: model.selectedHost?.name ?? "your computer").interactiveDismissDisabled()
-                .presentationDetents([.medium])
-        }
         .alert("Connection needs attention", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
@@ -179,20 +175,6 @@ struct WorkspaceCard: View {
                 }.buttonStyle(NocturneGlassButtonStyle()).controlSize(.large).font(.system(size: 13, weight: .semibold)).tint(MoonStyle.accent) }
             }
         }
-    }
-}
-
-struct PairingView: View {
-    let pin: String
-    let host: String
-    var body: some View {
-        VStack(spacing: 22) {
-            MoonMark(size: 48)
-            Text("A quick hello").font(.system(size: 27, weight: .semibold, design: .rounded))
-            Text("Enter this PIN in Nocturne Server → Devices on \(host).").font(.subheadline).foregroundStyle(MoonStyle.secondary).multilineTextAlignment(.center)
-            Text(pin).font(.system(size: 48, weight: .medium, design: .monospaced)).tracking(14).foregroundStyle(MoonStyle.accent).padding(.leading, 14)
-            HStack(spacing: 10) { ProgressView(); Text("Waiting for your computer").font(.caption).foregroundStyle(MoonStyle.secondary) }
-        }.padding(30).frame(maxWidth: .infinity, maxHeight: .infinity).background { NocturneBackdrop() }
     }
 }
 

@@ -58,10 +58,8 @@ final class DeviceIdentityTests: XCTestCase {
         _ = try store.authorize(id: "b", name: "iPad", token: store.createInvitation())
         try store.remove("a")
         let reloaded = try WorkspaceDeviceStore(url: url)
-        reloaded.updateStreamingIdentities(["a", "b"])
         XCTAssertThrowsError(try reloaded.authorize(id: "a", name: "iPad", token: token))
         XCTAssertNoThrow(try reloaded.authorize(id: "b", name: "iPad", token: nil))
-        reloaded.updateStreamingIdentities(["b"])
         try reloaded.finishRemoval("a")
         XCTAssertThrowsError(try reloaded.authorize(id: "a", name: "iPad", token: token))
         XCTAssertNoThrow(try reloaded.authorize(id: "a", name: "iPad", token: reloaded.createInvitation()))
@@ -82,6 +80,39 @@ final class DeviceIdentityTests: XCTestCase {
 
 @MainActor
 final class DeviceRevocationIntegrationTests: XCTestCase {
+    func testVideoPairingRequiresQREnrollmentAndAllowsRegisteredReconnect() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
+        let server = try WorkspaceServer(folder: root.appendingPathComponent("shared"), name: "Mac", devices: store)
+        let identity = try TestDeviceIdentity(), client = WorkspaceConnection(identity: identity.identity())
+        defer { client.disconnect(); server.stop() }
+        let secret = try SecureStore.randomKey(), port = UInt16.random(in: 52_000..<60_000)
+        var approvals = 0
+        server.pairStream = { challenge, name, address, id, completion in
+            Task { @MainActor in
+                XCTAssertEqual(challenge, "1234"); XCTAssertEqual(id, identity.id)
+                approvals += 1; completion(nil)
+            }
+        }
+        try await start(server, secret: secret, port: port, stage: "QR pairing server")
+        let transportOnly = try PairingInvitation(host: "127.0.0.1", port: port, name: "Mac", secret: secret)
+        do { try await client.connect(transportOnly); XCTFail("A transport key enrolled a device without QR authorization") } catch {}
+        XCTAssertEqual(approvals, 0); XCTAssertTrue(store.devices.isEmpty)
+        let invitation = try PairingInvitation(host: "127.0.0.1", port: port, name: "Mac", secret: secret, enrollmentToken: store.createInvitation())
+        try await client.connect(invitation)
+        var packet = Packet(.pairStream); packet.data = Data("1234".utf8)
+        _ = try await client.request(packet)
+        XCTAssertEqual(approvals, 1)
+        client.disconnect()
+        try await client.connect(transportOnly)
+        _ = try await client.request(packet)
+        XCTAssertEqual(approvals, 2)
+        let unknown = WorkspaceConnection(identity: try TestDeviceIdentity().identity())
+        defer { unknown.disconnect() }
+        do { try await unknown.connect(invitation); XCTFail("A consumed QR code enrolled another device") } catch {}
+        XCTAssertEqual(approvals, 2)
+    }
     func testRemovingOneDeviceClosesItsSessionsAndPreservesOtherDeviceAcrossRestart() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

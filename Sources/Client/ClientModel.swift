@@ -57,7 +57,6 @@ final class ClientModel: ObservableObject {
     @Published var selectedHost: StreamingHost?
     @Published var page = ClientPage.computers
     @Published var busy = false
-    @Published var pin: String?
     @Published var error: String?
     @Published var showAdd = false
     @Published var preferServer = false
@@ -66,7 +65,6 @@ final class ClientModel: ObservableObject {
     @Published var controllers: [String] = []
     @Published var keyboardConnected = false
     @Published var mouseConnected = false
-    @Published var invitationText = ""
     @Published var savedServerName: String?
     @Published var preferences: StreamPreferences {
         didSet { if let data = try? JSONEncoder().encode(preferences) { UserDefaults.standard.set(data, forKey: "streamPreferences") } }
@@ -97,21 +95,26 @@ final class ClientModel: ObservableObject {
             UserDefaults.standard.set(hostID, forKey: "serverHostID")
             if let host = self.hosts.first(where: { $0.id == hostID }) { self.busy = false; self.select(host) }
         }
-        engine.pairingPIN = { [weak self] pin in
-            guard let self else { return }
-            guard self.server.state == .connected, self.server.capabilities.contains("streaming"), self.selectedHost?.id == self.linkedHostID else { self.pin = pin; return }
-            let hostID = self.selectedHost?.id
+        engine.canPairHost = { [weak self] hostID in
+            guard let self else { return false }
+            return self.server.state == .connected && self.server.capabilities.contains("streaming") && hostID == self.linkedHostID
+        }
+        engine.pairingRequired = { [weak self] in self?.busy = false; self?.showAdd = true }
+        engine.authorizePairing = { [weak self] hostID, challenge, completion in
+            guard let self else { completion(false); return }
+            let generation = self.serverPairingGeneration
             Task {
-                guard self.busy, self.selectedHost?.id == hostID else { return }
+                guard self.busy, self.selectedHost?.id == hostID, self.linkedHostID == hostID,
+                      self.server.state == .connected, self.server.capabilities.contains("streaming") else { completion(false); return }
                 do {
-                    var packet = Packet(.pairStream); packet.data = Data(pin.utf8)
-                    packet.name = String(UIDevice.current.name.prefix(32))
+                    var packet = Packet(.pairStream); packet.data = Data(challenge.utf8)
                     _ = try await self.server.request(packet)
-                } catch { if self.busy, self.selectedHost?.id == hostID { self.pin = pin } }
+                    completion(self.serverPairingGeneration == generation && self.server.state == .connected && self.linkedHostID == hostID)
+                } catch { completion(false) }
             }
         }
-        engine.pairingFinished = { [weak self] in self?.busy = false; self?.pin = nil }
-        engine.failed = { [weak self] message in self?.error = message; self?.busy = false; self?.pin = nil }
+        engine.pairingFinished = { [weak self] in self?.busy = false }
+        engine.failed = { [weak self] message in self?.error = message; self?.busy = false }
         for notification in [NSNotification.Name.GCControllerDidConnect, .GCControllerDidDisconnect, .GCKeyboardDidConnect, .GCKeyboardDidDisconnect, .GCMouseDidConnect, .GCMouseDidDisconnect] {
             inputObservers.append(NotificationCenter.default.addObserver(forName: notification, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.refreshInputs() }
@@ -128,6 +131,7 @@ final class ClientModel: ObservableObject {
     }
     func suspend() {
         endStream()
+        engine.cancelPairing(); busy = false
         engine.pause()
         // The Mac retains the PTYs. Only the transport belongs to this scene.
         server.disconnect()
@@ -139,11 +143,6 @@ final class ClientModel: ObservableObject {
     func select(_ host: StreamingHost) {
         guard !busy, session == nil, pendingStream == nil else { return }
         selectedHost = host; busy = true; apps = []; engine.selectHost(host.id)
-    }
-    func add(address: String) {
-        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains("/"), !trimmed.contains(where: \.isWhitespace) else { error = "Enter a host name or IP address, such as studio.local or 192.168.1.20."; return }
-        busy = true; engine.addAddress(trimmed); showAdd = false
     }
     func stream(_ app: StreamingApp) {
         guard session == nil, pendingStream == nil, let host = selectedHost else { return }
@@ -254,12 +253,9 @@ final class ClientModel: ObservableObject {
             if UIApplication.shared.applicationState == .active, self.session == nil { self.engine.start() }
         }
     }
-    func receiveInvitation(_ url: URL) {
-        guard url.scheme == "nocturne" else { return }
-        invitationText = url.absoluteString; preferServer = true; showAdd = true
-    }
-    func pairServer(_ text: String) async {
+    func pairScannedServer(_ text: String) async {
         let generation = UUID(); serverPairingGeneration = generation
+        engine.cancelPairing()
         do {
             guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw NocturneError.invalidInvitation }
             let invitation = try PairingInvitation(url: url)
@@ -267,7 +263,7 @@ final class ClientModel: ObservableObject {
             guard serverPairingGeneration == generation else { return }
             try SecureStore.write(JSONEncoder().encode(invitation), account: "server")
             savedServerName = invitation.name; UserDefaults.standard.set(invitation.name, forKey: "serverName")
-            invitationText = ""; showAdd = false
+            showAdd = false
             if server.capabilities.contains("streaming") {
                 pendingStreamAddress = invitation.host; busy = true
                 try await Task.sleep(nanoseconds: 350_000_000)
@@ -296,7 +292,7 @@ final class ClientModel: ObservableObject {
     }
     private func removeStreamingHost(_ hostID: String) -> Bool {
         if session?.host.id == hostID || selectedHost?.id == hostID {
-            endStream(); showLibrary = false; apps = []; selectedHost = nil; pin = nil; busy = false
+            endStream(); showLibrary = false; apps = []; selectedHost = nil; busy = false
         }
         return engine.forgetHost(hostID)
     }

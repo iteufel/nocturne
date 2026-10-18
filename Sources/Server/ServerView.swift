@@ -47,7 +47,7 @@ struct ServerView: View {
             .alert("Nocturne Server", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
             .confirmationDialog("Reset all device pairing?", isPresented: $reset, titleVisibility: .visible) {
                 Button("Reset pairing", role: .destructive) { model.resetPairing() }
-            } message: { Text("Every connected device will be disconnected. Old pairing links will stop working. Pair your devices again with a new link.") }
+            } message: { Text("Every connected device will be disconnected. Old QR codes will stop working. Pair your devices again by scanning a new QR code.") }
             .confirmationDialog("Remove \(deviceToRemove?.name ?? "device")?", isPresented: Binding(get: { deviceToRemove != nil }, set: { if !$0 { deviceToRemove = nil } }), titleVisibility: .visible) {
                 if let device = deviceToRemove {
                     Button("Remove device", role: .destructive) { model.removeDevice(device); deviceToRemove = nil }
@@ -86,11 +86,6 @@ struct ServerView: View {
                 capability("display", "Streaming", "Hardware accelerated")
                 capability("terminal", "Terminal", model.terminalEnabled ? "Enabled" : "Off")
                 capability("folder", "Files", model.filesEnabled ? "Enabled" : "Off")
-            }
-            if !model.pendingPairings.isEmpty {
-                Button { selected = "Devices" } label: {
-                    Label("A device is waiting to pair", systemImage: "ipad.and.iphone").foregroundStyle(MoonStyle.accent)
-                }.buttonStyle(.plain)
             }
             MoonPanel {
                 VStack(alignment: .leading, spacing: 15) {
@@ -165,16 +160,12 @@ struct ServerView: View {
                     Button { model.pair() } label: { Label("Pair a device", systemImage: "qrcode") }.buttonStyle(PrimaryButtonStyle())
                 }
             }
-            if !model.pendingPairings.isEmpty {
-                ForEach(model.pendingPairings) { request in NativePairingRow(model: model, request: request) }
-            } else {
-                Text("Devices added by address display a PIN. Their pairing requests appear here automatically.").font(.caption).foregroundStyle(MoonStyle.secondary)
-            }
+            Text("Pair new devices by scanning this Mac’s QR code in Nocturne. No pairing code needs to be entered.").font(.caption).foregroundStyle(MoonStyle.secondary)
             pairedDevices
             MoonPanel {
                 VStack(alignment: .leading, spacing: 15) {
                     Label("A fresh start", systemImage: "key").font(.headline)
-                    Text("Remove all streaming certificates and rotate your workspace key. Existing connections close and old pairing links stop working.")
+                    Text("Remove all streaming certificates and rotate your workspace key. Existing connections close and old QR codes stop working.")
                         .font(.subheadline).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
                     Button("Reset all pairing…", role: .destructive) { reset = true }.buttonStyle(.plain).foregroundStyle(.orange).disabled(!model.running || model.changingDevices)
                 }
@@ -235,11 +226,9 @@ struct ServerView: View {
         ([device.streamIDs.isEmpty ? nil : "Streaming", device.workspace ? "Terminal & files" : nil].compactMap { $0 }).joined(separator: " · ")
     }
 }
-
 struct ServerPairingView: View {
     let invitation: PairingInvitation
     @Environment(\.dismiss) private var dismiss
-    @State private var copied = false
     var body: some View {
         VStack(spacing: 20) {
             HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(NocturneGlassButtonStyle()).keyboardShortcut(.defaultAction) }
@@ -249,9 +238,6 @@ struct ServerPairingView: View {
                 Image(nsImage: image).interpolation(.none).resizable().frame(width: 210, height: 210).padding(16).background(.white, in: RoundedRectangle(cornerRadius: 18))
             }
             Text(invitation.name + " · " + invitation.host).font(.system(size: 12, design: .monospaced)).foregroundStyle(MoonStyle.secondary)
-            Button {
-                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(invitation.url.absoluteString, forType: .string); copied = true
-            } label: { Label(copied ? "Pairing link copied" : "Copy pairing link", systemImage: copied ? "checkmark" : "doc.on.doc") }.buttonStyle(PrimaryButtonStyle())
             Text("This code pairs one device and expires after five minutes.\nKeep it private. Remove devices individually in Devices.").font(.caption2).foregroundStyle(MoonStyle.secondary).multilineTextAlignment(.center)
         }.padding(28).frame(width: 440).background { NocturneBackdrop() }.tint(MoonStyle.accent)
     }
@@ -259,27 +245,5 @@ struct ServerPairingView: View {
         let filter = CIFilter.qrCodeGenerator(); filter.message = Data(invitation.url.absoluteString.utf8); filter.correctionLevel = "M"
         guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 6, y: 6)), let cg = CIContext().createCGImage(output, from: output.extent) else { return nil }
         return NSImage(cgImage: cg, size: NSSize(width: output.extent.width, height: output.extent.height))
-    }
-}
-
-struct NativePairingRow: View {
-    @ObservedObject var model: ServerModel
-    let request: StreamPairingRequest
-    @State private var pin = ""
-    @State private var deviceName = ""
-    var body: some View {
-        MoonPanel {
-            VStack(alignment: .leading, spacing: 15) {
-                FeatureRow(icon: "key", title: request.name.isEmpty ? "New streaming device" : request.name, subtitle: request.address)
-                TextField("Device name", text: $deviceName).textFieldStyle(.roundedBorder).frame(maxWidth: 300)
-                HStack {
-                    TextField("Four-digit PIN", text: $pin).textFieldStyle(.roundedBorder).frame(width: 150)
-                        .onChange(of: pin) { _, value in pin = String(value.filter(\.isNumber).prefix(4)) }
-                    Button(model.approving ? "Pairing…" : "Pair device") { model.approve(request, pin: pin, name: deviceName) }
-                        .buttonStyle(NocturneGlassButtonStyle())
-                        .disabled(pin.count != 4 || deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.changingDevices)
-                }
-            }
-        }.onAppear { if deviceName.isEmpty { deviceName = request.name.isEmpty ? "Nocturne device" : request.name } }
     }
 }

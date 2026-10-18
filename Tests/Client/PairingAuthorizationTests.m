@@ -16,12 +16,25 @@
 - (void)publishHosts;
 - (void)pairSuccessful:(NSData *)certificate attempt:(id)attempt;
 - (void)alreadyPaired:(id)attempt;
+- (void)startPairing:(NSString *)challenge attempt:(id)attempt;
+- (void)loadAppsForAttempt:(id)attempt;
+@end
+
+// Exercise real authorization/callback ordering without contacting a streaming
+// host or starting capture. Only the final app-list HTTP request is substituted.
+@interface QRPairingTestService : NocturneStreamingService
+@property (nonatomic, copy) void (^libraryRequested)(void);
+@end
+@implementation QRPairingTestService
+- (void)loadAppsForAttempt:(id)attempt {
+    dispatch_async(dispatch_get_main_queue(), ^{ if (self.libraryRequested) self.libraryRequested(); });
+}
 @end
 
 @implementation PairingAuthorizationTests
 - (void)setUp {
     [super setUp];
-    self.engine = [NocturneStreamingService new];
+    self.engine = [QRPairingTestService new];
     [self.engine pause];
     self.trust = [[NocturnePairingTrust alloc] initWithService:[@"app.nocturne.tests." stringByAppendingString:NSUUID.UUID.UUIDString]];
     [self.engine setValue:self.trust forKey:@"pairingTrust"];
@@ -41,9 +54,12 @@
     [self.engine setValue:[@{host.uuid:host} mutableCopy] forKey:@"hosts"];
 }
 - (void)tearDown {
+    [self.engine cancelPairing];
     [self.engine pause];
-    NSError *error;
-    XCTAssertTrue([self.trust forgetHost:self.host.uuid error:&error], @"%@", error);
+    // Successful callbacks persist the fixture in Core Data as well as Keychain.
+    XCTAssertTrue([self.engine forgetHost:self.host.uuid]);
+    self.engine.canPairHost = nil; self.engine.authorizePairing = nil;
+    ((QRPairingTestService *)self.engine).libraryRequested = nil;
     [super tearDown];
 }
 - (UIViewController *)streamController {
@@ -119,6 +135,87 @@
     [self waitForExpectations:@[drained] timeout:2];
     XCTAssertFalse([self.trust isApprovedHost:self.host.uuid serverCertificate:certificate
                           clientCertificate:[CryptoManager readCertFromFile]]);
+    XCTAssertNil([self streamController]);
+}
+- (void)testUnapprovedComputerSelectionRequiresQRBeforeStartingHandshake {
+    __block NSUInteger requests = 0;
+    self.engine.pairingRequired = ^{ requests++; };
+    self.engine.authorizePairing = ^(NSString *host, NSString *challenge, void (^completion)(BOOL)) {
+        XCTFail(@"A computer selected without QR trust started a handshake");
+    };
+    [self.engine selectHost:self.host.uuid];
+    XCTAssertEqual(requests, 1u);
+    XCTAssertNil([self.engine valueForKey:@"pairingAttempt"]);
+    XCTAssertNil([self streamController]);
+}
+- (void)testUnscannedHandshakeSuccessCannotCreateApproval {
+    XCTestExpectation *rejected = [self expectationWithDescription:@"Unscanned handshake rejected"];
+    self.engine.failed = ^(NSString *message) { [rejected fulfill]; };
+    [self.engine pairSuccessful:self.host.serverCert attempt:[self pendingAttempt]];
+    [self waitForExpectations:@[rejected] timeout:2];
+    XCTAssertNil([self streamController]);
+}
+- (void)drainPairingCallbacks {
+    XCTestExpectation *drained = [self expectationWithDescription:@"Pairing callbacks drained"];
+    dispatch_async(dispatch_get_main_queue(), ^{ [drained fulfill]; });
+    [self waitForExpectations:@[drained] timeout:2];
+}
+- (id)qrAttempt {
+    NSString *hostID = self.host.uuid;
+    self.engine.canPairHost = ^BOOL(NSString *host) { return [host isEqualToString:hostID]; };
+    id attempt = [self pendingAttempt]; [attempt setValue:@YES forKey:@"qrAuthorized"];
+    return attempt;
+}
+- (void)assertQRPairingWorkspaceFirst:(BOOL)workspaceFirst {
+    id attempt = [self qrAttempt];
+    XCTestExpectation *requested = [self expectationWithDescription:@"QR workspace approval requested"];
+    XCTestExpectation *library = [self expectationWithDescription:@"Authorized library requested"];
+    __block void (^authorize)(BOOL);
+    NSString *expectedHost = self.host.uuid;
+    self.engine.authorizePairing = ^(NSString *host, NSString *challenge, void (^completion)(BOOL)) {
+        XCTAssertEqualObjects(host, expectedHost); XCTAssertEqualObjects(challenge, @"1234");
+        authorize = [completion copy]; [requested fulfill];
+    };
+    ((QRPairingTestService *)self.engine).libraryRequested = ^{ [library fulfill]; };
+    [self.engine startPairing:@"1234" attempt:attempt];
+    [self waitForExpectations:@[requested] timeout:2];
+    if (workspaceFirst) authorize(YES);
+    else [self.engine pairSuccessful:self.host.serverCert attempt:attempt];
+    [self drainPairingCallbacks];
+    XCTAssertNil([self streamController], @"Both successful responses are required before trusting the host");
+    if (workspaceFirst) [self.engine pairSuccessful:self.host.serverCert attempt:attempt];
+    else authorize(YES);
+    [self waitForExpectations:@[library] timeout:2];
+    XCTAssertNotNil([self streamController]);
+}
+- (void)testQRApprovalBeforeVideoHandshakeCanPair { [self assertQRPairingWorkspaceFirst:YES]; }
+- (void)testVideoHandshakeBeforeQRApprovalWaitsForAuthorization { [self assertQRPairingWorkspaceFirst:NO]; }
+- (void)testFailedQRApprovalCannotFallBackToVideoHandshake {
+    id attempt = [self qrAttempt];
+    XCTestExpectation *rejected = [self expectationWithDescription:@"QR approval rejected"];
+    self.engine.failed = ^(NSString *message) { [rejected fulfill]; };
+    self.engine.authorizePairing = ^(NSString *host, NSString *challenge, void (^completion)(BOOL)) { completion(NO); };
+    [self.engine pairSuccessful:self.host.serverCert attempt:attempt];
+    [self.engine startPairing:@"1234" attempt:attempt];
+    [self waitForExpectations:@[rejected] timeout:2];
+    XCTAssertNil([self streamController]);
+}
+- (void)testLostQRConnectionInvalidatesLateApproval {
+    id attempt = [self qrAttempt];
+    XCTestExpectation *requested = [self expectationWithDescription:@"QR workspace approval requested"];
+    XCTestExpectation *rejected = [self expectationWithDescription:@"Disconnected QR approval rejected"];
+    __block void (^authorize)(BOOL);
+    self.engine.failed = ^(NSString *message) { [rejected fulfill]; };
+    self.engine.authorizePairing = ^(NSString *host, NSString *challenge, void (^completion)(BOOL)) {
+        authorize = [completion copy]; [requested fulfill];
+    };
+    [self.engine startPairing:@"1234" attempt:attempt];
+    [self waitForExpectations:@[requested] timeout:2];
+    [self.engine pairSuccessful:self.host.serverCert attempt:attempt];
+    [self drainPairingCallbacks];
+    self.engine.canPairHost = ^BOOL(NSString *host) { return NO; };
+    authorize(YES);
+    [self waitForExpectations:@[rejected] timeout:2];
     XCTAssertNil([self streamController]);
 }
 @end

@@ -162,8 +162,6 @@ final class EmbeddedEngineIntegrationTests: XCTestCase {
         defer { engine.stop() }
         try await engine.start(executable: URL(fileURLWithPath: path), name: "Nocturne integration")
         XCTAssertTrue(engine.isRunning)
-        let requests = try await engine.pendingPairings()
-        XCTAssertTrue(requests.isEmpty)
         let paired = try await engine.pairedDevices()
         XCTAssertEqual(Set(paired.map(\.fingerprint)), [first.id, second.id])
         try await engine.removeDevice(firstID)
@@ -185,7 +183,6 @@ final class EmbeddedEngineIntegrationTests: XCTestCase {
         // Restart must load persisted certificates while rotating the local API credential.
         try await engine.start(executable: URL(fileURLWithPath: path), name: "Nocturne integration")
         XCTAssertTrue(engine.isRunning)
-        _ = try await engine.pendingPairings()
         let afterRestart = try await engine.pairedDevices()
         XCTAssertEqual(afterRestart.map(\.id), [secondID])
         try await engine.resetPairing()

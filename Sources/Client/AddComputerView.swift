@@ -1,14 +1,15 @@
 import SwiftUI
 import VisionKit
+import AVFoundation
 import NocturneKit
 
 struct AddComputerView: View {
     @ObservedObject var model: ClientModel
     @ObservedObject private var connection: WorkspaceConnection
     @Environment(\.dismiss) private var dismiss
-    @State private var address = ""
     @State private var scanner = false
-    @State private var manual = false
+    @State private var scannedInvitation: String?
+    @State private var scannerError: String?
     init(model: ClientModel) { self.model = model; connection = model.server }
     var body: some View {
         NavigationStack {
@@ -25,47 +26,54 @@ struct AddComputerView: View {
                         }.font(.system(size: 12, weight: .medium)).foregroundStyle(MoonStyle.accent)
                     }
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Connect to your Mac").font(.headline)
-                        SecureField("Paste pairing link", text: $model.invitationText)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .padding(16).background(MoonStyle.surface, in: RoundedRectangle(cornerRadius: 14))
-                            .accessibilityIdentifier("pairingLink")
-                        NocturneGlassGroup { HStack(spacing: 12) {
-                            PasteButton(payloadType: String.self) { values in if let value = values.first { model.invitationText = value } }.buttonBorderShape(.capsule)
-                            if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
-                                Button { scanner = true } label: { Label("Scan QR code", systemImage: "qrcode.viewfinder") }.font(.subheadline).buttonStyle(NocturneGlassButtonStyle())
+                        Text("Scan to pair").font(.headline)
+                        Button { Task { await openScanner() } } label: {
+                            HStack {
+                                if connection.state == .connecting { ProgressView().tint(MoonStyle.ink) }
+                                Label(connection.state == .connecting ? "Connecting…" : "Scan QR code", systemImage: "qrcode.viewfinder")
                             }
-                        } }
-                        Button { Task { await model.pairServer(model.invitationText) } } label: {
-                            HStack { if connection.state == .connecting { ProgressView().tint(MoonStyle.ink) }; Text(connection.state == .connecting ? "Connecting…" : "Connect to Mac"); Image(systemName: "link") }
-                        }.buttonStyle(PrimaryButtonStyle()).disabled(model.invitationText.isEmpty || connection.state == .connecting)
+                        }.buttonStyle(PrimaryButtonStyle())
+                            .disabled(!DataScannerViewController.isSupported || connection.state == .connecting || model.busy)
+                            .accessibilityIdentifier("scanPairingQR")
+                        if !DataScannerViewController.isSupported {
+                            Text("QR pairing requires a supported iPhone or iPad camera.").font(.caption).foregroundStyle(MoonStyle.secondary)
+                        }
+                        if let scannerError { Text(scannerError).font(.caption).foregroundStyle(.orange) }
+                        if AVCaptureDevice.authorizationStatus(for: .video) == .denied {
+                            Button("Open camera settings") {
+                                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                            }
+                        }
                         if let name = model.savedServerName {
                             Button("Reconnect to \(name)") { Task { await model.reconnectServer(); if connection.state == .connected { dismiss() } } }
                                 .disabled(connection.state == .connecting)
                         }
-                        if let error = connection.lastError { Text(error).font(.caption).foregroundStyle(.orange) }
+                        if let error = model.error ?? connection.lastError { Text(error).font(.caption).foregroundStyle(.orange) }
                     }
-                    Text("The pairing link is private. Terminal and file access are controlled on your Mac.").font(.caption).foregroundStyle(MoonStyle.secondary)
-                    DisclosureGroup("Connect by address", isExpanded: $manual) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text("For a nearby Nocturne server or another compatible streaming host. Enter its PIN in the server’s Devices screen. Use a Nocturne pairing link to also connect terminal and files.")
-                                .font(.caption).foregroundStyle(MoonStyle.secondary).lineSpacing(3)
-                            TextField("studio.local or 192.168.1.20", text: $address)
-                                .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                                .padding(16).background(MoonStyle.surface, in: RoundedRectangle(cornerRadius: 14))
-                                .accessibilityIdentifier("hostAddress").onSubmit { model.add(address: address) }
-                            Button { model.add(address: address) } label: { Label("Find computer", systemImage: "magnifyingglass") }
-                                .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.busy)
-                        }.padding(.top, 16)
-                    }.font(.subheadline)
+                    Text("Only scan the QR code shown by your Mac. It pairs one device and expires after five minutes. Terminal and file access are controlled on your Mac.").font(.caption).foregroundStyle(MoonStyle.secondary)
                 }.padding(24)
             }.background { NocturneBackdrop() }.navigationTitle("Add computer").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         }.tint(MoonStyle.accent)
-            .sheet(isPresented: $scanner) { QRScanner { result in
+            .sheet(isPresented: $scanner, onDismiss: pairScannedInvitation) { QRScanner { result in
                 scanner = false
-                switch result { case .success(let text): model.invitationText = text; case .failure(let error): model.error = error.localizedDescription }
+                switch result { case .success(let text): scannedInvitation = text; case .failure(let error): scannerError = error.localizedDescription }
             }.ignoresSafeArea() }
+    }
+    private func openScanner() async {
+        scannerError = nil; model.error = nil
+        if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {
+            _ = await AVCaptureDevice.requestAccess(for: .video)
+        }
+        guard DataScannerViewController.isAvailable else {
+            scannerError = "The camera is unavailable. Allow camera access in Settings and try scanning again."; return
+        }
+        scanner = true
+    }
+    private func pairScannedInvitation() {
+        guard let text = scannedInvitation else { return }
+        scannedInvitation = nil
+        Task { await model.pairScannedServer(text) }
     }
 }
 

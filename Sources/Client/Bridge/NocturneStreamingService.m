@@ -81,6 +81,10 @@
 @property TemporaryHost *host;
 @property NSString *hostID;
 @property NSData *clientCertificate;
+@property BOOL qrAuthorized;
+@property BOOL workspaceApproved;
+@property BOOL approvalRecorded;
+@property NSData *pendingServerCertificate;
 @end
 
 @interface NocturneStreamingService () <DiscoveryCallback>
@@ -94,6 +98,8 @@
 - (void)pairSuccessful:(NSData *)serverCert attempt:(NocturnePairingAttempt *)attempt;
 - (void)pairFailed:(NSString *)message attempt:(NocturnePairingAttempt *)attempt;
 - (void)alreadyPaired:(NocturnePairingAttempt *)attempt;
+- (void)completePairingIfReady:(NocturnePairingAttempt *)attempt;
+- (void)requireQRPairing;
 @end
 
 @implementation NocturnePairingAttempt
@@ -193,16 +199,19 @@
 }
 - (void)selectHost:(NSString *)hostID {
     TemporaryHost *host = self.hosts[hostID]; if (!host) return;
+    BOOL qrAuthorized = self.canPairHost && self.canPairHost(hostID);
+    if (![self hasApprovalForHost:host] && !qrAuthorized) { [self requireQRPairing]; return; }
     NocturnePairingAttempt *attempt = [NocturnePairingAttempt new];
     attempt.service = self; attempt.host = host; attempt.hostID = [hostID copy];
     attempt.clientCertificate = [CryptoManager readCertFromFile];
+    attempt.qrAuthorized = qrAuthorized;
     self.pairingAttempt = attempt;
     if (host.address.length) host.activeAddress = host.address;
     [self.operations addOperationWithBlock:^{
         if (self.pairingAttempt != attempt) return;
         [self.discovery pauseDiscoveryForHost:host];
         // Cached transport credentials and discovery's PairStatus are not consent.
-        // Without a receipt, start a fresh PIN handshake using public server info.
+        // Without a receipt, QR authorization is required for a fresh handshake.
         HttpManager *manager = [[HttpManager alloc] initWithAddress:host.activeAddress httpsPort:host.httpsPort
                                                        serverCert:[self hasApprovalForHost:host] ? host.serverCert : nil];
         ServerInfoResponse *info = [ServerInfoResponse new];
@@ -217,6 +226,10 @@
         [info populateHost:host];
         if (host.pairState == PairStatePaired && [self hasApprovalForHost:host]) [attempt alreadyPaired];
         else {
+            if (!attempt.qrAuthorized) {
+                dispatch_async(dispatch_get_main_queue(), ^{ if (self.pairingAttempt == attempt) [self requireQRPairing]; });
+                return;
+            }
             [self.discovery stopDiscoveryBlocking];
             PairManager *pair = [[PairManager alloc] initWithManager:manager clientCert:attempt.clientCertificate callback:attempt];
             [pair start];
@@ -225,21 +238,55 @@
 }
 - (void)startPairing:(NSString *)PIN attempt:(NocturnePairingAttempt *)attempt {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.pairingAttempt == attempt && self.pairingPIN) self.pairingPIN(PIN);
+        if (self.pairingAttempt != attempt) return;
+        if (!attempt.qrAuthorized || !self.canPairHost || !self.canPairHost(attempt.hostID) || !self.authorizePairing) {
+            [self requireQRPairing]; return;
+        }
+        __weak typeof(self) weakSelf = self;
+        self.authorizePairing(attempt.hostID, PIN, ^(BOOL approved) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                typeof(self) self = weakSelf;
+                if (!self || self.pairingAttempt != attempt) return;
+                if (!approved) { [self pairFailed:@"QR pairing could not finish. Scan a new QR code on your Mac and try again." attempt:attempt]; return; }
+                attempt.workspaceApproved = YES;
+                [self completePairingIfReady:attempt];
+            });
+        });
     });
 }
 - (void)pairSuccessful:(NSData *)serverCert attempt:(NocturnePairingAttempt *)attempt {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.pairingAttempt != attempt) return;
-        NSError *error;
-        if (![self.pairingTrust approveHost:attempt.hostID serverCertificate:serverCert
-                         clientCertificate:attempt.clientCertificate error:&error]) {
-            [self pairFailed:error.localizedDescription attempt:attempt]; return;
+        if (!attempt.qrAuthorized || !self.canPairHost || !self.canPairHost(attempt.hostID)) {
+            [self pairFailed:@"Scan the QR code on your Mac before pairing this computer." attempt:attempt]; return;
         }
-        attempt.host.serverCert = serverCert; attempt.host.pairState = PairStatePaired;
-        [[DataManager new] updateHost:attempt.host];
-        [self alreadyPaired:attempt];
+        attempt.pendingServerCertificate = serverCert;
+        [self completePairingIfReady:attempt];
     });
+}
+- (void)completePairingIfReady:(NocturnePairingAttempt *)attempt {
+    if (self.pairingAttempt != attempt || attempt.approvalRecorded) return;
+    if (!attempt.qrAuthorized || !self.canPairHost || !self.canPairHost(attempt.hostID)) {
+        [self pairFailed:@"The QR connection was lost. Scan the QR code again." attempt:attempt]; return;
+    }
+    // Either network callback may arrive first. Both must succeed before trust
+    // is persisted or the app library opens.
+    if (!attempt.workspaceApproved || !attempt.pendingServerCertificate.length) return;
+    NSError *error;
+    if (![self.pairingTrust approveHost:attempt.hostID serverCertificate:attempt.pendingServerCertificate
+                         clientCertificate:attempt.clientCertificate error:&error]) {
+        [self pairFailed:error.localizedDescription attempt:attempt]; return;
+    }
+    attempt.approvalRecorded = YES;
+    attempt.host.serverCert = attempt.pendingServerCertificate; attempt.host.pairState = PairStatePaired;
+    [[DataManager new] updateHost:attempt.host];
+    [self alreadyPaired:attempt];
+}
+- (void)cancelPairing { self.pairingAttempt = nil; }
+- (void)requireQRPairing {
+    [self cancelPairing]; [self.discovery startDiscovery]; [self publishHosts];
+    if (self.pairingRequired) self.pairingRequired();
+    else if (self.failed) self.failed(@"Scan the QR code in Nocturne Server to pair this computer.");
 }
 - (void)pairFailed:(NSString *)message {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -258,7 +305,7 @@
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.pairingAttempt != attempt) return;
         if (![self hasApprovalForHost:attempt.host]) {
-            [self pairFailed:@"Approve the pairing PIN on this computer before connecting." attempt:attempt]; return;
+            [self pairFailed:@"Scan the QR code on this computer before connecting." attempt:attempt]; return;
         }
         [self.operations addOperationWithBlock:^{ [self loadAppsForAttempt:attempt]; }];
     });

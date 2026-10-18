@@ -17,10 +17,8 @@ final class ServerModel: ObservableObject {
     @Published var error: String?
     @Published var showPairing = false
     @Published var invitation: PairingInvitation?
-    @Published var pendingPairings: [StreamPairingRequest] = []
-    @Published var approving = false
     @Published private(set) var resettingPairing = false
-    var changingDevices: Bool { removingDevice != nil || approving || resettingPairing }
+    var changingDevices: Bool { removingDevice != nil || resettingPairing }
     @Published var terminalEnabled = UserDefaults.standard.bool(forKey: "allowTerminal") { didSet { updatePermissions() } }
     @Published var filesEnabled = UserDefaults.standard.bool(forKey: "allowFiles") { didSet { updatePermissions() } }
     @Published var address: String
@@ -156,7 +154,6 @@ final class ServerModel: ObservableObject {
                     while !Task.isCancelled {
                         guard let self, self.generation == epoch else { return }
                         self.displays.expire()
-                        if let requests = try? await self.engine.pendingPairings(), self.generation == epoch { self.pendingPairings = requests }
                         await self.refreshDevices()
                         do { try await Task.sleep(nanoseconds: 1_500_000_000) } catch { return }
                     }
@@ -175,7 +172,7 @@ final class ServerModel: ObservableObject {
         displays.stop()
         deviceStore?.cancelInvitation(); workspaceConnections = []; publishDevices()
         running = false; starting = false; status = "Stopped"; connections = 0
-        invitation = nil; showPairing = false; pairWhenReady = false; pendingPairings = []
+        invitation = nil; showPairing = false; pairWhenReady = false
     }
     func pair() {
         guard running else { pairWhenReady = true; start(); return }
@@ -183,20 +180,6 @@ final class ServerModel: ObservableObject {
             guard let secret, let deviceStore else { return }
             invitation = try PairingInvitation(host: address, name: name, secret: secret, enrollmentToken: deviceStore.createInvitation()); showPairing = true
         } catch { self.error = error.localizedDescription }
-    }
-    func approve(_ request: StreamPairingRequest, pin: String, name: String) {
-        guard !changingDevices else { return }; approving = true
-        let epoch = generation
-        Task {
-            defer { approving = false }
-            do {
-                try await engine.approve(request, pin: pin, name: name)
-                let requests = try await engine.pendingPairings()
-                guard generation == epoch else { return }
-                pendingPairings = requests
-                await refreshDevices()
-            } catch { if generation == epoch { self.error = error.localizedDescription } }
-        }
     }
     func resetPairing() {
         guard running, !changingDevices else { error = "Start the server and wait for device changes to finish before resetting pairing."; return }
@@ -251,7 +234,6 @@ final class ServerModel: ObservableObject {
                 }
                 guard generation == epoch else { throw NocturneError.disconnected }
                 let remaining = current.filter { $0.fingerprint != device.id }
-                deviceStore.updateStreamingIdentities(Set(remaining.filter(\.enabled).map(\.fingerprint)))
                 try deviceStore.finishRemoval(device.id)
                 streamDevices = remaining
                 devicesError = nil; publishDevices()
@@ -264,7 +246,6 @@ final class ServerModel: ObservableObject {
         }
     }
     private func publishDevices() {
-        deviceStore?.updateStreamingIdentities(Set(streamDevices.filter(\.enabled).map(\.fingerprint)))
         devices = ServerDevice.list(streams: streamDevices, workspaces: deviceStore?.devices ?? [], connections: workspaceConnections)
         for (id, name) in deviceStore?.pendingRemovals ?? [:] where !devices.contains(where: { $0.id == id }) {
             devices.append(.pendingRemoval(id: id, name: name))

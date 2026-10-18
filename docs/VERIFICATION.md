@@ -96,6 +96,14 @@ This pass changed presentation and appearance preferences. The nine protocol/eng
 - Live video renegotiation is not yet verified in this pass. The bundled engine stalls in its initial AVFoundation frame probe, also with a physical display selected and managed display control disabled. The real-engine lifecycle test reproduces the startup timeout. macOS logs report repeated failed CG frame grabs. Screen-capture permission appeared enabled; refreshing it reached a local macOS authentication dialog that the user could not complete while the monitors were black. Capture permission must be re-enabled locally after monitor recovery. These are outstanding verification prerequisites, not passed streaming checks. Logs: `/tmp/nocturne-display-engine-baseline.log` and `/tmp/nocturne-display-engine-sample.txt`.
 - A physically unplugged headless Mac, real iPhone/iPad rotation, and sustained audio/video renegotiation still require verification. The existing Core Audio shutdown issue above also remains relevant. Turning off real monitors and using only a virtual framebuffer was tested; that does not establish every closed-lid or cold-start headless configuration.
 
+## QR-only pairing (October 18, 2026)
+
+- Removed manual PIN entry/approval, pairing-link copy/paste, external invitation URL handling, and address-based pairing. Selecting an unapproved computer now opens the QR pairing sheet before starting any video handshake. Existing approved computers remain usable.
+- Added six native client regressions covering the QR selection gate, an unscanned video handshake, both successful callback arrival orders, rejected workspace authorization, and connection loss before a late approval. Both QR workspace approval and the video certificate handshake must succeed before a new trust receipt is saved. All 14 client tests passed on both iPhone and iPad simulators.
+- Added an authenticated workspace transport test proving that a transport key alone cannot enroll a device or authorize video pairing, a QR-enrolled device can pair and reconnect, and a consumed QR invitation cannot enroll another identity. The host/shared suite ran 32 tests with four hardware/engine checks skipped and zero failures; the final transport regression also passed independently.
+- Both apps built successfully. In the actual iPad simulator UI, selecting an unpaired discovered Mac opened the QR-only Add computer sheet with no PIN, pasted-link, or address controls. The simulator correctly reports its unsupported camera; scanning a real QR code on physical hardware was not exercised.
+- Verification did not launch Nocturne Server, the streaming engine, or the native display worker, and did not change physical display settings. Local logs are `.build/qr-only-*.log` (ignored). Signed distribution is produced separately by the GitHub release workflow.
+
 ## Remaining device checks
 
 ### Match-device correction and explicit virtual monitor (October 18, 2026)
