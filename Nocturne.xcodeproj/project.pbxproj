@@ -1,0 +1,401 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		34C6EABB33D1CAAEB3F3E379 /* NocturneServerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FECE177EFC02F8D64D35D91 /* NocturneServerApp.swift */; };
+		43872880C76666DA1AEFA155 /* NocturneTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9A9B27FA64C45876C2D08C /* NocturneTheme.swift */; };
+		4DCBA699ED85C44EADCD53D7 /* NocturneHostKit in Frameworks */ = {isa = PBXBuildFile; productRef = BD0A5BF21476B9FAAC332E00 /* NocturneHostKit */; };
+		59AF08C4CE7754ABDC0FED38 /* ServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74BB712FA3C668265AE12E32 /* ServerView.swift */; };
+		6CB1570630CD0B0A9A25147E /* NocturneKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3F93AEBE7C3AFC09C5A378B7 /* NocturneKit */; };
+		8CA71A5BFDA3F10A599F386F /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FB3DA98667C93F71F2143D7F /* Cocoa.framework */; };
+		942BE0B4894F60EBDE9703A8 /* Server.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FD5AC1E5BC629B0891C7EADB /* Server.xcassets */; };
+		EDCBDDE3AB67AAF59ED82753 /* ServerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D8CB2A8DC57528812CE513 /* ServerModel.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		4FECE177EFC02F8D64D35D91 /* NocturneServerApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NocturneServerApp.swift; path = Sources/Server/NocturneServerApp.swift; sourceTree = "<group>"; };
+		74BB712FA3C668265AE12E32 /* ServerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ServerView.swift; path = Sources/Server/ServerView.swift; sourceTree = "<group>"; };
+		89D8CB2A8DC57528812CE513 /* ServerModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ServerModel.swift; path = Sources/Server/ServerModel.swift; sourceTree = "<group>"; };
+		AAF53E4FDEA4538B89163686 /* Nocturne Server.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Nocturne Server.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		CD9A9B27FA64C45876C2D08C /* NocturneTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NocturneTheme.swift; path = Sources/Design/NocturneTheme.swift; sourceTree = "<group>"; };
+		FB3DA98667C93F71F2143D7F /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		FD5AC1E5BC629B0891C7EADB /* Server.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Server.xcassets; path = Resources/Server.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E8BDFE30A04154108515E4D8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8CA71A5BFDA3F10A599F386F /* Cocoa.framework in Frameworks */,
+				6CB1570630CD0B0A9A25147E /* NocturneKit in Frameworks */,
+				4DCBA699ED85C44EADCD53D7 /* NocturneHostKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		057AE3F389CAE647DBE07C13 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AAF53E4FDEA4538B89163686 /* Nocturne Server.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		198809D8A1995481A695F276 = {
+			isa = PBXGroup;
+			children = (
+				057AE3F389CAE647DBE07C13 /* Products */,
+				6BAA5C488815E474549D7206 /* Frameworks */,
+				EE89885668F6FD44D8F713FB /* Server */,
+			);
+			sourceTree = "<group>";
+		};
+		6BAA5C488815E474549D7206 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				DA6DAFD1B890D65EA30B583B /* OS X */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		DA6DAFD1B890D65EA30B583B /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				FB3DA98667C93F71F2143D7F /* Cocoa.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
+		EE89885668F6FD44D8F713FB /* Server */ = {
+			isa = PBXGroup;
+			children = (
+				CD9A9B27FA64C45876C2D08C /* NocturneTheme.swift */,
+				4FECE177EFC02F8D64D35D91 /* NocturneServerApp.swift */,
+				89D8CB2A8DC57528812CE513 /* ServerModel.swift */,
+				74BB712FA3C668265AE12E32 /* ServerView.swift */,
+				FD5AC1E5BC629B0891C7EADB /* Server.xcassets */,
+			);
+			name = Server;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DC2D303AFE3D329DEFF4BAF6 /* Nocturne Server */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C9CDE7424F22E5BD35B37E19 /* Build configuration list for PBXNativeTarget "Nocturne Server" */;
+			buildPhases = (
+				8A5E52C6B84CA1EF1315EAEF /* Sources */,
+				E8BDFE30A04154108515E4D8 /* Frameworks */,
+				F187315F860BC6027A350B21 /* Resources */,
+				C89B629B1C13960A9E7975EF /* Package streaming server runtime */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Nocturne Server";
+			packageProductDependencies = (
+				3F93AEBE7C3AFC09C5A378B7 /* NocturneKit */,
+				BD0A5BF21476B9FAAC332E00 /* NocturneHostKit */,
+			);
+			productName = "Nocturne Server";
+			productReference = AAF53E4FDEA4538B89163686 /* Nocturne Server.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		2321F0BE03F286F60D10D9B1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = 0344BFA42DC4D62CF935AE41 /* Build configuration list for PBXProject "Nocturne" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 198809D8A1995481A695F276;
+			minimizedProjectReferenceProxies = 0;
+			packageReferences = (
+				0BCB92A207DB6F2403069851 /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 057AE3F389CAE647DBE07C13 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DC2D303AFE3D329DEFF4BAF6 /* Nocturne Server */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F187315F860BC6027A350B21 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				942BE0B4894F60EBDE9703A8 /* Server.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		C89B629B1C13960A9E7975EF /* Package streaming server runtime */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Package streaming server runtime";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"${SRCROOT}/scripts/package-streaming-server.sh\"";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		8A5E52C6B84CA1EF1315EAEF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				43872880C76666DA1AEFA155 /* NocturneTheme.swift in Sources */,
+				34C6EABB33D1CAAEB3F3E379 /* NocturneServerApp.swift in Sources */,
+				EDCBDDE3AB67AAF59ED82753 /* ServerModel.swift in Sources */,
+				59AF08C4CE7754ABDC0FED38 /* ServerView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0F5D7AE0DA51749EFE1809CE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		95DBBBD347D9A78BAB0E9C0E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = ServerAppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Resources/Server.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				INFOPLIST_FILE = "Resources/Server-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.nocturne.server;
+				PRODUCT_NAME = "Nocturne Server";
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A46E6B8AE9210B70473DEDF4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = ServerAppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Resources/Server.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				INFOPLIST_FILE = "Resources/Server-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.nocturne.server;
+				PRODUCT_NAME = "Nocturne Server";
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		F95F017B3DB1915E6376B6E6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0344BFA42DC4D62CF935AE41 /* Build configuration list for PBXProject "Nocturne" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0F5D7AE0DA51749EFE1809CE /* Debug */,
+				F95F017B3DB1915E6376B6E6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C9CDE7424F22E5BD35B37E19 /* Build configuration list for PBXNativeTarget "Nocturne Server" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				95DBBBD347D9A78BAB0E9C0E /* Release */,
+				A46E6B8AE9210B70473DEDF4 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		0BCB92A207DB6F2403069851 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3F93AEBE7C3AFC09C5A378B7 /* NocturneKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0BCB92A207DB6F2403069851 /* XCLocalSwiftPackageReference "." */;
+			productName = NocturneKit;
+		};
+		BD0A5BF21476B9FAAC332E00 /* NocturneHostKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0BCB92A207DB6F2403069851 /* XCLocalSwiftPackageReference "." */;
+			productName = NocturneHostKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 2321F0BE03F286F60D10D9B1 /* Project object */;
+}
