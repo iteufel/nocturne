@@ -1,0 +1,4 @@
+module NocturneRemote {
+    header "NocturneRemote.h"
+    export *
+}

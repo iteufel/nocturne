@@ -98,7 +98,7 @@ struct ServerView: View {
                     }
                 }
             }
-            HStack(spacing: 8) { Image(systemName: "lock.shield"); Text("Local connection. Your computer stays yours.") }.font(.system(size: 11)).foregroundStyle(MoonStyle.secondary)
+            HStack(spacing: 8) { Image(systemName: "lock.shield"); Text(model.remoteAccessEnabled ? "Encrypted connections, wherever you are." : "Local connection. Your computer stays yours.") }.font(.system(size: 11)).foregroundStyle(MoonStyle.secondary)
         }
     }
     @ViewBuilder private var permissionButtons: some View {

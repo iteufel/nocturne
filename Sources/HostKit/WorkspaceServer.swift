@@ -23,6 +23,7 @@ public final class WorkspaceServer {
     public var displayDisconnected: ((UUID) -> Void)?
     public var onDevices: (([WorkspaceDeviceConnection]) -> Void)?
     public var onStatus: ((String, Int) -> Void)?
+    public var authorizeRemoteDevice: ((UInt16, String) throws -> Void)?
     public let folder: SharedFolder
     private let queue = DispatchQueue(label: "nocturne.host", qos: .userInitiated)
     private var listener: NWListener?
@@ -54,6 +55,7 @@ public final class WorkspaceServer {
             let channel = SecureChannel(connection: connection, queue: self.queue)
             let session = HostSession(channel: channel, terminals: self.terminals, microphone: self.microphone, appWindows: self.appWindows, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected)
             self.sessions[id] = session
+            session.authorizeRemoteDevice = self.authorizeRemoteDevice
             session.onClose = { [weak self] in self?.sessions.removeValue(forKey: id); self?.publish("Ready") }
             session.onAuthenticated = { [weak self] in self?.publish("Connected") }
             channel.start()
@@ -111,6 +113,7 @@ public final class WorkspaceServer {
 private final class HostSession {
     var onClose: (() -> Void)?
     var onAuthenticated: (() -> Void)?
+    var authorizeRemoteDevice: ((UInt16, String) throws -> Void)?
     private(set) var device: WorkspaceDeviceConnection?
     private let channel: SecureChannel
     private let folder: SharedFolder
@@ -164,10 +167,14 @@ private final class HostSession {
             case .authenticate:
                 guard device == nil, let nonce = challenge, let certificate = packet.certificate,
                       let signature = packet.signature, let deviceName = packet.name,
-                      case .hostPort(let address, _) = channel.connection.endpoint else { throw NocturneError.invalidFrame }
+                      case .hostPort(let address, let port) = channel.connection.endpoint else { throw NocturneError.invalidFrame }
                 challenge = nil
                 let id = try WorkspaceIdentity.verify(certificate: certificate, signature: signature, challenge: channel.boundChallenge(nonce))
                 let authorized = try devices.authorize(id: id, name: deviceName, token: packet.enrollmentToken)
+                // Only a loopback socket created by the tunnel can authorize its QUIC peer.
+                if ["127.0.0.1", "::1", "::ffff:127.0.0.1"].contains("\(address)") {
+                    try authorizeRemoteDevice?(port.rawValue, id)
+                }
                 device = WorkspaceDeviceConnection(id: id, name: authorized.name, address: "\(address)")
                 result.version = WorkspaceProtocol.version; result.name = name
                 onAuthenticated?()

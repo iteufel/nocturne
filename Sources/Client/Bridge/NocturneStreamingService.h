@@ -20,6 +20,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)pause;
 - (void)addAddress:(NSString *)address;
 - (void)updateHostAddress:(NSString *)hostID address:(NSString *)address NS_SWIFT_NAME(updateHostAddress(_:address:));
+- (void)clearTemporaryAddress:(NSString *)hostID;
 - (void)selectHost:(NSString *)hostID;
 - (void)cancelPairing;
 - (BOOL)forgetHost:(NSString *)hostID;

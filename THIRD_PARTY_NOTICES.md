@@ -10,3 +10,7 @@ Nocturne's original application and integration code is provided under GPL-3.0; 
 No proprietary Apple artwork or marketing assets are bundled. The icons and orbit illustration are generated with native drawing code. SF Symbols are rendered through the platform APIs.
 
 For redistribution, provide this repository plus all corresponding pinned upstream source (including recursive submodules and source for the embedded engine's bundled dependencies) and preserve the applicable notices. The development bootstrap downloads binaries for local builds; it is not a completed source-distribution or App Store release process.
+
+## Remote transport
+
+The Rust broker and native tunnel use [iroh](https://github.com/n0-computer/iroh) and iroh-relay (MIT OR Apache-2.0), with netwatch, Tokio, rustls, and their dependencies. Exact versions and checksums are recorded in `remote/Cargo.lock`. The transport is statically linked into the apps; the broker is a separate self-hosted executable.

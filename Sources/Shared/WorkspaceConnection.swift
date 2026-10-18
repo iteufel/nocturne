@@ -13,8 +13,15 @@ public final class WorkspaceConnection: ObservableObject {
     public var onAppPacket: ((Packet) -> Void)?
     @Published public private(set) var terminals: [TerminalTab] = []
     @Published public private(set) var terminalID: String?
-    /// The address actually used by an authenticated connection, including Bonjour resolution.
+    /// Authenticated pairing with a refreshed LAN address; remote proxy addresses are never saved.
     public private(set) var connectedInvitation: PairingInvitation?
+    public var streamingAddress: String? { remoteTunnel == nil ? connectedInvitation?.host : "127.0.0.1" }
+    public var connectionRoute: String? {
+        if let remoteTunnel { return remoteTunnel.route ?? "Reconnecting" }
+        return state == .connected ? "Local network" : nil
+    }
+    private var remoteTunnel: RemoteTunnel?
+    private weak var mediaParent: WorkspaceConnection?
     private var terminalServer: Data?
     public func selectTerminal(_ id: String) {
         if terminals.contains(where: { $0.id == id }) { terminalID = id }
@@ -27,9 +34,12 @@ public final class WorkspaceConnection: ObservableObject {
     private var generation = UUID()
     private let discovery = WorkspaceDiscovery()
     private let identity: WorkspaceIdentity
-    public init(identity: WorkspaceIdentity) { self.identity = identity }
+    private let remoteStreaming: Bool
+    public init(identity: WorkspaceIdentity, remoteStreaming: Bool = true) { self.identity = identity; self.remoteStreaming = remoteStreaming }
     /// A separately authenticated socket keeps live media independent of file/terminal traffic.
-    public func mediaConnection() -> WorkspaceConnection { WorkspaceConnection(identity: identity) }
+    public func mediaConnection() -> WorkspaceConnection {
+        let media = WorkspaceConnection(identity: identity, remoteStreaming: false); media.mediaParent = self; return media
+    }
     public func connect(_ invitation: PairingInvitation, restoreTerminalSessions: Bool = true, rediscover: Bool = false) async throws {
         try Task.checkCancellation()
         disconnect(); lastError = nil; state = .connecting; name = invitation.name
@@ -39,6 +49,11 @@ public final class WorkspaceConnection: ObservableObject {
         try await withTaskCancellationHandler {
             do {
                 try Task.checkCancellation()
+                if let shared = mediaParent?.remoteTunnel {
+                    remoteTunnel = shared
+                    try await establish(invitation, endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: shared.workspacePort)!), restoreTerminalSessions: restoreTerminalSessions, epoch: epoch)
+                    return
+                }
                 var endpoints = [NWEndpoint.hostPort(host: NWEndpoint.Host(invitation.host), port: NWEndpoint.Port(rawValue: invitation.port)!)]
                 if rediscover, let endpoint = await discovery.find(secret: invitation.secret) { endpoints.insert(endpoint, at: 0) }
                 for (index, endpoint) in endpoints.enumerated() {
@@ -50,8 +65,14 @@ public final class WorkspaceConnection: ObservableObject {
                     } catch {
                         guard generation == epoch else { throw error }
                         closeTransport()
-                        if index == endpoints.count - 1 { throw error }
+                        if index == endpoints.count - 1 && invitation.remoteAccess == nil { throw error }
                     }
+                }
+                if let access = invitation.remoteAccess {
+                    let tunnel = try await RemoteTunnel.connect(access, streaming: remoteStreaming)
+                    guard generation == epoch else { tunnel.stop(); throw NocturneError.disconnected }
+                    remoteTunnel = tunnel
+                    try await establish(invitation, endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: tunnel.workspacePort)!), restoreTerminalSessions: restoreTerminalSessions, epoch: epoch)
                 }
             } catch {
                 if generation == epoch { lastError = error.localizedDescription; disconnect() }
@@ -79,13 +100,10 @@ public final class WorkspaceConnection: ObservableObject {
             guard let self, let channel, self.channel === channel, self.generation == epoch else { return }
             self.lastError = error.localizedDescription; self.closeTransport()
         } }
-        let deadline = Task { [weak self, weak channel] in
-            do { try await Task.sleep(nanoseconds: 15_000_000_000) } catch { return }
-            guard let self, let channel, self.channel === channel, self.generation == epoch else { return }
-            self.ready?.resume(throwing: NocturneError.timeout); self.ready = nil
+        try await withCheckedThrowingContinuation { continuation in
+            ready = continuation
+            channel.start(timeout: invitation.remoteAccess != nil && remoteTunnel == nil ? 3 : 12)
         }
-        defer { deadline.cancel() }
-        try await withCheckedThrowingContinuation { continuation in ready = continuation; channel.start() }
         guard generation == epoch else { throw NocturneError.disconnected }
         var hello = Packet(.hello); hello.version = WorkspaceProtocol.version
         let greeting = try await request(hello)
@@ -102,7 +120,10 @@ public final class WorkspaceConnection: ObservableObject {
         guard generation == epoch else { throw NocturneError.disconnected }
         try Task.checkCancellation()
         guard self.channel === channel else { throw NocturneError.disconnected }
-        if case .hostPort(let host, let port) = connection.currentPath?.remoteEndpoint {
+        if remoteTunnel != nil {
+            // Persist the real LAN address and broker identity, never the temporary proxy port.
+            connectedInvitation = invitation
+        } else if case .hostPort(let host, let port) = connection.currentPath?.remoteEndpoint {
             connectedInvitation = try invitation.replacingAddress(host: "\(host)", port: port.rawValue)
         } else { connectedInvitation = invitation }
         lastError = nil
@@ -113,6 +134,7 @@ public final class WorkspaceConnection: ObservableObject {
     }
     private func closeTransport() {
         channel?.cancel(); channel = nil; state = .disconnected; connectedInvitation = nil
+        remoteTunnel = nil
         capabilities = []
         ready?.resume(throwing: NocturneError.disconnected); ready = nil
         let waiting = pending; pending.removeAll(); deadlines.values.forEach { $0.cancel() }; deadlines.removeAll()

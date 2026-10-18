@@ -45,6 +45,13 @@ final class ServerModel: ObservableObject {
     let engine: EmbeddedStreamingEngine
     var active: Bool { running || starting }
     private var server: WorkspaceServer?
+    private var remoteTunnel: RemoteTunnel?
+    @Published var remoteAccessEnabled = UserDefaults.standard.bool(forKey: "remoteAccessEnabled") {
+        didSet { UserDefaults.standard.set(remoteAccessEnabled, forKey: "remoteAccessEnabled") }
+    }
+    @Published var brokerURL = UserDefaults.standard.string(forKey: "remoteBrokerURL") ?? "" {
+        didSet { UserDefaults.standard.set(brokerURL, forKey: "remoteBrokerURL") }
+    }
     private var deviceStore: WorkspaceDeviceStore?
     private var streamDevices: [StreamDevice] = []
     private var workspaceConnections: [WorkspaceDeviceConnection] = []
@@ -114,7 +121,22 @@ final class ServerModel: ObservableObject {
                 let savedDevices = try await engine.pairedDevices()
                 guard generation == epoch, !Task.isCancelled else { return }
                 streamDevices = savedDevices; publishDevices()
+                if remoteAccessEnabled {
+                    // This private identity is never shared in a QR or derived from its shared key.
+                    let endpointKey: Data
+                    if let stored = try SecureStore.read("server-remote-key") { endpointKey = stored }
+                    else { endpointKey = try SecureStore.randomKey(); try SecureStore.write(endpointKey, account: "server-remote-key") }
+                    let tunnel = try await RemoteTunnel.host(brokerURL: brokerURL, endpointKey: endpointKey)
+                    guard generation == epoch, !Task.isCancelled else { tunnel.stop(); return }
+                    remoteTunnel = tunnel
+                }
                 let host = try WorkspaceServer(folder: sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: terminalEnabled, files: filesEnabled, microphone: microphoneEnabled), appWindows: appWindows)
+                if let tunnel = remoteTunnel {
+                    host.authorizeRemoteDevice = { [weak tunnel] port, device in
+                        guard let tunnel else { throw NocturneError.disconnected }
+                        try tunnel.authorize(sourcePort: port, deviceID: device)
+                    }
+                }
                 if headlessDisplayEnabled {
                     host.displayCommand = { [weak self] packet, connection, name, completion in
                         Task { @MainActor in
@@ -174,6 +196,7 @@ final class ServerModel: ObservableObject {
         generation = UUID(); startTask?.cancel(); startTask = nil; pollTask?.cancel(); pollTask = nil
         deviceRevision = UUID()
         pairingTasks.values.forEach { $0.cancel() }; pairingTasks.removeAll()
+        remoteTunnel?.stop(); remoteTunnel = nil
         server?.onStatus = nil; server?.onDevices = nil; server?.stop(); server = nil; engine.stop()
         displays.stop()
         deviceStore?.cancelInvitation(); workspaceConnections = []; publishDevices()
@@ -184,7 +207,8 @@ final class ServerModel: ObservableObject {
         guard running else { pairWhenReady = true; start(); return }
         do {
             guard let secret, let deviceStore else { return }
-            invitation = try PairingInvitation(host: address, name: name, secret: secret, enrollmentToken: deviceStore.createInvitation()); showPairing = true
+            let remote = try remoteTunnel.map { try RemoteAccess(brokerURL: brokerURL, endpointID: $0.endpointID) }
+            invitation = try PairingInvitation(host: address, name: name, secret: secret, enrollmentToken: deviceStore.createInvitation(), remoteAccess: remote); showPairing = true
         } catch { self.error = error.localizedDescription }
     }
     func resetPairing() {
@@ -197,8 +221,11 @@ final class ServerModel: ObservableObject {
                 deviceRevision = UUID()
                 try await engine.resetPairing()
                 try deviceStore?.reset(); streamDevices = []
+                // Close every transport before changing either stored credential.
+                stop()
                 let key = try SecureStore.randomKey(); try SecureStore.write(key, account: "server-key")
-                stop(); secret = key; start()
+                try SecureStore.write(SecureStore.randomKey(), account: "server-remote-key")
+                secret = key; start()
             } catch { self.error = error.localizedDescription }
         }
     }
@@ -227,8 +254,9 @@ final class ServerModel: ObservableObject {
             do {
                 // Revoke workspace access before awaiting network calls. Other identities stay online.
                 do { try deviceStore.remove(device.id, name: device.name) }
-                catch { server?.disconnectDevice(device.id); throw error }
+                catch { server?.disconnectDevice(device.id); remoteTunnel?.revoke(deviceID: device.id); throw error }
                 server?.disconnectDevice(device.id)
+                remoteTunnel?.revoke(deviceID: device.id)
                 workspaceConnections.removeAll { $0.id == device.id }; publishDevices()
                 // Let any in-flight PIN approval settle, then revoke every certificate for this exact identity.
                 if let pending = pairingTasks[device.id] { _ = try? await pending.value }
