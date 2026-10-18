@@ -7,6 +7,9 @@ DerivedData/
 xcuserdata/
 build/
 artifacts/
+Windows/**/bin/
+Windows/**/obj/
+TestResults/
 *.p8
 *.p12
 *.mobileprovision

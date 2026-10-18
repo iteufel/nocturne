@@ -126,3 +126,12 @@ checks every Mach-O binary. This catches the Team ID mismatch that made the old
 ad-hoc runtime abort during library loading, as well as missing Developer ID
 signatures or secure timestamps. Keep Gatekeeper enabled; a downloadable release
 must pass `spctl --assess --type execute --verbose=4 '/path/Nocturne Server.app'`.
+## Windows host packages
+
+`scripts/build-windows.ps1` builds a self-contained .NET 10 WPF host for x64 or
+ARM64, verifies the architecture-specific Sunshine checksum, and includes
+dependency licenses. The `windows_verify` CI matrix runs native service tests on
+Windows x64 and saves ZIP/checksum artifacts for both architectures. Windows
+packages are unsigned development builds; they are not automatically published
+to GitHub Releases. See [Windows setup](WINDOWS.md) for build and verification
+instructions. The existing Apple release pipelines below remain separate.

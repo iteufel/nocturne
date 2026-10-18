@@ -56,9 +56,9 @@ struct ClientSettingsView: View {
             }.listRowBackground(MoonStyle.surface)
             Section("Nocturne Server") {
                 if let name = model.savedServerName {
-                    LabeledContent("Paired Mac", value: name)
+                    LabeledContent("Paired computer", value: name)
                     Button("Reconnect") { Task { await model.reconnectServer() } }
-                    Button("Forget paired Mac", role: .destructive) { confirmForget = true }
+                    Button("Forget paired computer", role: .destructive) { confirmForget = true }
                 } else { Button("Pair Nocturne Server") { model.preferServer = true; model.showAdd = true } }
             }.listRowBackground(MoonStyle.surface)
             FilesIntegrationSettings(integration: model.filesIntegration, paired: model.savedServerName != nil) {
@@ -71,8 +71,8 @@ struct ClientSettingsView: View {
                     .font(.caption2).foregroundStyle(MoonStyle.secondary)
             }.listRowBackground(MoonStyle.surface)
         }.scrollContentBackground(.hidden)
-            .confirmationDialog("Forget this Mac?", isPresented: $confirmForget, titleVisibility: .visible) {
-                Button("Forget Mac", role: .destructive) { model.forgetServer() }
+            .confirmationDialog("Forget this computer?", isPresented: $confirmForget, titleVisibility: .visible) {
+                Button("Forget computer", role: .destructive) { model.forgetServer() }
             } message: { Text("The saved pairing key will be removed from this device.") }
     }
     private func inputStatus(_ name: String, symbol: String, connected: Bool) -> some View {

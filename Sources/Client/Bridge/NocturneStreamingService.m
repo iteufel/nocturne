@@ -290,7 +290,7 @@
             dispatch_async(dispatch_get_main_queue(), ^{
                 typeof(self) self = weakSelf;
                 if (!self || self.pairingAttempt != attempt) return;
-                if (!approved) { [self pairFailed:@"QR pairing could not finish. Scan a new QR code on your Mac and try again." attempt:attempt]; return; }
+                if (!approved) { [self pairFailed:@"QR pairing could not finish. Scan a new QR code on your computer and try again." attempt:attempt]; return; }
                 attempt.workspaceApproved = YES;
                 [self completePairingIfReady:attempt];
             });
@@ -301,7 +301,7 @@
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.pairingAttempt != attempt) return;
         if (!attempt.qrAuthorized || !self.canPairHost || !self.canPairHost(attempt.hostID)) {
-            [self pairFailed:@"Scan the QR code on your Mac before pairing this computer." attempt:attempt]; return;
+            [self pairFailed:@"Scan the QR code on your computer before pairing this computer." attempt:attempt]; return;
         }
         attempt.pendingServerCertificate = serverCert;
         [self completePairingIfReady:attempt];

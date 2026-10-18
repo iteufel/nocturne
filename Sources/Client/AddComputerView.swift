@@ -16,7 +16,7 @@ struct AddComputerView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     Text("Welcome to\nyour workspace.").font(.system(size: 34, weight: .semibold, design: .rounded)).tracking(-1)
-                    Text("Open Nocturne Server on your Mac, start the server, and choose “Pair a device.” One connection brings everything together.")
+                    Text("Open Nocturne Server on your computer, start the server, and choose “Pair a device.” One connection brings everything together.")
                         .font(.subheadline).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
                     MoonPanel {
                         HStack(spacing: 16) {
@@ -50,7 +50,7 @@ struct AddComputerView: View {
                         }
                         if let error = model.error ?? connection.lastError { Text(error).font(.caption).foregroundStyle(.orange) }
                     }
-                    Text("Only scan the QR code shown by your Mac. It pairs one device and expires after five minutes. Terminal and file access are controlled on your Mac.").font(.caption).foregroundStyle(MoonStyle.secondary)
+                    Text("Only scan the QR code shown by your computer. It pairs one device and expires after five minutes. Terminal and file access are controlled on your computer.").font(.caption).foregroundStyle(MoonStyle.secondary)
                 }.padding(24)
             }.background { NocturneBackdrop() }.navigationTitle("Add computer").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }

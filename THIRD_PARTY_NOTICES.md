@@ -9,4 +9,13 @@ Nocturne's original application and integration code is provided under GPL-3.0; 
 
 No proprietary Apple artwork or marketing assets are bundled. The icons and orbit illustration are generated with native drawing code. SF Symbols are rendered through the platform APIs.
 
+The Windows application also uses:
+
+- **Sunshine Windows** — the same GPL-3.0 source tag and commit listed above. Both Windows lite archives are checksum-pinned in `Windows/engine.lock.json`. The Windows app bundles the executable, runtime DLLs, and assets, excluding upstream service/setup launchers. It retains Sunshine's attribution in the logs and supplies this source reference.
+- **Bouncy Castle C#** — BouncyCastle.Cryptography 2.7.0, MIT, https://github.com/bcgit/bc-csharp/tree/release-2.7.0. Implements the existing TLS-PSK workspace transport on Windows.
+- **QRCoder** — 1.8.1, MIT, https://github.com/codebude/QRCoder. Generates pairing QR codes locally.
+- **.NET 10 / WPF** — MIT and associated third-party notices, https://github.com/dotnet/runtime and https://github.com/dotnet/wpf. Self-contained Windows packages include the runtime. System.Security.Cryptography.ProtectedData 10.0.13 provides Windows DPAPI integration. Exact NuGet dependency graphs are recorded in `Windows/**/packages.lock.json`.
+
+Windows packages include this notice, the project license, the pinned engine manifest, and setup documentation. Binary packaging does not remove the corresponding-source requirements below.
+
 For redistribution, provide this repository plus all corresponding pinned upstream source (including recursive submodules and source for the embedded engine's bundled dependencies) and preserve the applicable notices. The development bootstrap downloads binaries for local builds; it is not a completed source-distribution or App Store release process.

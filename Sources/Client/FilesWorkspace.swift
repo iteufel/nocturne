@@ -18,9 +18,9 @@ struct FilesWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             if connection.state != .connected {
-                ServerEmptyView(icon: "folder", title: "Less sending.\nMore doing.", detail: "Browse your Mac’s shared folder and move files between devices, right here.", action: connect)
+                ServerEmptyView(icon: "folder", title: "Less sending.\nMore doing.", detail: "Browse your computer’s shared folder and move files between devices, right here.", action: connect)
             } else if !connection.capabilities.contains("files") {
-                ContentUnavailableView("Allow file sharing", systemImage: "folder.badge.gearshape", description: Text("Enable File sharing in Nocturne Server on your Mac, then reconnect."))
+                ContentUnavailableView("Allow file sharing", systemImage: "folder.badge.gearshape", description: Text("Enable File sharing in Nocturne Server on your computer, then reconnect."))
             } else {
                 HStack(spacing: 12) {
                     if !path.isEmpty { Button("Back", systemImage: "chevron.left") { path = path.split(separator: "/").dropLast().joined(separator: "/"); Task { await refresh() } }.labelStyle(.iconOnly).buttonStyle(NocturneGlassButtonStyle()) }
@@ -37,7 +37,7 @@ struct FilesWorkspace: View {
                     ContentUnavailableView {
                         Label("A little room for your files", systemImage: "tray")
                     } description: {
-                        Text("Add a file to the shared folder on your Mac, or send one from this device.")
+                        Text("Add a file to the shared folder on your computer, or send one from this device.")
                     } actions: {
                         Button("Send a file") { importer = true }.buttonStyle(PrimaryButtonStyle()).disabled(transfer.activeName != nil)
                     }

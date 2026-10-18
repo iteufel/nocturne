@@ -19,7 +19,7 @@ struct ClientRootView: View {
                     .listStyle(.sidebar)
                     .navigationTitle("Nocturne")
                     .safeAreaInset(edge: .bottom, alignment: .leading) {
-                        Label("Your Mac, anywhere at home", systemImage: "moon")
+                        Label("Your computer, anywhere at home", systemImage: "moon")
                             .font(.caption).foregroundStyle(.secondary).padding(20)
                     }
                     .navigationSplitViewColumnWidth(min: 210, ideal: 245, max: 290)
@@ -92,7 +92,7 @@ struct ComputersView: View {
                                     Image(systemName: "desktopcomputer").font(.system(size: 31, weight: .light)).foregroundStyle(MoonStyle.secondary).padding(.top, 3)
                                     VStack(alignment: .leading, spacing: 7) {
                                         Text("Make yourself at home").font(.system(size: 17, weight: .semibold))
-                                        Text("Start Nocturne Server on your Mac, then scan its pairing code. Nearby computers also appear here.")
+                                        Text("Start Nocturne Server on your computer, then scan its pairing code. Nearby computers also appear here.")
                                             .font(.system(size: 13)).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
                                     }
                                 }
@@ -167,10 +167,10 @@ struct WorkspaceCard: View {
                         Button { model.page = .terminal } label: { Label("Terminal", systemImage: "terminal") }
                         Button { model.page = .files } label: { Label("Files", systemImage: "folder") }
                     } else if model.savedServerName != nil {
-                        Button { Task { await model.reconnectServer() } } label: { Label(connection.state == .connecting ? "Connecting…" : "Reconnect to Mac", systemImage: "link") }
+                        Button { Task { await model.reconnectServer() } } label: { Label(connection.state == .connecting ? "Connecting…" : "Reconnect to computer", systemImage: "link") }
                             .disabled(connection.state == .connecting)
                     } else {
-                        Button { model.preferServer = true; model.showAdd = true } label: { HStack { Text("Pair your Mac"); Image(systemName: "arrow.right") } }
+                        Button { model.preferServer = true; model.showAdd = true } label: { HStack { Text("Pair your computer"); Image(systemName: "arrow.right") } }
                     }
                 }.buttonStyle(NocturneGlassButtonStyle()).controlSize(.large).font(.system(size: 13, weight: .semibold)).tint(MoonStyle.accent) }
             }
@@ -187,7 +187,7 @@ struct AppLibraryView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     Text("Pick up where\nyou left off.").font(.system(size: 34, weight: .semibold, design: .rounded)).tracking(-1)
                     HStack { StatusPill(label: "Paired", active: true); Text("\(model.preferences.resolution) · \(model.preferences.frameRate) fps").font(.caption).foregroundStyle(MoonStyle.secondary) }
-                    if model.apps.isEmpty { ContentUnavailableView("No apps yet", systemImage: "square.grid.2x2", description: Text("Restart Nocturne Server on your Mac, then reconnect to load your desktop.")) }
+                    if model.apps.isEmpty { ContentUnavailableView("No apps yet", systemImage: "square.grid.2x2", description: Text("Restart Nocturne Server on your computer, then reconnect to load your desktop.")) }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 16) {
                         ForEach(model.apps) { app in
                             Button { model.stream(app) } label: {

@@ -10,13 +10,13 @@ public enum StreamDisplayPreparation {
                                workspaceLinked: Bool, capabilities: [String]) throws -> Packet? {
         guard workspaceLinked else {
             if matchesDevice {
-                throw NocturneError.remote("To match the Mac desktop to this device, pair using the QR code in Nocturne Server. For a computer without Nocturne display control, choose a fixed resolution in Settings.")
+                throw NocturneError.remote("To match the desktop to this device, pair using the QR code in Nocturne Server. For a computer without Nocturne display control, choose a fixed resolution in Settings.")
             }
             return nil
         }
         guard capabilities.contains("display") else {
             if matchesDevice {
-                throw NocturneError.remote("Enable Headless virtual monitor in Nocturne Server → Settings → Displays, then restart the server. Choose a fixed resolution to stream a physical monitor instead.")
+                throw NocturneError.remote("Choose a fixed resolution such as 1080p in Settings to stream this computer. Match device requires Headless virtual monitor in the Mac server’s display settings.")
             }
             return nil
         }

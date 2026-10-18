@@ -26,14 +26,14 @@ struct TerminalWorkspace: View {
             } else if connection.state == .connecting {
                 Spacer(); ProgressView("Restoring your terminals…"); Spacer()
             } else if connection.state != .connected {
-                ServerEmptyView(icon: "terminal", title: "Pick up where\nyou left off.", detail: "Connect to your Mac to open a shell or return to your running terminals.", action: connect)
+                ServerEmptyView(icon: "terminal", title: "Pick up where\nyou left off.", detail: "Connect to your computer to open a shell or return to your running terminals.", action: connect)
             } else if !connection.capabilities.contains("terminal") {
-                ContentUnavailableView("Allow terminal access", systemImage: "terminal", description: Text("Enable Terminal in Nocturne Server on your Mac, then reconnect."))
+                ContentUnavailableView("Allow terminal access", systemImage: "terminal", description: Text("Enable Terminal in Nocturne Server on your computer, then reconnect."))
             } else {
                 Spacer()
                 Image(systemName: "terminal").font(.system(size: 40, weight: .ultraLight)).foregroundStyle(MoonStyle.accent)
                 Text("At your command").font(.system(size: 24, weight: .semibold, design: .rounded)).padding(.top, 12)
-                Text("Your shells keep running on your Mac when you leave.")
+                Text("Your shells keep running on your computer when you leave.")
                     .font(.subheadline).foregroundStyle(MoonStyle.secondary).multilineTextAlignment(.center).padding(.horizontal, 28).padding(.top, 5)
                 Button(action: openTerminal) {
                     HStack { if opening { ProgressView() }; Text(opening ? "Opening…" : "Open terminal") }
@@ -128,7 +128,7 @@ private struct TerminalPane: View {
             if !tab.info.running {
                 Text("Session ended").font(.caption).foregroundStyle(MoonStyle.terminalText.opacity(0.7)).padding(10)
             } else if connection.state != .connected {
-                Text("Reconnect to continue. Your shell stays on your Mac.")
+                Text("Reconnect to continue. Your shell stays on your computer.")
                     .font(.caption).foregroundStyle(MoonStyle.terminalText.opacity(0.7)).padding(10)
             }
         }.background(MoonStyle.terminalInk, in: RoundedRectangle(cornerRadius: 18)).clipShape(RoundedRectangle(cornerRadius: 18))
@@ -146,7 +146,7 @@ struct ServerEmptyView: View {
             Image(systemName: icon).font(.system(size: 48, weight: .ultraLight)).foregroundStyle(MoonStyle.accent)
             Text(title).font(.system(size: 37, weight: .semibold, design: .rounded)).tracking(-1.2)
             Text(detail).font(.system(size: 15)).foregroundStyle(MoonStyle.secondary).lineSpacing(5)
-            Button(action: action) { Label("Connect your Mac", systemImage: "link") }.buttonStyle(PrimaryButtonStyle())
+            Button(action: action) { Label("Connect your computer", systemImage: "link") }.buttonStyle(PrimaryButtonStyle())
             Spacer()
             Label("Encrypted between your devices", systemImage: "lock.shield").font(.system(size: 11)).foregroundStyle(MoonStyle.secondary)
         }.padding(32).frame(maxWidth: 560, alignment: .leading).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

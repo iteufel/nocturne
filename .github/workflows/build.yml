@@ -30,6 +30,34 @@ env:
   NOCTURNE_TEST_DISPLAY_SWITCH: '0'
 
 jobs:
+  windows_verify:
+    name: Test and package Windows (${{ matrix.architecture }})
+    runs-on: windows-2025
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x64, arm64]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test native Windows services and package the server
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Architecture '${{ matrix.architecture }}' -SkipTests:('${{ matrix.architecture }}' -ne 'x64')
+      - name: Save the Windows download
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Nocturne-Server-Windows-${{ matrix.architecture }}
+          path: |
+            .build/WindowsRelease/Nocturne-Server-Windows-${{ matrix.architecture }}.zip
+            .build/WindowsRelease/SHA256SUMS-${{ matrix.architecture }}.txt
+          if-no-files-found: error
+          retention-days: 7
+
   verify:
     name: Test the iPhone and iPad client
     runs-on: xcode-27
@@ -69,6 +97,15 @@ jobs:
           scripts/bootstrap.sh
       - name: Test shared and host services
         run: env -u NOCTURNE_ENGINE_EXECUTABLE swift test
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test the Swift client against the Windows protocol
+        run: |
+          dotnet build Windows/Nocturne.Interop -p:RestoreLockedMode=true
+          NOCTURNE_DOTNET="$(command -v dotnet)" \
+          NOCTURNE_WINDOWS_TEST_HOST="$PWD/Windows/Nocturne.Interop/bin/Debug/net10.0/Nocturne.Interop.dll" \
+          swift test --filter WindowsHostInteropTests
       - name: Test microphone driver with sanitizers
         run: bash scripts/test-microphone-driver.sh
       - name: Build the unified macOS server

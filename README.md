@@ -1,8 +1,10 @@
 # Nocturne
 
-A native SwiftUI workspace for streaming your computer to iPhone and iPad, with an interactive terminal and file transfer. **Nocturne Server is one macOS application.** It runs the Sunshine server executable directly as a managed child process and owns its lifetime, configuration, authentication, and pairing. There is no nested Sunshine.app, separate companion, Sunshine installation, or web setup step.
+A native workspace for streaming your computer to iPhone and iPad, with an interactive terminal and file transfer. **Nocturne Server is one host application**, available as a SwiftUI macOS app and a native Windows desktop app. Each runs the bundled Sunshine server executable as a managed child process and owns its lifetime, configuration, authentication, and pairing. There is no separate Sunshine installation or web setup step.
 
 ## Run
+
+For the **Windows host**, see [Windows build, setup, and verification](docs/WINDOWS.md). Build a self-contained x64 or ARM64 package with `pwsh -File scripts/build-windows.ps1`. Windows supports QR pairing, desktop streaming, PowerShell tabs, file sharing, and device removal; choose a fixed resolution in the iOS client. Headless displays and client microphone forwarding currently require the Mac host. The instructions below describe the Mac app.
 
 Download the signed and notarized Mac server from [GitHub Releases](https://github.com/iteufel/nocturne/releases).
 Quit any older server, unzip the download, and move **Nocturne Server.app** to Applications.
