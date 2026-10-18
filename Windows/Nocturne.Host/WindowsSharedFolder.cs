@@ -159,7 +159,10 @@ public sealed class WindowsSharedFolder : IWorkspaceFiles
 
     private static SafeFileHandle Open(string path, bool directory)
     {
-        var handle = CreateFileW(path, directory ? 0x80u : 0x80000000u, 1, 0, 3, 0x00200000u | (directory ? 0x02000000u : 0), 0);
+        // Attribute-only handles do not participate in Windows sharing checks.
+        // Include FILE_LIST_DIRECTORY so denying write/delete also prevents a
+        // checked directory from being replaced while an operation uses its path.
+        var handle = CreateFileW(path, directory ? 0x81u : 0x80000000u, 1, 0, 3, 0x00200000u | (directory ? 0x02000000u : 0), 0);
         if (handle.IsInvalid) { handle.Dispose(); throw new IOException("This item is unavailable or cannot be safely shared.", new Win32Exception()); }
         if (GetFileType(handle) != 1 || !GetFileInformationByHandle(handle, out var info) || (info.Attributes & 0x400) != 0 ||
             ((info.Attributes & 0x10) != 0) != directory)

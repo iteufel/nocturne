@@ -80,15 +80,24 @@ public sealed class ConPtyTerminal(int columns, int rows) : ITerminal
             while (writes.Reader.WaitToReadAsync().AsTask().GetAwaiter().GetResult())
                 while (writes.Reader.TryRead(out var command))
                 {
-                    if (command.Data != null) { input!.Write(command.Data); input.Flush(); }
+                    if (command.Data != null)
+                    {
+                        input!.Write(command.Data); input.Flush();
+                        Console.Error.WriteLine("[DEBUG-pr7-conpty] Wrote input bytes: " + command.Data.Length);
+                    }
                     else
                     {
                         var handle = Volatile.Read(ref console);
                         if (handle != 0) Marshal.ThrowExceptionForHR(ResizePseudoConsole(handle, new((short)command.Columns, (short)command.Rows)));
+                        Console.Error.WriteLine("[DEBUG-pr7-conpty] Resize completed: " + command.Columns + "x" + command.Rows);
                     }
                 }
         }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException or COMException) { Dispose(); }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or COMException)
+        {
+            Console.Error.WriteLine("[DEBUG-pr7-conpty] Input worker failed: " + ex);
+            Dispose();
+        }
     }
 
     private async Task MonitorAsync(Process child)

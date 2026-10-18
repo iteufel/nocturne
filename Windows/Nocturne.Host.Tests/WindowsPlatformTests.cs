@@ -13,7 +13,7 @@ public sealed class WindowsFactAttribute : FactAttribute
 }
 
 [SupportedOSPlatform("windows")]
-public sealed class WindowsPlatformTests(ITestOutputHelper output)
+public sealed class WindowsPlatformTests(ITestOutputHelper testOutput)
 {
     [WindowsFact]
     public void TransfersAreHiddenBoundedAndNeverOverwrite()
@@ -46,12 +46,12 @@ public sealed class WindowsPlatformTests(ITestOutputHelper output)
     {
         var root = Path.Combine(Path.GetTempPath(), "nocturne-junction-" + Guid.NewGuid());
         var outside = root + "-outside";
+        var link = Path.Combine(root, "escape");
         try
         {
             Directory.CreateDirectory(outside); File.WriteAllText(Path.Combine(outside, "secret"), "private");
             using (var folder = new WindowsSharedFolder(root))
             {
-                var link = Path.Combine(root, "escape");
                 using var command = Process.Start(new ProcessStartInfo("cmd.exe")
                 { ArgumentList = { "/d", "/c", "mklink", "/J", link, outside }, UseShellExecute = false, CreateNoWindow = true });
                 command!.WaitForExit(); Assert.Equal(0, command.ExitCode);
@@ -60,18 +60,20 @@ public sealed class WindowsPlatformTests(ITestOutputHelper output)
                 Assert.Throws<IOException>(() => folder.BeginUpload("escape/created", 0));
                 Assert.Empty(folder.List(""));
                 var child = Path.Combine(root, "child"); Directory.CreateDirectory(child);
-                using var upload = folder.BeginUpload("child/pending", 0);
-                Assert.Throws<IOException>(() => Directory.Move(child, child + "-renamed"));
-                Directory.Delete(link); // Remove only the junction itself before recursive cleanup.
+                using (var upload = folder.BeginUpload("child/pending", 0))
+                    Assert.Throws<IOException>(() => Directory.Move(child, child + "-renamed"));
+                Directory.Move(child, child + "-renamed"); // Disposing the upload releases its parent.
             }
             Assert.True(File.Exists(Path.Combine(outside, "secret")));
         }
-        catch (Exception error)
+        finally
         {
-            output.WriteLine("[DEBUG-pr7-junction] Failure before cleanup: " + error);
-            throw;
+            // Delete the junction itself without recursion, including when an assertion
+            // fails. .NET 10 recursive cleanup can otherwise mask the original failure.
+            if (Directory.Exists(link)) Directory.Delete(link);
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+            if (Directory.Exists(outside)) Directory.Delete(outside, true);
         }
-        finally { if (Directory.Exists(root)) Directory.Delete(root, true); if (Directory.Exists(outside)) Directory.Delete(outside, true); }
     }
 
     [WindowsFact]
@@ -81,7 +83,12 @@ public sealed class WindowsPlatformTests(ITestOutputHelper output)
         var output = new MemoryStream(); var gate = new object();
         var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         terminal.Output += bytes => { lock (gate) output.Write(bytes); };
-        terminal.Exited += () => ended.TrySetResult();
+        terminal.Exited += () =>
+        {
+            var child = (Process)typeof(ConPtyTerminal).GetField("process", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(terminal)!;
+            testOutput.WriteLine("[DEBUG-pr7-conpty] Child exit code: " + child.ExitCode);
+            ended.TrySetResult();
+        };
         terminal.Start(); terminal.Resize(100, 30);
         // The echoed command contains only base64, so it cannot satisfy the output assertion.
         terminal.Input(Encoding.UTF8.GetBytes("[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Tk9DVFVSTkVfUFRZX09L')); exit\r"));
@@ -92,6 +99,39 @@ public sealed class WindowsPlatformTests(ITestOutputHelper output)
             var captured = Encoding.UTF8.GetString(output.ToArray());
             Assert.True(captured.Contains("NOCTURNE_PTY_OK", StringComparison.Ordinal),
                 "ConPTY output did not contain the command result: " + JsonSerializer.Serialize(captured));
+        }
+    }
+
+    [WindowsFact]
+    public async Task ConPtyAcceptsCommandsAfterThePrompt()
+    {
+        using var terminal = new ConPtyTerminal(80, 24);
+        var captured = new StringBuilder(); var gate = new object();
+        var prompt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var result = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        terminal.Output += bytes =>
+        {
+            lock (gate)
+            {
+                captured.Append(Encoding.UTF8.GetString(bytes));
+                var text = captured.ToString();
+                if (text.Contains("PS ", StringComparison.Ordinal)) prompt.TrySetResult();
+                if (text.Contains("NOCTURNE_PTY_OK", StringComparison.Ordinal)) result.TrySetResult();
+            }
+        };
+        terminal.Start();
+        try
+        {
+            await prompt.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            terminal.Resize(100, 30);
+            terminal.Input(Encoding.UTF8.GetBytes("[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Tk9DVFVSTkVfUFRZX09L'))\r"));
+            await result.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            terminal.Input(Encoding.UTF8.GetBytes("exit\r"));
+            await terminal.Completion.WaitAsync(TimeSpan.FromSeconds(15));
+        }
+        finally
+        {
+            lock (gate) testOutput.WriteLine("[DEBUG-pr7-conpty] Interactive output: " + JsonSerializer.Serialize(captured.ToString()));
         }
     }
 
