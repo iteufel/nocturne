@@ -5,7 +5,33 @@ struct ClientRootView: View {
     @ObservedObject var model: ClientModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("nocturne.appearance") private var appearance = NocturneAppearance.system
+    @AppStorage("nocturne.client.onboardingComplete") private var onboardingComplete = false
+    @State private var replayOnboarding = false
+    private var needsOnboarding: Bool {
+        replayOnboarding || (!onboardingComplete && model.savedServerName == nil && !model.hosts.contains(where: \.paired))
+    }
     var body: some View {
+        Group {
+            if needsOnboarding {
+                ClientOnboardingView { pair in
+                    onboardingComplete = true
+                    replayOnboarding = false
+                    if pair { model.preferServer = true; model.showAdd = true }
+                }
+            } else { workspace }
+        }
+        .tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
+        .sheet(isPresented: $model.showAdd) { AddComputerView(model: model) }
+        .sheet(isPresented: $model.showLibrary) { AppLibraryView(model: model) }
+        .alert("Connection needs attention", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+            Button("OK") { model.error = nil }
+        } message: { Text(model.error ?? "") }
+        .fullScreenCover(item: $model.session, onDismiss: { model.endStream() }) { session in StreamWorkspace(model: model, session: session) }
+        .task(id: needsOnboarding) {
+            if !needsOnboarding { onboardingComplete = true; model.start() }
+        }
+    }
+    private var workspace: some View {
         GeometryReader { geometry in
             if horizontalSizeClass == .regular && WorkspaceLayout.resolve(width: geometry.size.width) == .expanded {
                 NavigationSplitView {
@@ -33,14 +59,6 @@ struct ClientRootView: View {
                 }
             }
         }
-        .tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
-        .sheet(isPresented: $model.showAdd) { AddComputerView(model: model) }
-        .sheet(isPresented: $model.showLibrary) { AppLibraryView(model: model) }
-        .alert("Connection needs attention", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-            Button("OK") { model.error = nil }
-        } message: { Text(model.error ?? "") }
-        .fullScreenCover(item: $model.session, onDismiss: { model.endStream() }) { session in StreamWorkspace(model: model, session: session) }
-        .task { model.start() }
     }
     private func navigation(for page: ClientPage) -> some View {
         NavigationStack {
@@ -50,7 +68,7 @@ struct ClientRootView: View {
                 case .hostApps: HostAppsWorkspace(client: model, model: model.hostApps, connection: model.server)
                 case .terminal: TerminalWorkspace(connection: model.server, connect: { Task { await model.reconnectServer() } })
                 case .files: FilesWorkspace(connection: model.server, connect: { model.showAdd = true })
-                case .settings: ClientSettingsView(model: model)
+                case .settings: ClientSettingsView(model: model, showOnboarding: { replayOnboarding = true })
                 }
             }
             .background { NocturneBackdrop() }.navigationTitle(page.rawValue)

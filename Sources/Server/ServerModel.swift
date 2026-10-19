@@ -17,6 +17,7 @@ final class ServerModel: ObservableObject {
     @Published private(set) var removingDevice: String?
     @Published var error: String?
     @Published var showPairing = false
+    @Published var showOnboarding = false
     @Published var invitation: PairingInvitation?
     @Published private(set) var resettingPairing = false
     var changingDevices: Bool { removingDevice != nil || resettingPairing }
