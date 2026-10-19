@@ -8,7 +8,7 @@ public protocol AppWindowCapture: AnyObject {
     var window: RemoteAppWindow { get }
     var display: StreamDisplaySize { get }
     func resize(_ viewport: AppWindowViewport) async throws
-    func input(_ input: AppWindowInput) throws
+    func input(_ input: AppWindowInput) async throws
     func stop()
 }
 
@@ -103,7 +103,7 @@ public final class AppWindowSessionManager {
                 reply.window = capture.window; reply.display = capture.display
             } else if packet.operation == .appInput {
                 guard let input = packet.input, input.isValid else { throw NocturneError.invalidFrame }
-                try capture.input(input)
+                try await capture.input(input)
             }
             reply.sessionID = lease.id
         case .appClose:

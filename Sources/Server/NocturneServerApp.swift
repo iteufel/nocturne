@@ -4,7 +4,11 @@ import NocturneHostKit
 @main
 enum NocturneServerMain {
     @MainActor static func main() {
-        if !DisplayControlProcess.runIfRequested() { NocturneServerApp.main() }
+        guard !DisplayControlProcess.runIfRequested() else { return }
+        // The bundle defaults to an agent so its embedded streaming executable
+        // never registers a second Dock icon. Only the main app owns the UI.
+        NSApplication.shared.setActivationPolicy(.regular)
+        NocturneServerApp.main()
     }
 }
 

@@ -1,6 +1,12 @@
 #import "StreamView.h"
 #import "StreamFrameViewController.h"
 
+static inline CGSize NocturneVideoAreaSize(CGSize bounds, CGFloat ratio, BOOL fill) {
+    if (ratio <= 0 || bounds.width <= 0 || bounds.height <= 0) return CGSizeZero;
+    CGFloat height = fill ? MAX(bounds.width / ratio, bounds.height) : MIN(bounds.width / ratio, bounds.height);
+    return CGSizeMake(height * ratio, height);
+}
+
 // UIKit remains the input source in Split View and whenever the system declines
 // pointer lock. Merely detecting a GCMouse does not mean raw input owns the scene.
 static inline BOOL NocturneUsesRelativeMouse(UIView *view) {
@@ -8,6 +14,8 @@ static inline BOOL NocturneUsesRelativeMouse(UIView *view) {
 }
 
 @interface StreamView (NocturneInput)
+@property (nonatomic) BOOL nocturneFillEntireScreen;
+- (CGSize)getVideoAreaSize;
 - (void)nocturneSetAbsoluteTouchMode:(BOOL)absolute controllerSupport:(ControllerSupport *)support;
 - (void)nocturneCancelInput;
 - (void)nocturneReleaseMouseButtons;

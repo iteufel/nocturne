@@ -171,12 +171,14 @@ final class NativeStreamingDisplayDriver: StreamingDisplayDriver {
     }
     func restore() throws {
         revision = UUID()
+        // Keep the framebuffer only while physical-screen recovery is pending.
+        // Once recovery succeeds, ending the lease must also remove the monitor
+        // from WindowServer. The next stream creates and selects a fresh target.
         try layout?.restore()
         layout = nil
-        // Keep the engine's capture target alive between streams. Only Stop
-        // destroys it, after physical displays have been restored.
+        display = nil; size = nil
     }
-    func stop() throws { try restore(); display = nil; size = nil }
+    func stop() throws { try restore() }
     private func settle(_ display: StreamingVirtualDisplay, revision epoch: UUID) async throws {
         var failure: Error = NocturneError.timeout
         for _ in 0..<40 {
