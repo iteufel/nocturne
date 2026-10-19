@@ -8,6 +8,7 @@ final class CoreTests: XCTestCase {
         let saved = Data(#"{"resolution":"1440p","frameRate":120,"bitrate":35,"hdr":true,"framePacing":false,"touchControls":true,"absolutePointer":true,"statistics":true,"multiController":false}"#.utf8)
         var preferences = try JSONDecoder().decode(StreamPreferences.self, from: saved)
         XCTAssertEqual(preferences.inputMode, .touch)
+        XCTAssertFalse(preferences.fillEntireScreen)
         preferences.inputMode = .trackpad
         let restored = try JSONDecoder().decode(StreamPreferences.self, from: JSONEncoder().encode(preferences))
         XCTAssertEqual(restored.inputMode, .trackpad)
@@ -17,6 +18,9 @@ final class CoreTests: XCTestCase {
         preferences.inputMode = .touch
         XCTAssertEqual(preferences, try JSONDecoder().decode(StreamPreferences.self, from: saved))
         XCTAssertEqual(StreamPreferences().inputMode, .trackpad)
+        XCTAssertFalse(StreamPreferences().fillEntireScreen)
+        preferences.fillEntireScreen = true
+        XCTAssertEqual(preferences, try JSONDecoder().decode(StreamPreferences.self, from: JSONEncoder().encode(preferences)))
     }
     func testInvitationRoundTripAndValidation() throws {
         let invitation = try PairingInvitation(host: "fe80::abcd%en0", name: "Studio Mac", secret: Data(repeating: 0x42, count: 32))

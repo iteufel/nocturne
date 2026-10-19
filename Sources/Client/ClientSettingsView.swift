@@ -15,6 +15,12 @@ struct ClientSettingsView: View {
                     ForEach(NocturneAppearance.allCases) { style in Text(style.title).tag(style) }
                 }
             }.listRowBackground(MoonStyle.surface)
+            Section {
+                Toggle("Fill entire screen", isOn: Binding(get: { model.preferences.fillEntireScreen }, set: model.setFillEntireScreen))
+                    .accessibilityIdentifier("streamFillEntireScreen")
+            } header: { Text("Stream display") } footer: {
+                Text("Off fits the stream inside the safe area, keeping content clear of the camera and rounded corners. On uses the whole screen. Swipe inward from the right edge while streaming to open Controls.")
+            }.listRowBackground(MoonStyle.surface)
             Section("Picture & sound") {
                 Picker("Resolution", selection: $model.preferences.resolution) { ForEach(["Match device", "720p", "1080p", "1440p", "4K"], id: \.self) { Text($0) } }
                 if model.preferences.resolution == "Match device" {
@@ -49,7 +55,7 @@ struct ClientSettingsView: View {
             }.listRowBackground(MoonStyle.surface)
             Section("Microphone") {
                 Label("Voice chat on your Mac", systemImage: "mic")
-                Text("Enable Client microphone in Nocturne Server → Sharing and install the microphone input. In Discord or your game, select Nocturne Microphone. Use the microphone button in your stream to unmute.")
+                Text("Enable Client microphone in Nocturne Server → Sharing and install the microphone input. In Discord or your game, select Nocturne Microphone. Open Controls → Microphone in your stream to unmute.")
                     .font(.caption).foregroundStyle(MoonStyle.secondary)
                 Text("Each stream starts muted. Backgrounding, disconnecting, resizing the stream, or changing audio devices mutes it again. Headphones are recommended; Bluetooth microphone use can reduce playback quality.")
                     .font(.caption).foregroundStyle(MoonStyle.secondary)
