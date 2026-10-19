@@ -34,3 +34,5 @@
     [_streamView nocturneCancelInput];
     [_controllerSupport nocturneReleaseMouseButtons];
 }
+
+- (void)nocturneFocusInput { [_streamView becomeFirstResponder]; }
