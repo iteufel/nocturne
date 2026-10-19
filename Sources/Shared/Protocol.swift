@@ -169,12 +169,30 @@ public struct StreamPreferences: Codable, Equatable {
     public var absolutePointer = false
     public var statistics = false
     public var multiController = true
+    public var fillEntireScreen = false
     // Preserve the existing stored key so saved touch/trackpad choices survive upgrades.
     public var inputMode: StreamInputMode {
         get { absolutePointer ? .touch : .trackpad }
         set { absolutePointer = newValue == .touch }
     }
     public init() {}
+    private enum CodingKeys: String, CodingKey {
+        case resolution, frameRate, bitrate, hdr, framePacing, touchControls, absolutePointer, statistics, multiController, fillEntireScreen
+    }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        resolution = try values.decode(String.self, forKey: .resolution)
+        frameRate = try values.decode(Int.self, forKey: .frameRate)
+        bitrate = try values.decode(Int.self, forKey: .bitrate)
+        hdr = try values.decode(Bool.self, forKey: .hdr)
+        framePacing = try values.decode(Bool.self, forKey: .framePacing)
+        touchControls = try values.decode(Bool.self, forKey: .touchControls)
+        absolutePointer = try values.decode(Bool.self, forKey: .absolutePointer)
+        statistics = try values.decode(Bool.self, forKey: .statistics)
+        multiController = try values.decode(Bool.self, forKey: .multiController)
+        // Existing installations keep their quality/input settings and gain safe-area fit.
+        fillEntireScreen = try values.decodeIfPresent(Bool.self, forKey: .fillEntireScreen) ?? false
+    }
     public var dimensions: (width: Int, height: Int) {
         switch resolution { case "720p": return (1280, 720); case "1440p": return (2560, 1440); case "4K": return (3840, 2160); default: return (1920, 1080) }
     }

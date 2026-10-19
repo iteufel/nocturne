@@ -189,6 +189,10 @@ final class ClientModel: ObservableObject {
             engine.setTouchMode(mode == .touch, controller: controller)
         }
     }
+    func setFillEntireScreen(_ fill: Bool) {
+        preferences.fillEntireScreen = fill
+        session?.preferences.fillEntireScreen = fill
+    }
     func select(_ host: StreamingHost) {
         guard !busy, session == nil, pendingStream == nil else { return }
         selectedHost = host; busy = true; apps = []; engine.selectHost(host.id)

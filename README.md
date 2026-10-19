@@ -40,7 +40,7 @@ The Mac product is `.build/XcodeMac/Build/Products/Debug/Nocturne Server.app`; t
 1. Open **Nocturne Server** and select **Start server**. Allow screen/system audio capture and Accessibility for input when macOS asks. These permissions belong to Nocturne Server.
 2. In **Sharing**, enable terminal/file access if wanted and choose the shared folder. Both features start disabled. Configure displays in **Nocturne Server → Settings…** while the server is stopped.
 3. Choose **Pair a device**. On iPhone/iPad, choose **Add computer → Scan QR code** and scan the Mac's screen. Pairing completes automatically, including video, through the authenticated connection. Each QR code enrolls one device and expires after five minutes.
-4. Choose **Desktop** to stream. The stream menu opens terminal/files alongside the video. On large windows they appear to the side; smaller windows use a bottom panel.
+4. Choose **Desktop** to stream. Swipe inward from the right edge of the stream to open its controls. The menu opens terminal/files alongside the video. On large windows they appear to the side; smaller windows use a bottom panel.
 
 Nearby computers are discovered automatically. Selecting an unpaired computer opens QR pairing. New devices must scan a QR code from Nocturne Server; manual PIN entry, address-based pairing, pasted links, and external pairing links are not supported. Already paired computers remain available.
 
@@ -75,7 +75,8 @@ Virtual display creation and monitor disabling use runtime-checked private macOS
 ## Devices and input
 
 - Native Apple Liquid Glass on iOS/iPadOS 26+ and macOS 26+: floating tabs, system sidebars/toolbars, glass action buttons, and stream controls. Earlier systems use native bordered controls and materials. Choose System, Light, or Dark in Nocturne → Settings → Appearance on iOS, or **Nocturne Server → Settings…** (⌘,) on macOS. Content surfaces honor Reduce Transparency; the terminal and video retain a dark canvas.
-- iPhone and iPad: native tabs, sidebar navigation, rotation, Split View/window resizing, safe areas, and a persistent stream workspace with automatic resolution renegotiation.
+- iPhone and iPad: native tabs, sidebar navigation, rotation, Split View/window resizing, safe areas, and a persistent stream workspace with automatic resolution renegotiation. Stream controls stay hidden until you swipe inward from the right edge; there is no floating button or persistent bar. A brief hint explains the gesture when a stream starts, and VoiceOver offers an Open stream controls action.
+- **Settings → Stream display → Fill entire screen**, also available in the live controls menu, switches between safe-area fit (the default) and the entire display. Safe-area fit keeps video clear of the camera, rounded corners, and home indicator. The choice is saved, applies immediately, and follows rotation and tools-panel resizing. Match device briefly reconnects when the video dimensions change; fixed resolutions retain their aspect ratio.
 - iPhone Duo: responds to the actual scene size for compact/expanded layouts. There is no invented hinge API or second-phone controller mode. Dedicated Duo hardware verification is still required.
 - Choose **Settings → Controls → Input mode → Touch or Trackpad**, or change it from the stream controls menu while connected. Touch clicks where you tap; hold for a right-click or move your finger to drag. Trackpad moves the pointer with one finger, taps to click, uses a two-finger tap for right-click, and scrolls with two fingers. Hold one finger before moving to drag. A three-finger tap opens the keyboard. The choice is saved and changes immediately without reconnecting the video.
 - Bluetooth keyboards, mice, trackpads, and MFi/Xbox/PlayStation controllers use native input. Pair accessories in iOS Settings. Mouse/trackpad accessories work in either input mode, including UIKit input when pointer lock is unavailable in a window or Split View.
@@ -89,7 +90,7 @@ Forward the iPhone/iPad microphone (including its current wired, USB, or Bluetoo
 1. In **Nocturne Server → Sharing**, choose **Install microphone input…**, approve the macOS administrator prompt, and restart the Mac. The driver is bundled with Nocturne Server; no separate audio-routing app is needed.
 2. Enable **Client microphone** in Sharing. Pair the client using the Nocturne Server QR code and reconnect it after enabling this feature.
 3. In Discord or your game’s audio settings, choose **Nocturne Microphone** as the input. Keep the game’s output on its normal device so it continues through the video stream.
-4. Start a stream, tap its microphone button, and allow iOS microphone access. **Mic on** indicates capture; tap again to mute.
+4. Start a stream, swipe inward from the right edge, enable **Microphone** in Stream controls, and allow iOS microphone access. The toggle shows capture status; turn it off to mute.
 
 Each stream starts muted. Backgrounding, disconnecting, changing audio devices, audio interruptions, or a video reconnect during resizing mutes it again. Unmute explicitly to resume. One client can own the Mac input at a time. Disabling Client microphone, removing the device, or stopping the server flushes its audio. Use headphones to reduce game-audio feedback; Bluetooth hands-free microphone use may lower playback quality.
 
