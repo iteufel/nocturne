@@ -49,7 +49,7 @@ struct ClientRootView: View {
                 case .computers: ComputersView(model: model)
                 case .hostApps: HostAppsWorkspace(client: model, model: model.hostApps, connection: model.server)
                 case .terminal: TerminalWorkspace(connection: model.server, connect: { Task { await model.reconnectServer() } })
-                case .files: FilesWorkspace(connection: model.server, connect: { model.showAdd = true })
+                case .files: FilesWorkspace(connection: model.server, connect: { Task { await model.reconnectServer() } })
                 case .settings: ClientSettingsView(model: model)
                 }
             }
@@ -58,10 +58,10 @@ struct ClientRootView: View {
             .toolbar {
                 if page == .computers {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Add computer", systemImage: "plus") { model.preferServer = false; model.showAdd = true }.accessibilityIdentifier("addComputer")
+                        Button("Add host", systemImage: "plus") { model.showAdd = true }.disabled(model.busy || model.session != nil).accessibilityIdentifier("addComputer")
                     }
                 } else if [.hostApps, .terminal, .files].contains(page), model.pairedServers.servers.count > 1 {
-                    ToolbarItem(placement: .topBarLeading) { PairedMacMenu(model: model) }
+                    ToolbarItem(placement: .topBarLeading) { PairedHostMenu(model: model) }
                 }
             }
         }
@@ -70,85 +70,83 @@ struct ClientRootView: View {
 
 struct ComputersView: View {
     @ObservedObject var model: ClientModel
-    @Environment(\.horizontalSizeClass) private var sizeClass
+    @ObservedObject private var connection: WorkspaceConnection
+    init(model: ClientModel) { self.model = model; connection = model.server }
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
-                HStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        HStack(spacing: 7) { MoonMark(size: 24); Text("NOCTURNE").font(.system(size: 10, weight: .semibold)).tracking(1.6).foregroundStyle(MoonStyle.secondary) }
-                        Text("Your desktop.\nA little closer.")
-                            .font(.system(size: sizeClass == .regular ? 42 : 32, weight: .semibold, design: .rounded)).tracking(-1.2).lineSpacing(-2)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("Stream, create, and play.\nAll from the device in your hands.")
-                            .font(.system(size: 14)).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                    LunarArtwork().frame(width: sizeClass == .regular ? 240 : 110, height: sizeClass == .regular ? 230 : 170)
-                }.padding(.vertical, 12)
-
-                VStack(spacing: 15) {
-                    SectionCaption(title: "Your computers", detail: model.hosts.isEmpty ? "Local network" : "\(model.hosts.count) discovered")
-                    if model.hosts.isEmpty {
-                        MoonPanel {
-                            VStack(alignment: .leading, spacing: 22) {
-                                HStack(alignment: .top, spacing: 16) {
-                                    Image(systemName: "desktopcomputer").font(.system(size: 31, weight: .light)).foregroundStyle(MoonStyle.secondary).padding(.top, 3)
-                                    VStack(alignment: .leading, spacing: 7) {
-                                        Text("Make yourself at home").font(.system(size: 17, weight: .semibold))
-                                        Text("Start Nocturne Server on your Mac, then scan its pairing code. Nearby computers also appear here.")
-                                            .font(.system(size: 13)).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
-                                    }
+        List {
+            if !model.pairedServers.servers.isEmpty {
+                Section {
+                    ForEach(model.pairedServers.servers) { paired in
+                        HStack(spacing: 12) {
+                            Button { model.openHost(paired.id, desktop: true) } label: {
+                                PairedHostSummary(model: model, paired: paired).contentShape(Rectangle())
+                            }.buttonStyle(.plain).disabled(model.busy)
+                                .accessibilityLabel("Open \(paired.name) desktop")
+                                .accessibilityHint(model.hostStatus(paired))
+                            NavigationLink { PairedHostDetailView(model: model, hostID: paired.id) } label: {
+                                Image(systemName: "info.circle").foregroundStyle(MoonStyle.accent)
+                            }.fixedSize().accessibilityLabel("Manage \(paired.name)")
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("Paired hosts")
+                        Spacer()
+                        NavigationLink("Manage") { PairedHostsView(model: model) }
+                    }
+                } footer: { Text("Tap a host to open its desktop.") }
+                    .listRowBackground(MoonStyle.surface)
+            } else {
+                Section {
+                    VStack(alignment: .leading, spacing: 18) {
+                        MoonMark(size: 42)
+                        Text("Your desktop, wherever you are.")
+                            .font(.system(size: 27, weight: .semibold, design: .rounded))
+                        Text("Start Nocturne Server on your host, choose Pair a device, then scan its QR code.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Button("Add host", systemImage: "qrcode.viewfinder") { model.showAdd = true }
+                            .buttonStyle(PrimaryButtonStyle())
+                    }.padding(.vertical, 12)
+                }.listRowBackground(Color.clear)
+            }
+            if model.busy {
+                Section {
+                    HStack(spacing: 12) { ProgressView(); Text("Preparing screen sharing…").font(.subheadline) }
+                    Button("Cancel connection", role: .cancel) { model.cancelHostConnection() }
+                }.listRowBackground(MoonStyle.surface)
+            }
+            if let active = model.pairedServers.active, let error = model.hostErrors[active.id] {
+                Section("Screen sharing") {
+                    Label(error, systemImage: "exclamationmark.circle").font(.subheadline).foregroundStyle(.secondary)
+                    Button("Retry screen sharing") { model.openHost(active.id, desktop: true) }.disabled(model.busy)
+                }.listRowBackground(MoonStyle.surface)
+            }
+            if !model.nearbyHosts.isEmpty {
+                Section("Nearby hosts") {
+                    ForEach(model.nearbyHosts) { host in
+                        Button { model.select(host) } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "desktopcomputer").font(.title2).foregroundStyle(MoonStyle.accent).frame(width: 36)
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(host.name).font(.body.weight(.semibold)).foregroundStyle(.primary)
+                                    Text(host.paired ? "Open library" : "Scan QR code to pair").font(.caption).foregroundStyle(.secondary)
                                 }
-                                Button { model.preferServer = false; model.showAdd = true } label: { Label("Add a computer", systemImage: "plus") }.buttonStyle(PrimaryButtonStyle())
-                            }
-                        }
-                    } else {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 285), spacing: 16)], spacing: 16) {
-                            ForEach(model.hosts) { host in
-                                Button { model.select(host) } label: { HostCard(host: host) }.buttonStyle(.plain).disabled(model.busy)
-                                    .contextMenu { Button("Forget computer", role: .destructive) { model.forgetHost(host.id) } }
-                            }
-                        }
+                                Spacer()
+                                Image(systemName: host.paired ? "play.circle" : "qrcode").foregroundStyle(MoonStyle.accent)
+                            }.padding(.vertical, 7)
+                        }.disabled(model.busy)
                     }
-                    if model.busy { HStack(spacing: 10) { ProgressView(); Text("Connecting to your computer…").font(.footnote).foregroundStyle(MoonStyle.secondary) }.frame(maxWidth: .infinity).padding(8) }
+                }.listRowBackground(MoonStyle.surface)
+            }
+            if model.pairedServers.active != nil {
+                Section {
+                    WorkspaceCard(model: model, connection: connection)
+                        .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
                 }
-
-                WorkspaceCard(model: model, connection: model.server)
-
-                VStack(spacing: 14) {
-                    SectionCaption(title: "Bring your favorites")
-                    MoonPanel {
-                        VStack(spacing: 14) {
-                            FeatureRow(icon: "keyboard", title: "A familiar feel", subtitle: "Bluetooth keyboards, mice, and trackpads work with your stream.")
-                            Divider().overlay(.white.opacity(0.04))
-                            FeatureRow(icon: "gamecontroller", title: "Ready when you are", subtitle: "Connect an Xbox, PlayStation, or MFi controller in iOS Settings.")
-                        }
-                    }
-                }
-                HStack(spacing: 7) {
-                    Image(systemName: "network").font(.system(size: 11))
-                    Text("Encrypted access to your computer. No account needed.").font(.system(size: 11))
-                }.foregroundStyle(MoonStyle.secondary.opacity(0.7)).frame(maxWidth: .infinity).padding(.bottom, 10)
-            }.padding(.horizontal, sizeClass == .regular ? 36 : 22).padding(.top, 18).padding(.bottom, 24)
-                .frame(maxWidth: 1_100).frame(maxWidth: .infinity)
-        }.refreshable { model.start() }
-    }
-}
-
-struct HostCard: View {
-    let host: StreamingHost
-    var body: some View {
-        MoonPanel {
-            VStack(alignment: .leading, spacing: 25) {
-                HStack { Image(systemName: "desktopcomputer").font(.system(size: 32, weight: .light)).foregroundStyle(MoonStyle.accent); Spacer(); StatusPill(label: host.online ? "Online" : "Offline", active: host.online) }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(host.name).font(.system(size: 20, weight: .semibold, design: .rounded)).foregroundStyle(MoonStyle.silver)
-                    Text(host.address == "127.0.0.1" ? "Remote connection" : host.address).font(.system(size: 11, design: .monospaced)).foregroundStyle(MoonStyle.secondary)
-                }
-                HStack { Text(host.paired ? "Open library" : "Pair computer"); Spacer(); Image(systemName: "arrow.up.right") }
-                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(MoonStyle.accent)
             }
         }
+        .scrollContentBackground(.hidden)
+        .refreshable { model.start(); await model.reconnectServer(reportError: false) }
     }
 }
 
@@ -167,48 +165,58 @@ struct WorkspaceCard: View {
                         }
                     }
                 }
-                Text(connection.state == .connected ? "\(connection.name) is connected. Your terminal and shared files are a tap away." : "Connect to Nocturne Server for streaming, your terminal, and shared files.")
+                Text(connection.state == .connected ? "Apps, Terminal, and Files use \(connection.name). Open its desktop from Paired hosts above." : "Connect to your selected host to use Apps, Terminal, and Files.")
                     .font(.system(size: 13)).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
                 if !model.pairedServers.servers.isEmpty {
-                    PairedMacMenu(model: model).font(.system(size: 13, weight: .medium))
+                    PairedHostMenu(model: model).font(.system(size: 13, weight: .medium))
                 }
-                NocturneGlassGroup { HStack(spacing: 12) {
-                    if connection.state == .connected {
-                        Button { model.page = .hostApps } label: { Label("Apps", systemImage: "square.grid.2x2") }
-                        Button { model.page = .terminal } label: { Label("Terminal", systemImage: "terminal") }
-                        Button { model.page = .files } label: { Label("Files", systemImage: "folder") }
-                    } else if let name = model.savedServerName {
-                        Button { Task { await model.reconnectServer() } } label: { Label(connection.state == .connecting ? "Connecting…" : "Reconnect to \(name)", systemImage: "link") }
-                            .disabled(connection.state == .connecting)
-                    } else {
-                        Button { model.preferServer = true; model.showAdd = true } label: { HStack { Text("Pair your Mac"); Image(systemName: "arrow.right") } }
+                NocturneGlassGroup {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) { workspaceActions }
+                        VStack(alignment: .leading, spacing: 8) { workspaceActions }
                     }
-                }.buttonStyle(NocturneGlassButtonStyle()).controlSize(.large).font(.system(size: 13, weight: .semibold)).tint(MoonStyle.accent) }
+                    .buttonStyle(NocturneGlassButtonStyle()).controlSize(.regular)
+                    .font(.system(size: 13, weight: .semibold)).tint(MoonStyle.accent)
+                }
             }
         }
     }
+    @ViewBuilder private var workspaceActions: some View {
+        if connection.state == .connected {
+            Button("Apps") { model.page = .hostApps }.fixedSize()
+            Button("Terminal") { model.page = .terminal }.fixedSize()
+            Button("Files") { model.page = .files }.fixedSize()
+        } else if let name = model.savedServerName {
+            Button(connection.state == .connecting ? "Connecting…" : "Reconnect to \(name)") {
+                Task { await model.reconnectServer() }
+            }.disabled(connection.state == .connecting).fixedSize()
+        } else {
+            Button("Add host") { model.showAdd = true }.fixedSize()
+        }
+    }
+
 }
 
 /// Chooses the paired Mac that Apps, Terminal, and Files use, or pairs another one.
-struct PairedMacMenu: View {
+struct PairedHostMenu: View {
     @ObservedObject var model: ClientModel
     var body: some View {
         Menu {
-            Picker("Your Macs", selection: Binding(get: { model.pairedServers.activeID ?? "" }, set: { model.activateServer($0) })) {
+            Picker("Paired hosts", selection: Binding(get: { model.pairedServers.activeID ?? "" }, set: { model.activateServer($0) })) {
                 ForEach(model.pairedServers.servers) { paired in Text(paired.name).tag(paired.id) }
             }
             Divider()
-            Button("Pair another Mac", systemImage: "plus") { model.preferServer = true; model.showAdd = true }
+            Button("Add host", systemImage: "plus") { model.showAdd = true }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "desktopcomputer")
-                Text(model.savedServerName ?? "Choose a Mac").lineLimit(1)
+                Text(model.savedServerName ?? "Choose a host").lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down").font(.caption2)
             }
         }
         .disabled(model.busy || model.session != nil)
-        .accessibilityLabel("Current Mac: \(model.savedServerName ?? "none")")
-        .accessibilityIdentifier("pairedMacMenu")
+        .accessibilityLabel("Current host: \(model.savedServerName ?? "none")")
+        .accessibilityIdentifier("pairedHostMenu")
     }
 }
 

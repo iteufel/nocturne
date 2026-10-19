@@ -37,10 +37,14 @@ private final class FakeDisplayLayout: StreamingDisplayLayout {
     var primaryChanges: [UInt32] = []
     var disabled = false
     var restorations = 0
+    var failRestore = false
     func makePrimary(_ display: UInt32, disableOthers: Bool) throws {
         primaryChanges.append(display); disabled = disableOthers
     }
-    func restore() throws { restorations += 1 }
+    func restore() throws {
+        restorations += 1
+        if failRestore { throw NocturneError.remote("Physical display is still waking") }
+    }
 }
 
 @MainActor
@@ -82,6 +86,10 @@ final class DisplayTests: XCTestCase {
         XCTAssertEqual(prepared.operation, .displayPrepare)
         XCTAssertEqual(prepared.display, portrait)
         XCTAssertEqual(prepared.sessionID, id)
+        let fixed = try XCTUnwrap(StreamDisplayPreparation.request(size: landscape, sessionID: id,
+            matchesDevice: false, workspaceLinked: true, capabilities: ["display"]))
+        XCTAssertEqual(fixed.operation, .displayPrepare, "Fixed resolutions also need a live display lease")
+        XCTAssertEqual(fixed.display, landscape)
         XCTAssertNil(try StreamDisplayPreparation.request(size: landscape, sessionID: id,
             matchesDevice: false, workspaceLinked: false, capabilities: []))
     }
@@ -98,7 +106,7 @@ final class DisplayTests: XCTestCase {
         XCTAssertFalse(StreamDisplaySize(width: 1919, height: 1080, frameRate: 60).isValid)
         XCTAssertFalse(StreamDisplaySize(width: 1920, height: 1080, frameRate: 1000).isValid)
     }
-    func testVirtualMonitorStartsResizesAndPersistsWithoutChangingPhysicalLayout() async throws {
+    func testVirtualMonitorStartsResizesAndReleasesWithoutChangingPhysicalLayout() async throws {
         let environment = FakeDisplayEnvironment()
         let driver = NativeStreamingDisplayDriver(environment: environment.environment)
         let initial = try await driver.start()
@@ -116,14 +124,51 @@ final class DisplayTests: XCTestCase {
         XCTAssertEqual(environment.lastDisplay?.selected, true)
         weak var current = environment.lastDisplay
         try driver.restore()
-        XCTAssertNotNil(current, "The encoder must retain a valid capture target between streams")
+        XCTAssertNil(current, "Idle virtual monitors must disappear after disconnect")
         let restarted = try await driver.start()
-        XCTAssertEqual(restarted, rotated)
+        XCTAssertNotEqual(restarted, rotated)
         XCTAssertTrue(environment.exclusions.isEmpty)
         XCTAssertTrue(environment.layout.primaryChanges.isEmpty)
         XCTAssertEqual(environment.layout.restorations, 0)
-        try driver.stop(); XCTAssertNil(current)
+        weak var restartedDisplay = environment.lastDisplay
+        try driver.stop(); XCTAssertNil(restartedDisplay)
         current = nil
+    }
+    func testDisconnectDestroysTheLeasedVirtualMonitor() async throws {
+        for reason in ["release", "socket", "heartbeat"] {
+            let environment = FakeDisplayEnvironment()
+            let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+            var captureTargets: [UInt32] = []
+            let manager = DisplaySessionManager(driver: driver, timeout: 20) { captureTargets.append($0) }
+            defer { manager.stop() }
+            let connection = UUID(), id = UUID().uuidString
+            _ = try await manager.start()
+            weak var bootstrap = environment.lastDisplay
+            manager.restore()
+            XCTAssertNil(bootstrap, "The startup framebuffer must not remain on an idle server")
+            _ = try await manager.handle(request(id: id, size: portrait), connection: connection, name: "iPad")
+            let firstTarget = try XCTUnwrap(environment.lastDisplay?.displayID)
+            XCTAssertEqual(captureTargets, [firstTarget])
+            weak var monitor = environment.lastDisplay
+            XCTAssertNotNil(monitor)
+            switch reason {
+            case "release":
+                _ = try await manager.handle(request(.displayRelease, id: id), connection: connection, name: "iPad")
+            case "socket": manager.disconnected(connection)
+            default: manager.expire(now: Date().addingTimeInterval(21))
+            }
+            XCTAssertFalse(manager.isActive)
+            XCTAssertNil(monitor, "Nocturne Display must disappear after \(reason), without stopping the server")
+            let nextID = UUID().uuidString
+            let reply = try await manager.handle(request(id: nextID, size: portrait), connection: connection, name: "iPad")
+            let nextTarget = try XCTUnwrap(environment.lastDisplay?.displayID)
+            XCTAssertNotEqual(nextTarget, firstTarget)
+            XCTAssertEqual(captureTargets, [firstTarget, nextTarget], "Reconnect must select the new capture target before acknowledging")
+            XCTAssertEqual(reply.display, portrait)
+            weak var nextMonitor = environment.lastDisplay
+            _ = try await manager.handle(request(.displayRelease, id: nextID), connection: connection, name: "iPad")
+            XCTAssertNil(nextMonitor)
+        }
     }
     func testPhysicalDisplayChangesRequireSeparateOptIn() async throws {
         let environment = FakeDisplayEnvironment()
@@ -133,8 +178,20 @@ final class DisplayTests: XCTestCase {
         XCTAssertEqual(environment.exclusions, [initial])
         XCTAssertEqual(environment.layout.primaryChanges, [target]); XCTAssertTrue(environment.layout.disabled)
         try driver.restore(); XCTAssertEqual(environment.layout.restorations, 1)
-        XCTAssertNotNil(environment.lastDisplay)
+        XCTAssertNil(environment.lastDisplay)
         try driver.stop()
+    }
+    func testPhysicalRecoveryMustSucceedBeforeRemovingVirtualMonitor() async throws {
+        let environment = FakeDisplayEnvironment()
+        let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+        _ = try await driver.apply(portrait, disablePhysicalDisplays: true)
+        weak var monitor = environment.lastDisplay
+        environment.layout.failRestore = true
+        XCTAssertThrowsError(try driver.restore())
+        XCTAssertNotNil(monitor, "Keep a framebuffer until the physical screens are restored")
+        environment.layout.failRestore = false
+        try driver.restore()
+        XCTAssertNil(monitor)
     }
     func testPhysicalSelectionAndExplicitHeadlessPreferenceSurviveMigration() throws {
         let suite = "Nocturne-display-preferences-" + UUID().uuidString
@@ -257,6 +314,59 @@ final class DisplayTests: XCTestCase {
             XCTAssertEqual(mode.width, size.width / 2)
             XCTAssertNotEqual(previous?.displayID, id)
             previous = display
+        }
+    }
+    func testNativeDisconnectRemovesDisplayAndReconnectCreatesFreshTarget() async throws {
+        guard ProcessInfo.processInfo.environment["NOCTURNE_TEST_DISPLAYS"] == "1" else { throw XCTSkip("Opt in to real WindowServer display changes") }
+        guard NDDisplayLayout.isSessionAvailable() else { throw XCTSkip("Unlock the Mac before running native display tests") }
+        _ = NSApplication.shared
+        var ids = [CGDirectDisplayID](repeating: 0, count: 64), count: UInt32 = 0
+        XCTAssertEqual(CGGetActiveDisplayList(64, &ids, &count), .success)
+        let original = Array(ids.prefix(Int(count))), main = CGMainDisplayID()
+        let bounds = original.map { CGDisplayBounds($0) }
+        let mirrors = original.map { CGDisplayMirrorsDisplay($0) }
+        func onlineDisplays() -> [CGDirectDisplayID] {
+            var online = [CGDirectDisplayID](repeating: 0, count: 64), count: UInt32 = 0
+            XCTAssertEqual(CGGetOnlineDisplayList(64, &online, &count), .success)
+            return Array(online.prefix(Int(count)))
+        }
+        let events = Task { @MainActor in
+            while !Task.isCancelled {
+                if let event = NSApp.nextEvent(matching: .any, until: Date().addingTimeInterval(0.03), inMode: .default, dequeue: true) { NSApp.sendEvent(event) }
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+        defer { events.cancel() }
+        var target: UInt32 = 0
+        let manager = DisplaySessionManager(driver: NativeStreamingDisplayDriver(), timeout: 20) { target = $0 }
+        defer { manager.stop() }
+        var previous: UInt32 = 0
+        for reason in ["release", "socket", "heartbeat"] {
+            let connection = UUID(), id = UUID().uuidString
+            do {
+                _ = try await manager.handle(request(id: id, size: .init(width: 1920, height: 1080, frameRate: 60)), connection: connection, name: "Display verification")
+            } catch {
+                XCTFail("Native display preparation failed before \(reason): \(error)")
+                return
+            }
+            XCTAssertNotEqual(target, 0); XCTAssertNotEqual(target, previous)
+            XCTAssertTrue(onlineDisplays().contains(target))
+            previous = target
+            switch reason {
+            case "release":
+                _ = try await manager.handle(request(.displayRelease, id: id), connection: connection, name: "Display verification")
+            case "socket": manager.disconnected(connection)
+            default: manager.expire(now: Date().addingTimeInterval(21))
+            }
+            for _ in 0..<60 {
+                if !onlineDisplays().contains(target) { break }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            XCTAssertFalse(onlineDisplays().contains(target), "WindowServer must remove the virtual monitor after \(reason)")
+            XCTAssertEqual(CGMainDisplayID(), main)
+            XCTAssertEqual(original.map { CGDisplayBounds($0) }, bounds)
+            XCTAssertEqual(original.map { CGDisplayMirrorsDisplay($0) }, mirrors)
+            for display in original { XCTAssertNotEqual(CGDisplayIsActive(display), 0) }
         }
     }
     func testAuthenticatedTransportReleasesDisplayOnDisconnectAndRemoval() async throws {

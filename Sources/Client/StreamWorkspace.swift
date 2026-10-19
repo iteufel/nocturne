@@ -158,7 +158,7 @@ struct StreamControlsMenu: View {
                         ForEach(StreamInputMode.allCases) { mode in Label(mode.title, systemImage: mode.symbol).tag(mode) }
                     }
                 } footer: {
-                    Text("Off keeps the picture inside the safe area, clear of the camera and rounded corners. On uses the whole screen.")
+                    Text("Off keeps the picture inside the safe area, clear of the camera and rounded corners. On fills the screen, cropping edges when needed to preserve proportions.")
                 }
 
                 Section {

@@ -12,6 +12,22 @@ final class AppWindowVideoView: UIView, UIKeyInput, UIGestureRecognizerDelegate 
     private var parameterSets: [Data] = []
     private var format: CMVideoFormatDescription?
     private var videoSize = CGSize.zero
+    var fillEntireScreen = false {
+        didSet {
+            guard oldValue != fillEntireScreen else { return }
+            releasePointer()
+            videoLayer.videoGravity = fillEntireScreen ? .resizeAspectFill : .resizeAspect
+        }
+    }
+    var videoRect: CGRect {
+        guard videoSize.width > 0, videoSize.height > 0 else { return .zero }
+        let fit = AVMakeRect(aspectRatio: videoSize, insideRect: bounds)
+        guard fillEntireScreen else { return fit }
+        let factor = max(bounds.width / videoSize.width, bounds.height / videoSize.height)
+        let size = CGSize(width: videoSize.width * factor, height: videoSize.height * factor)
+        return CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
+                      width: size.width, height: size.height)
+    }
     private var previousScroll = CGPoint.zero
     private struct PointerPress {
         var point: CGPoint
@@ -33,7 +49,7 @@ final class AppWindowVideoView: UIView, UIKeyInput, UIGestureRecognizerDelegate 
     var autocapitalizationType: UITextAutocapitalizationType { get { .none } set {} }
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .black; isMultipleTouchEnabled = true
+        backgroundColor = .black; isMultipleTouchEnabled = true; clipsToBounds = true
         videoLayer.videoGravity = .resizeAspect
         let hover = UIHoverGestureRecognizer(target: self, action: #selector(hover(_:))); addGestureRecognizer(hover)
         let scroll = UIPanGestureRecognizer(target: self, action: #selector(scroll(_:)))
@@ -86,7 +102,7 @@ final class AppWindowVideoView: UIView, UIKeyInput, UIGestureRecognizerDelegate 
     }
     private func normalized(_ point: CGPoint) -> CGPoint? {
         guard videoSize.width > 0, videoSize.height > 0 else { return nil }
-        let rect = AVMakeRect(aspectRatio: videoSize, insideRect: bounds)
+        let rect = videoRect
         guard rect.contains(point), rect.width > 0, rect.height > 0 else { return nil }
         return CGPoint(x: (point.x - rect.minX) / rect.width, y: (point.y - rect.minY) / rect.height)
     }

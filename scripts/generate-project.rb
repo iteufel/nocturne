@@ -86,6 +86,9 @@ overlay(target, group, 'ViewControllers/StreamFrameViewController.m') do |source
 end
 # Keep all input changes in reviewed overlays, leaving the pinned dependency intact.
 overlay(target, group, 'Input/StreamView.m') do |source|
+  source = "#import <objc/runtime.h>\n" + source
+  source = replace_section(source, '- (CGSize) getVideoAreaSize {', '- (CGPoint) adjustCoordinatesForVideoArea:', "- (CGSize) getVideoAreaSize {\n    return NocturneVideoAreaSize(self.bounds.size, streamAspectRatio, self.nocturneFillEntireScreen);\n}\n\n")
+  source = replace_section(source, '    CGSize videoSize;', '    videoOrigin = CGPointMake', "    CGSize videoSize = [self getVideoAreaSize];\n    CGPoint videoOrigin;\n")
   source = replace_once(source, '    NSInteger lastMouseButtonMask;', "    NSInteger lastMouseButtonMask;\n    NSMapTable<UITouch *, NSNumber *> *nocturneMouseTouches;\n    NSMutableSet<UITouch *> *nocturneActiveTouches;\n    NSHashTable<UITouch *> *nocturneIgnoredTouches;")
   source = replace_section(source, '- (BOOL)handleMouseButtonEvent:', '- (void)touchesMoved:', '')
   raise 'Upstream mouse routing changed; review the overlay.' unless source.scan('if ([GCMouse current] != nil)').length == 2
@@ -96,6 +99,10 @@ overlay(target, group, 'Input/StreamView.m') do |source|
   source = replace_once(source, "- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {\n", "- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {\n    if ([self handleMouseButtonEvent:BUTTON_ACTION_RELEASE forTouches:touches withEvent:event]) return;\n    if (nocturneIgnoredTouches.count) {\n        for (UITouch *touch in touches) [nocturneIgnoredTouches removeObject:touch];\n        return;\n    }\n    [nocturneActiveTouches minusSet:touches];\n    [onScreenControls handleTouchUpEvent:touches];\n")
   source = source.gsub(/LiSendMouseButtonEvent\((BUTTON_ACTION_(?:PRESS|RELEASE)), (\[self buttonFromX1ButtonCode:button\])\);/, '[self nocturneSendMouseButton:\1 button:\2];')
   input_methods(source, 'StreamViewInput.inc')
+end
+overlay(target, group, 'Stream/VideoDecoderRenderer.m') do |source|
+  source = replace_section(source, '    CGSize videoSize;', '    displayLayer.position =', "    CGSize videoSize = [_view getVideoAreaSize];\n")
+  "#import \"NocturneStreamInput.h\"\n" + source
 end
 overlay(target, group, 'Input/ControllerSupport.m') do |source|
   source = replace_once(source, '@implementation ControllerSupport {', "@implementation ControllerSupport {\n    NSUInteger nocturneMouseButtons;")

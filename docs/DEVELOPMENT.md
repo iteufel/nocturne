@@ -42,6 +42,15 @@ NOCTURNE_ENGINE_EXECUTABLE="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne S
 
 The command with `NOCTURNE_ENGINE_EXECUTABLE` starts a real engine on its standard ports: stop the Mac app first. It verifies authenticated administration, application-library initialization, individual removal from a two-device roster, persistence across restart, reset, and shutdown. Other tests use real TLS connections, PTYs, and files; they check wrong-key rejection, certificate/signature binding, single-use invitation handling, one-device revocation while another connection and shell remain active, permission revocation, multiple terminal tabs, commands completing while disconnected, reconnect without duplicate output, retained exit output, bounded scrollback, per-device terminal ownership and limits, detached-shell cleanup, bounded framing, transfer integrity, cancellation, traversal/symlink rejection, and no-overwrite races.
 
+To verify Dock behavior, launch the built Mac app and choose **Start server**, then run:
+
+```sh
+NOCTURNE_RUNNING_SERVER_APP="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne Server.app" \
+  swift test --filter ServerDockTests
+```
+
+This read-only check requires both the main app and streaming helper to be running. It verifies that only the main app has a Dock icon and that it has finished launching. Run it again after Stop/Start to check helper replacement. The bundle defaults to `LSUIElement`; the main SwiftUI entry point explicitly adopts regular activation, while helpers retain background activation and the same app identity for capture permissions.
+
 Client authorization and stream-stop regressions run in the actual iOS app (choose an installed simulator):
 
 ```sh
