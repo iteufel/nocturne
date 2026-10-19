@@ -50,6 +50,9 @@ struct AddComputerView: View {
                         }
                         if let error = model.error ?? connection.lastError { Text(error).font(.caption).foregroundStyle(.orange) }
                     }
+                    if !model.pairedServers.servers.isEmpty {
+                        Text("Pairing another Mac keeps the ones you already paired. Switch between them from Your workspace or Settings.").font(.caption).foregroundStyle(MoonStyle.secondary)
+                    }
                     Text("Only scan the QR code shown by your Mac. It pairs one device and expires after five minutes. Terminal and file access are controlled on your Mac.").font(.caption).foregroundStyle(MoonStyle.secondary)
                 }.padding(24)
             }.background { NocturneBackdrop() }.navigationTitle("Add computer").navigationBarTitleDisplayMode(.inline)

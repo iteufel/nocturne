@@ -6,6 +6,7 @@ Stream your Mac to iPhone and iPad, with a native terminal and file transfer alo
 - Use touch, a keyboard, a mouse, or a game controller.
 - Keep terminal sessions running on your Mac and access shared files in Apple’s Files app.
 - Connect locally or enable remote access for other networks.
+- Pair several Macs and switch between them.
 
 Requires iOS/iPadOS 17+ and an Apple Silicon Mac running macOS 14+. Nocturne Server includes its streaming engine; no separate Sunshine installation is needed.
 
@@ -20,7 +21,7 @@ For the iPhone/iPad app, see the [build and TestFlight guide](docs/RELEASING.md)
 
 ## Documentation
 
-- [Usage guide](docs/USAGE.md) — pairing, app windows, displays, input, microphone, terminal, and files.
+- [Usage guide](docs/USAGE.md) — pairing one or more Macs, app windows, displays, input, microphone, terminal, and files.
 - [Remote access](docs/REMOTE_ACCESS.md) — connecting across networks and hosting a broker.
 - [Development](docs/DEVELOPMENT.md) — prerequisites, local builds, signing, and tests.
 - [Releases and TestFlight](docs/RELEASING.md) — automated builds and distribution.
