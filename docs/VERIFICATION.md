@@ -1,5 +1,12 @@
 # Verification — 19 October 2026
 
+## Multiple paired Macs
+
+- The client saves every paired Mac in one Keychain list (`PairedServerList`), with one selected Mac and a video-host link per Mac. The previous single-Mac Keychain item and `serverName`/`serverHostID` defaults migrate once, on first launch. `PairedServerTests` cover adding, rescanning, switching, video links superseding a reset Mac's stale pairing, forgetting the selected Mac, and decoding saved lists. The client migration test checks a seeded legacy pairing in the simulator Keychain.
+- A remote-access regression first failed with `disconnected`: an app-window socket for a second, LAN-only `WorkspaceServer` reused the first Mac's broker tunnel. After the fix, it connects directly and the same-Mac socket still shares the tunnel. `swift test` with `NOCTURNE_BROKER_EXECUTABLE` ran 71 tests: 66 passed and 5 existing opt-in hardware/engine checks were skipped.
+- New opt-in live smoke `testPairTwoLiveMacsAndSwitchBetweenThem` (`NOCTURNE_MULTI_MAC_INVITATIONS=a.json:b.json`) passed on a disposable iPad Pro 13-inch (M5) simulator running iOS 27, against two real local `WorkspaceServer`s. It paired both Macs and registered two Files domains. It confirmed that the second Mac does not show the first Mac's shell, and that a window socket for the inactive Mac authenticates with that Mac. Switching back restored the first Mac's shell, and the list persisted across a fresh `ClientModel`. Forgetting one Mac kept the other connected and removed only its Files domain and credentials. All 42 client tests passed, with the two live smokes skipped by default.
+- Simulator screenshots confirmed the workspace card's Mac switcher, the toolbar switcher on Terminal (connected to the selected Mac's shell), and **Settings → Paired Macs** with per-Mac status. The simulator and the private invitation files were deleted afterward. Video streaming with two engines and physical devices were not tested.
+
 ## Apple Files host browsing
 
 - Added an embedded on-demand File Provider extension and automatic registration of the paired Mac’s shared folder. Verified native **Files → Browse → Nocturne** on an isolated iPhone 18 Pro simulator running iOS 27, against a real local `WorkspaceServer`. Root listing, nested `Projects` browsing, and previews of `Welcome.txt` and `Projects/Read me.txt` worked with Nocturne in the background. Files displayed **Read Only**. The Files integration’s location and instructions were also inspected in Nocturne Settings.

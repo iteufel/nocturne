@@ -6,6 +6,7 @@ Stream your Mac or Windows PC to iPhone and iPad, with a native terminal and fil
 - Use touch, a keyboard, a mouse, or a game controller.
 - Keep terminal sessions running on your computer and access shared files in Apple’s Files app.
 - Connect locally or enable remote access on the Mac host for other networks.
+- Pair several computers and switch between them.
 
 Requires iOS/iPadOS 17+ and either an Apple Silicon Mac running macOS 14+ or a supported Windows PC. Nocturne Server includes its streaming engine; no separate Sunshine installation is needed.
 
@@ -22,7 +23,7 @@ For the iPhone/iPad app, see the [build and TestFlight guide](docs/RELEASING.md)
 
 ## Documentation
 
-- [Usage guide](docs/USAGE.md) — pairing, app windows, displays, input, microphone, terminal, and files.
+- [Usage guide](docs/USAGE.md) — pairing one or more computers, app windows, displays, input, microphone, terminal, and files.
 - [Windows host](docs/WINDOWS.md) — requirements, builds, setup, verification, and limitations.
 - [Remote access](docs/REMOTE_ACCESS.md) — connecting across networks and hosting a broker.
 - [Development](docs/DEVELOPMENT.md) — prerequisites, local builds, signing, and tests.

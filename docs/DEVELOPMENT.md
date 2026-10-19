@@ -52,6 +52,8 @@ xcodebuild test -workspace Nocturne.xcworkspace -scheme Nocturne \
   CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=
 ```
 
+To check pairing and switching between two real servers, prefix that command with `TEST_RUNNER_NOCTURNE_MULTI_MAC_INVITATIONS=/path/a.json:/path/b.json`. Each file is a private invitation JSON from a different running `WorkspaceServer`. Use a disposable simulator; the test pairs both, then forgets them.
+
 See [verification notes](VERIFICATION.md) for build and device evidence and [implementation notes](IMPLEMENTATION.md) for ownership and protocol details.
 
 Display sizing, ownership, authenticated disconnect, removal, and heartbeat expiry are included in `swift test`. Native display checks are opt-in because they change the Mac's real display layout:
