@@ -337,7 +337,16 @@ async fn serve_stream(
         loop {
             tokio::select! {
                 result = socket.recv(&mut data) => {
-                    let size = result?;
+                    let size = match result {
+                        Ok(size) => size,
+                        // Audio pings start before RTSP opens the media listener.
+                        // An ICMP port-unreachable response must not destroy this
+                        // flow: later pings (also after an engine restart) reuse it.
+                        Err(error) if matches!(error.kind(),
+                            std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::ConnectionReset
+                        ) => continue,
+                        Err(error) => return Err(error.into()),
+                    };
                     send_packet(&peer.connection, flow, sequence, &data[..size]);
                     sequence = sequence.wrapping_add(1);
                 }
@@ -598,6 +607,79 @@ mod tests {
         exchange(&second, &target, &host, "second").await?;
         drop(first);
         drop(second);
+        drop(host);
+        broker.shutdown().await?;
+        Ok(())
+    }
+    #[tokio::test]
+    async fn media_udp_survives_early_ping_and_listener_restart() -> Result<()> {
+        for relay_only in [true, false] {
+            media_udp_startup_and_restart(relay_only).await?;
+        }
+        Ok(())
+    }
+    async fn media_udp_startup_and_restart(relay_only: bool) -> Result<()> {
+        let (broker, url) = broker().await?;
+        let target = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+        let host = start_host_mode(&url, [9; 32], target.local_addr()?.port(), relay_only).await?;
+        timeout(DEADLINE, host.endpoint.online()).await?;
+        let client = start_client_mode(&url, &host.id(), relay_only, false).await?;
+        exchange(&client, &target, &host, "device").await?;
+        let connection = client.connection.as_ref().unwrap();
+
+        // Moonlight starts audio pings before RTSP starts Sunshine's UDP listener.
+        // Reserve an available media port, then leave it closed for the first ping.
+        let mut reservation = None;
+        for &port in UDP_PORTS.iter().rev() {
+            if let Ok(socket) = UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).await {
+                reservation = Some(socket);
+                break;
+            }
+        }
+        let reservation = reservation.context("All streaming UDP ports are occupied")?;
+        let address = reservation.local_addr()?;
+        drop(reservation);
+        let (_send, _recv) = open(connection, 1, address.port(), 6).await?;
+        send_packet(connection, 6, 0, b"early audio ping");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let mut media = UdpSocket::bind(address).await?;
+        let mut assembler = datagram::Assembler::default();
+        let mut buffer = [0; 2048];
+        for sequence in 1..=14 {
+            if sequence == 2 {
+                // Display preparation can restart the engine with the workspace
+                // (and these authenticated QUIC flows) still connected.
+                drop(media);
+                send_packet(connection, 6, sequence, b"ping during restart");
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                media = UdpSocket::bind(address).await?;
+            } else if sequence > 2 {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            let payload = vec![sequence as u8; 1024];
+            send_packet(connection, 6, sequence, &payload);
+            let (size, source) = timeout(Duration::from_secs(1), media.recv_from(&mut buffer))
+                .await
+                .context("Media pings stopped after a closed-port response")??;
+            assert_eq!(&buffer[..size], &payload);
+            media.send_to(&payload, source).await?;
+            let returned = timeout(Duration::from_secs(1), async {
+                loop {
+                    if let Some(packet) = assembler.receive(connection.read_datagram().await?) {
+                        break Ok::<_, anyhow::Error>(packet);
+                    }
+                }
+            })
+            .await??;
+            assert_eq!(returned, (6, payload));
+        }
+        if relay_only {
+            assert_eq!(client.route(), 2);
+        } else {
+            assert_eq!(client.route(), 1);
+        }
+        drop(client);
         drop(host);
         broker.shutdown().await?;
         Ok(())
