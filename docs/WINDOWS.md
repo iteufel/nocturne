@@ -112,7 +112,7 @@ dotnet build Windows/Nocturne.Server -c Release -p:RestoreLockedMode=true
 Portable tests exercise real TLS sockets, exporter-bound proof, wrong keys,
 single-use/expired invitations, reconnects, terminal ownership, retained replay,
 history limits, revocation isolation, bounded frames, and Windows path syntax.
-Four Windows-only tests exercise real ConPTY/PowerShell, filesystem transfers
+Five Windows-only tests exercise real ConPTY/PowerShell, filesystem transfers
 and junctions, and DPAPI. Those tests are explicitly skipped on Mac/Linux.
 
 On macOS, verify the actual Swift client against the .NET protocol listener:

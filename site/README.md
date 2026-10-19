@@ -1,6 +1,6 @@
 # Nocturne website
 
-The product page at <https://iteufel.github.io/nocturne/> is a static site. It has no package dependencies, analytics, external fonts, or build step.
+The product page at <https://iteufel.github.io/nocturne/> is a static site. It has no package dependencies, analytics, external fonts, or build step. Mac download links point directly to a published ZIP and refresh from the public GitHub Releases API to the most recently published Mac asset, including previews. If JavaScript or the API is unavailable, the pinned HTML download still works; update that fallback when publishing a new Mac release.
 
 ## Preview locally
 
@@ -20,14 +20,18 @@ The app icon is copied unchanged from the client asset catalog. The hero and Mac
 
 ### Screenshot provenance
 
-The following PNGs are byte-for-byte copies of the captures recorded in the **Liquid Glass design pass** in [`docs/VERIFICATION.md`](../docs/VERIFICATION.md). They show the running development apps on October 18, 2026: iPhone 18 Pro and iPad Pro simulators on iOS 27, and the native Mac app on macOS 27. They are historical captures of that verified build, not new captures or proof of current server availability. The exact build revision was not recorded with the originals. Appearance and controls may differ in later builds, including the subsequent move of Mac appearance controls into Settings.
+The website PNGs are lossless captures taken on October 19, 2026 from the actual running apps. They replace the earlier 1× captures; those historical originals remain under `artifacts/` and are described in the **Liquid Glass design pass** in [`docs/VERIFICATION.md`](../docs/VERIFICATION.md).
 
-| Website image | Original capture | SHA-256 |
-| --- | --- | --- |
-| `assets/screenshots/ipad-computers.png` | `artifacts/nocturne-glass-ipad-light.png` | `d1924e4782852c89fc8898e9772cc589ab47a9c635aeb516f0cbc9305a1a494c` |
-| `assets/screenshots/iphone-computers.png` | `artifacts/nocturne-glass-iphone-dark.png` | `327215842c5442059e334936c6fa917e6804e50f092d9aa535aa6b4db526c2e5` |
-| `assets/screenshots/mac-overview.png` | `artifacts/nocturne-glass-mac-dark.png` | `5768a685035d889a91220a7a60396c7c1e748162271ed255125c80ec6c9d225c` |
+The iPhone image comes from an iPhone 18 Pro simulator at its native 3× resolution, in dark appearance. The iPad image comes from an iPad Pro 13-inch (M5) simulator at its native 2× resolution, in light appearance and landscape orientation. Both run iOS 27 and the local Nocturne 1.0 (1) simulator build from `.build/Xcode/Build/Products/Debug-iphonesimulator/Nocturne.app`. They show the genuine unpaired Computers screen. The simulators' status bars were set to 09:41 and full battery before capture with `simctl status_bar`; the PNGs were saved directly with `simctl io … screenshot`, without resampling or retouching.
 
-The originals were inspected before publication. They show app UI and local test-host details, with no passwords, pairing QR codes, tokens, private documents, or unrelated desktop windows. No pixels, labels, status, or app content were changed. The images scale proportionally on the page and open at full size when selected.
+The Mac image shows the installed Nocturne Server 1.0 (8.1) on macOS 27.0.1. ScreenCaptureKit captured only its 1040 × 760-point Overview window at 2× resolution, with `captureResolution = .best`, cursor and window shadow excluded. The capture does not include unrelated desktop windows. The existing server was not started, stopped, or reconfigured for this capture.
+
+- `ipad-computers.png`: 2752 × 2064 pixels. SHA-256: `aca770431e50392c511f330fa85c337200cee664d147e173e29f216f17e0b275`.
+- `iphone-computers.png`: 1206 × 2622 pixels. SHA-256: `58deb59ae5596851ba22a67a0c877b635d1009c3386f7287cd89e012ae5313de`.
+- `mac-overview.png`: 2080 × 1520 pixels. SHA-256: `debfd582e35e59cc395b5d04daeb8efd5e29fc274cb3a7648ce0fe5ae27886d2`.
+
+Build fingerprints (SHA-256): iOS `Nocturne.debug.dylib` = `03c1c7cd70b361757e13c49590fd50dfadc90f3868d9c66d543abe5a745aeb27`; Mac `Nocturne Server` executable = `03b1887754cd36950985c288b3abe75b860590d1f3abf4ecb4210332ba06a368`. The exact source revision of these pre-existing builds was not established; these captures document their UI, not a new runtime verification.
+
+All three captures were inspected for passwords, pairing QR codes, tokens, private documents, and unrelated desktop content. App pixels and content were not edited. Images scale proportionally on the page and open at full resolution when selected. Their URLs carry the first 12 characters of the PNG content hashes, so replacing a capture also refreshes browser caches. Keep at least 2 source pixels per displayed CSS pixel for the iPad and Mac captures; never upscale a smaller source to make a Retina asset.
 
 Future app screenshots must come from the actual running app. Check them for private data and record their build version, capture environment, and source. Update release availability and source links in `index.html` when a downloadable release or TestFlight invitation is actually available.
