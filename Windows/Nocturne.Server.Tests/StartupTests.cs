@@ -21,8 +21,7 @@ public sealed class StartupTests
             App? app = null; MainWindow? window = null; ServerModel? model = null;
             try
             {
-                // Match the real application's resource lookup, even in testhost.
-                Application.ResourceAssembly = typeof(App).Assembly;
+                // Generated BAML URIs already identify the application's assembly.
                 RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
                 app = new App(); app.InitializeComponent();
                 model = new ServerModel(new HostStorage(profile));
