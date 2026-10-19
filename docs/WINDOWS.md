@@ -106,6 +106,7 @@ Other devices retain their connections and certificates.
 
 ```powershell
 dotnet test Windows/Nocturne.Host.Tests -c Release -p:RestoreLockedMode=true
+dotnet test Windows/Nocturne.Server.Tests -c Release -p:RestoreLockedMode=true
 dotnet build Windows/Nocturne.Server -c Release -p:RestoreLockedMode=true
 ```
 
@@ -114,6 +115,8 @@ single-use/expired invitations, reconnects, terminal ownership, retained replay,
 history limits, revocation isolation, bounded frames, and Windows path syntax.
 Five Windows-only tests exercise real ConPTY/PowerShell, filesystem transfers
 and junctions, and DPAPI. Those tests are explicitly skipped on Mac/Linux.
+Windows packaging also opens and renders the WPF main window on an STA thread
+using a temporary profile, checking the application's XAML and resources.
 
 On macOS, verify the actual Swift client against the .NET protocol listener:
 

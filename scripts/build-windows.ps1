@@ -12,6 +12,10 @@ if ($LASTEXITCODE -ne 0 -or [int]($sdk.Split('.')[0]) -lt 10) { throw 'Install t
 if (-not $SkipTests) {
     & $Dotnet test (Join-Path $root 'Windows/Nocturne.Host.Tests/Nocturne.Host.Tests.csproj') -c Release -p:RestoreLockedMode=true --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Windows host tests failed.' }
+    if ($IsWindows) {
+        & $Dotnet test (Join-Path $root 'Windows/Nocturne.Server.Tests/Nocturne.Server.Tests.csproj') -c Release -p:RestoreLockedMode=true --nologo
+        if ($LASTEXITCODE -ne 0) { throw 'Windows application startup tests failed.' }
+    }
 }
 $release = Join-Path $root '.build/WindowsRelease'
 $output = Join-Path $release "win-$Architecture"

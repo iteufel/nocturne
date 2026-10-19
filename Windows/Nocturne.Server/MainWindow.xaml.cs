@@ -12,9 +12,10 @@ namespace Nocturne.Server;
 
 public partial class MainWindow : Window
 {
-    private readonly ServerModel model = new();
+    private readonly ServerModel model;
     private bool closing;
-    public MainWindow() { InitializeComponent(); DataContext = model; }
+    public MainWindow() : this(new ServerModel()) { }
+    internal MainWindow(ServerModel model) { this.model = model; InitializeComponent(); DataContext = model; }
     private void Navigate(object sender, RoutedEventArgs e)
     {
         var selected = (string)((Button)sender).Tag;

@@ -10,6 +10,7 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Nocturne.Server.Tests" />
     <Resource Include="app.ico" />
     <ProjectReference Include="../Nocturne.Host/Nocturne.Host.csproj" />
     <PackageReference Include="QRCoder" Version="1.8.1" />

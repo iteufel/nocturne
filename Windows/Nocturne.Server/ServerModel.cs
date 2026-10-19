@@ -12,7 +12,7 @@ public sealed record DeviceRow(string Id, string Name, string Status);
 
 public sealed class ServerModel : INotifyPropertyChanged
 {
-    private readonly HostStorage storage = new();
+    private readonly HostStorage storage;
     private readonly DeviceStore devices;
     private readonly byte[] secret;
     private WorkspaceServer? workspace;
@@ -41,8 +41,10 @@ public sealed class ServerModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     private readonly System.Windows.Threading.DispatcherTimer refresh;
 
-    public ServerModel()
+    public ServerModel() : this(new HostStorage()) { }
+    internal ServerModel(HostStorage storage)
     {
+        this.storage = storage;
         var settings = storage.LoadSettings(); name = settings.Name; SharedFolder = settings.SharedFolder;
         Terminal = settings.Terminal; Files = settings.Files;
         secret = storage.LoadSecret();
