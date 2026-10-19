@@ -77,7 +77,7 @@ struct HostAppsWorkspace: View {
                 } description: { Text("Connect to Nocturne Server to browse and open your Mac’s apps.") }
                 actions: {
                     Button(client.savedServerName == nil ? "Pair your Mac" : "Reconnect to Mac") {
-                        if client.savedServerName == nil { client.preferServer = true; client.showAdd = true }
+                        if client.savedServerName == nil { client.showAdd = true }
                         else { Task { await client.reconnectServer() } }
                     }.buttonStyle(PrimaryButtonStyle()).disabled(connection.state == .connecting)
                 }

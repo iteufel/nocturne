@@ -7,6 +7,25 @@ import NocturneKit
 
 @MainActor
 final class AppWindowClientTests: XCTestCase {
+    func testWindowFillCoversPhoneAndMapsTouchesThroughTheCrop() async throws {
+        let view = AppWindowVideoView(frame: CGRect(x: 0, y: 0, width: 430, height: 819))
+        try view.enqueue(await encodedFrame(width: 740, height: 786))
+        defer { view.reset() }
+        view.fillEntireScreen = true
+        XCTAssertEqual((view.layer as? AVSampleBufferDisplayLayer)?.videoGravity, .resizeAspectFill)
+        XCTAssertTrue(view.videoRect.insetBy(dx: -0.001, dy: -0.001).contains(view.bounds))
+        var sent: [AppWindowInput] = []; view.onInput = { sent.append($0) }
+        let touch = AppWindowTestTouch(), event = AppWindowTestEvent()
+        touch.point = CGPoint(x: 20, y: 400); event.inputTouches = [touch]
+        view.touchesBegan([touch], with: event); view.touchesEnded([touch], with: event)
+        XCTAssertEqual(sent.map(\.kind), [.down, .up])
+        let expectedX = (touch.point.x - view.videoRect.minX) / view.videoRect.width
+        XCTAssertEqual(try XCTUnwrap(sent.first).x, expectedX, accuracy: 0.001)
+        XCTAssertGreaterThan(expectedX, 0.1, "The left screen edge corresponds to the cropped window, not its left edge")
+        view.fillEntireScreen = false
+        XCTAssertEqual((view.layer as? AVSampleBufferDisplayLayer)?.videoGravity, .resizeAspect)
+        XCTAssertTrue(view.bounds.contains(view.videoRect))
+    }
     func testLongPressAndTwoFingerScrollDoNotSendAnInitialLeftClick() async throws {
         let view = AppWindowVideoView(frame: CGRect(x: 0, y: 0, width: 640, height: 480))
         try view.enqueue(await encodedFrame(width: 640, height: 480))

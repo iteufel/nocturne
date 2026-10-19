@@ -23,6 +23,7 @@ final class NativeAppWindowCapture: NSObject, AppWindowCapture, SCStreamOutput, 
     }
     private func configuration(_ viewport: AppWindowViewport) throws -> SCStreamConfiguration {
         let size = try accessibility.resize(viewport)
+        guard !stopped else { throw NocturneError.disconnected }
         guard let pixels = viewport.pixels(width: size.width, height: size.height) else { throw NocturneError.invalidFrame }
         display = pixels
         window = RemoteAppWindow(id: window.id, applicationID: window.applicationID, title: window.title,
@@ -53,10 +54,14 @@ final class NativeAppWindowCapture: NSObject, AppWindowCapture, SCStreamOutput, 
     }
     func resize(_ viewport: AppWindowViewport) async throws {
         guard !stopped, let stream else { throw NocturneError.disconnected }
-        try await stream.updateConfiguration(configuration(viewport))
+        let configuration = try configuration(viewport)
+        try await stream.updateConfiguration(configuration)
         guard !stopped else { throw NocturneError.disconnected }
     }
-    func input(_ input: AppWindowInput) throws { guard !stopped else { throw NocturneError.disconnected }; try accessibility.input(input) }
+    func input(_ input: AppWindowInput) async throws {
+        guard !stopped else { throw NocturneError.disconnected }
+        try await accessibility.input(input, isActive: { !self.stopped })
+    }
     func stop() {
         guard !stopped else { return }; stopped = true
         encoder.stop(); accessibility.release()

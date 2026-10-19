@@ -45,7 +45,7 @@ struct ServerOnboardingView: View {
                     }
                 default:
                     VStack(alignment: .leading, spacing: 16) {
-                        OnboardingFeature(icon: "iphone.and.arrow.forward", title: "Open Nocturne on your device", detail: "Choose Add computer, then Scan QR code.")
+                        OnboardingFeature(icon: "iphone.and.arrow.forward", title: "Open Nocturne on your device", detail: "Choose Add host, then Scan QR code.")
                         OnboardingFeature(icon: "qrcode.viewfinder", title: "Scan the code on this Mac", detail: "The next screen starts your server and shows its pairing code.")
                         Label("Keep both devices on the same network for your first connection.", systemImage: "wifi")
                             .font(.system(size: 12)).foregroundStyle(MoonStyle.secondary)

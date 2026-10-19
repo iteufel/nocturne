@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import NocturneKit
 import NocturneHostKit
-import Darwin
+import SystemConfiguration
 
 @MainActor
 final class ServerModel: ObservableObject {
@@ -27,7 +27,6 @@ final class ServerModel: ObservableObject {
     @Published private(set) var microphoneInstalled = VirtualMicrophone.isInstalled
     @Published private(set) var installingMicrophone = false
     @Published private(set) var microphoneInstallationMessage: String?
-    @Published var address: String
     @Published var sharedFolder: URL
     @Published var display: String {
         didSet { UserDefaults.standard.set(display, forKey: "streamDisplay"); updateDisplayStatus() }
@@ -41,7 +40,6 @@ final class ServerModel: ObservableObject {
     @Published private(set) var displayStatus = ""
     @Published private(set) var displayActive = false
     let displays: DisplaySessionManager
-    let addresses: [String]
     let name = Host.current().localizedName ?? "My Mac"
     let engine: EmbeddedStreamingEngine
     var active: Bool { running || starting }
@@ -68,7 +66,6 @@ final class ServerModel: ObservableObject {
         display = displaySettings.physicalDisplay
         headlessDisplayEnabled = displaySettings.headlessEnabled
         disablePhysicalDisplays = displaySettings.disablePhysicalDisplays
-        addresses = Self.localAddresses(); address = addresses.first ?? "127.0.0.1"
         let savedFolder = UserDefaults.standard.string(forKey: "sharedFolder")
         sharedFolder = savedFolder.map { URL(fileURLWithPath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Nocturne Shared", isDirectory: true)
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -119,6 +116,13 @@ final class ServerModel: ObservableObject {
                 try await engine.start(executable: executable, name: name, display: captureDisplay)
                 try Task.checkCancellation()
                 guard generation == epoch else { return }
+                if headlessDisplayEnabled {
+                    // Startup needs a framebuffer for the encoder probe, but an
+                    // idle server must not leave a monitor on the Mac. Every
+                    // desktop session prepares a fresh display before video.
+                    displays.restore()
+                    if let failure = displays.lastError { throw NocturneError.remote(failure) }
+                }
                 let savedDevices = try await engine.pairedDevices()
                 guard generation == epoch, !Task.isCancelled else { return }
                 streamDevices = savedDevices; publishDevices()
@@ -209,7 +213,12 @@ final class ServerModel: ObservableObject {
         do {
             guard let secret, let deviceStore else { return }
             let remote = try remoteTunnel.map { try RemoteAccess(brokerURL: brokerURL, endpointID: $0.endpointID) }
-            invitation = try PairingInvitation(host: address, name: name, secret: secret, enrollmentToken: deviceStore.createInvitation(), remoteAccess: remote); showPairing = true
+            // Resolve on the client's network instead of asking users to choose an
+            // interface or embedding an IP that becomes stale when networks change.
+            guard let hostname = SCDynamicStoreCopyLocalHostName(nil) as String?, !hostname.isEmpty else {
+                throw NocturneError.remote("Your Mac’s network name is unavailable. Check your network connection and try again.")
+            }
+            invitation = try PairingInvitation(host: hostname + ".local", name: name, secret: secret, enrollmentToken: deviceStore.createInvitation(), remoteAccess: remote); showPairing = true
         } catch { self.error = error.localizedDescription }
     }
     func resetPairing() {
@@ -318,17 +327,5 @@ final class ServerModel: ObservableObject {
                 microphoneInstallationMessage = "Installed. Restart your Mac before using Nocturne Microphone."
             } catch { self.error = error.localizedDescription }
         }
-    }
-    private static func localAddresses() -> [String] {
-        var result: [String] = []; var first: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&first) == 0 else { return result }; defer { freeifaddrs(first) }
-        var current = first
-        while let entry = current {
-            defer { current = entry.pointee.ifa_next }
-            guard let address = entry.pointee.ifa_addr, address.pointee.sa_family == UInt8(AF_INET), entry.pointee.ifa_flags & UInt32(IFF_LOOPBACK) == 0, entry.pointee.ifa_flags & UInt32(IFF_UP) != 0 else { continue }
-            var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            if getnameinfo(address, socklen_t(address.pointee.sa_len), &buffer, socklen_t(buffer.count), nil, 0, NI_NUMERICHOST) == 0 { result.append(String(cString: buffer)) }
-        }
-        return Array(Set(result)).sorted()
     }
 }

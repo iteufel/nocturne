@@ -52,7 +52,7 @@ enum ClientPage: String, CaseIterable, Identifiable {
 @MainActor
 final class ClientModel: ObservableObject {
     static let shared = ClientModel()
-    let engine = NocturneStreamingService()
+    let engine: NocturneStreamingService
     let server: WorkspaceConnection
     let hostApps: HostAppsModel
     let microphone = ClientMicrophone()
@@ -64,7 +64,6 @@ final class ClientModel: ObservableObject {
     @Published var busy = false
     @Published var error: String?
     @Published var showAdd = false
-    @Published var preferServer = false
     @Published var showLibrary = false
     @Published var session: StreamSession?
     @Published var controllers: [String] = []
@@ -78,6 +77,16 @@ final class ClientModel: ObservableObject {
     private var reconnectTask: Task<Void, Error>?
     private var networkTask: Task<Void, Never>?
     private var pendingStreamAddress: String?
+    private struct HostSetup {
+        let serverID: String
+        var openLibrary: Bool
+        var startDesktop: Bool
+    }
+    private var hostSetup: HostSetup?
+    private var openingHost: Task<Void, Never>?
+    private var openingRequest = UUID()
+    private var setupDeadline: Task<Void, Never>?
+    @Published private(set) var hostErrors: [String: String] = [:]
     private var linkedHostID: String? { pairedServers.active?.streamingHostID }
     /// Saving is refused until Keychain has been read, so a locked Keychain cannot erase other pairings.
     private var pairedServersLoaded = false
@@ -86,10 +95,11 @@ final class ClientModel: ObservableObject {
     private var serverPairingGeneration = UUID()
     private var inputObservers: [NSObjectProtocol] = []
     private var workspaceObserver: AnyCancellable?
-    init() {
+    init(engine: NocturneStreamingService = NocturneStreamingService()) {
+        self.engine = engine
         let streamingEngine = engine
         server = WorkspaceConnection(identity: WorkspaceIdentity(certificate: streamingEngine.workspaceCertificate(),
-            name: UIDevice.current.name) { streamingEngine.signWorkspaceChallenge($0) })
+            name: UIDevice.current.name) { streamingEngine.signWorkspaceChallenge($0) }, requiresIPv4: true)
         hostApps = HostAppsModel(connection: server)
         preferences = UserDefaults.standard.data(forKey: "streamPreferences").flatMap { try? JSONDecoder().decode(StreamPreferences.self, from: $0) } ?? .init()
         loadPairedServers()
@@ -98,25 +108,40 @@ final class ClientModel: ObservableObject {
             guard let self, self.selectedHost?.id == hostID,
                   let host = self.hosts.first(where: { $0.id == hostID }), host.paired else { return }
             self.apps = apps.map(StreamingApp.init).sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-            self.selectedHost = host; self.showLibrary = true
+            self.selectedHost = host
+            let destination = self.hostSetup
+            self.finishHostSetup()
+            if destination?.startDesktop == true, let desktop = self.apps.first(where: { $0.name.lowercased() == "desktop" }) {
+                self.stream(desktop)
+            } else if destination?.openLibrary != false { self.showLibrary = true }
         }
         engine.addressDiscovered = { [weak self] hostID, address in
-            guard let self, self.pendingStreamAddress == address, let active = self.pairedServers.active else { return }
+            guard let self, self.pendingStreamAddress == address, let active = self.pairedServers.active,
+                  self.hostSetup?.serverID == active.id, self.server.state == .connected else { return }
             self.pendingStreamAddress = nil
             var list = self.pairedServers
             let superseded = list.link(streamingHostID: hostID, to: active.id)
-            do { try self.savePairedServers(list) } catch { self.error = error.localizedDescription; self.busy = false; return }
+            do { try self.savePairedServers(list) } catch { self.failHostSetup(error.localizedDescription); return }
             for stale in superseded {
                 AppWindowScenes.disconnect(serverID: stale.id)
                 do { try self.filesIntegration.forget(stale.invitation) } catch { self.error = error.localizedDescription }
             }
-            if let host = self.hosts.first(where: { $0.id == hostID }) { self.busy = false; self.select(host) }
+            guard let host = self.hosts.first(where: { $0.id == hostID }) else {
+                self.failHostSetup("The host could not be found. Try connecting again."); return
+            }
+            self.selectedHost = host
+            self.engine.selectHost(hostID)
         }
         engine.canPairHost = { [weak self] hostID in
             guard let self else { return false }
             return self.server.state == .connected && self.server.capabilities.contains("streaming") && hostID == self.linkedHostID
         }
-        engine.pairingRequired = { [weak self] in self?.busy = false; self?.showAdd = true }
+        engine.pairingRequired = { [weak self] in
+            guard let self else { return }
+            if self.hostSetup != nil {
+                self.failHostSetup("Screen sharing could not finish connecting. Check that Nocturne Server is running, then try again.")
+            } else { self.busy = false; self.showAdd = true }
+        }
         engine.authorizePairing = { [weak self] hostID, challenge, completion in
             guard let self else { completion(false); return }
             let generation = self.serverPairingGeneration
@@ -130,12 +155,15 @@ final class ClientModel: ObservableObject {
                 } catch { completion(false) }
             }
         }
-        engine.pairingFinished = { [weak self] in self?.busy = false }
         engine.streamStarted = { [weak self] controller in
             guard let self, let current = self.session, current.controller === controller else { return }
             current.videoReady = true
         }
-        engine.failed = { [weak self] message in self?.error = message; self?.busy = false }
+        engine.streamFailed = { [weak self] controller, message in
+            guard let self, self.session?.controller === controller else { return }
+            self.failHostSetup(message); self.endStream()
+        }
+        engine.failed = { [weak self] message in self?.failHostSetup(message) }
         for notification in [NSNotification.Name.GCControllerDidConnect, .GCControllerDidDisconnect, .GCKeyboardDidConnect, .GCKeyboardDidDisconnect, .GCMouseDidConnect, .GCMouseDidDisconnect] {
             inputObservers.append(NotificationCenter.default.addObserver(forName: notification, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.refreshInputs() }
@@ -147,6 +175,9 @@ final class ClientModel: ObservableObject {
             Task { @MainActor in
                 guard let self, self.server.state != .connected else { return }
                 self.microphone.stop(); self.hostApps.reset()
+                if self.hostSetup != nil {
+                    self.failHostSetup("The host connection was lost before screen sharing was ready. Try connecting again.")
+                }
                 if let id = self.linkedHostID { self.engine.clearTemporaryAddress(id) }
             }
         }
@@ -178,7 +209,8 @@ final class ClientModel: ObservableObject {
     private func cancelReconnect() {
         serverPairingGeneration = UUID()
         reconnectTask?.cancel(); reconnectTask = nil
-        pendingStreamAddress = nil
+        openingRequest = UUID(); openingHost?.cancel(); openingHost = nil
+        engine.cancelPairing(); finishHostSetup()
     }
     func suspend() {
         networkTask?.cancel(); networkTask = nil; cancelReconnect()
@@ -203,24 +235,121 @@ final class ClientModel: ObservableObject {
     func setFillEntireScreen(_ fill: Bool) {
         preferences.fillEntireScreen = fill
         session?.preferences.fillEntireScreen = fill
+        if let controller = session?.controller { engine.setFillEntireScreen(fill, controller: controller) }
     }
     func select(_ host: StreamingHost) {
         guard !busy, session == nil, pendingStream == nil else { return }
-        // Display control and pairing approval come from the Mac that owns this video host.
-        if let owner = pairedServers.server(linkedTo: host.id) { activateServer(owner.id) }
-        selectedHost = host; busy = true; apps = []; engine.selectHost(host.id)
+        if let owner = pairedServers.server(linkedTo: host.id) {
+            openHost(owner.id)
+        } else if let active = pairedServers.active, active.streamingHostID == nil,
+                  Self.sameHostAddress(host.address, active.invitation.host) {
+            // Older/interrupted pairings may not have saved the video UUID yet.
+            // Resolve through the authenticated workspace before granting approval.
+            openHost(active.id)
+        } else {
+            selectedHost = host; busy = true; apps = []; engine.selectHost(host.id)
+        }
     }
-    /// Makes another paired Mac the one used by Apps, Terminal, Files, and display control.
-    /// Its shells keep running on the previous Mac and are restored when switching back.
-    func activateServer(_ id: String) {
-        guard id != pairedServers.activeID, pairedServers[id] != nil, session == nil, !busy else { return }
+    static func sameHostAddress(_ first: String, _ second: String) -> Bool {
+        func hostname(_ address: String) -> String? {
+            URLComponents(string: "http://\(address)")?.host?.lowercased()
+        }
+        guard let first = hostname(first), let second = hostname(second) else { return false }
+        return first == second
+    }
+    func streamingHost(for paired: PairedServer) -> StreamingHost? {
+        hosts.first { $0.id == paired.streamingHostID }
+    }
+    var nearbyHosts: [StreamingHost] {
+        hosts.filter { host in
+            !pairedServers.servers.contains { paired in
+                paired.streamingHostID == host.id || (paired.streamingHostID == nil && Self.sameHostAddress(host.address, paired.invitation.host))
+            }
+        }
+    }
+    func hostStatus(_ paired: PairedServer) -> String {
+        if paired.id == pairedServers.activeID {
+            if busy || server.state == .connecting { return "Connecting…" }
+            if hostErrors[paired.id] != nil { return "Screen sharing needs attention" }
+        }
+        if let host = streamingHost(for: paired), host.paired {
+            return host.online ? "Screen sharing ready" : "Offline"
+        }
+        return "Screen sharing needs setup"
+    }
+    /// Opens a saved host using its existing credentials, including unfinished video setup.
+    func openHost(_ id: String, desktop: Bool = false) {
+        guard !busy, session == nil, pendingStream == nil, pairedServers[id] != nil else { return }
+        guard selectServer(id) else { return }
+        busy = true; error = nil; hostErrors[id] = nil
+        showLibrary = false; apps = []
+        let request = UUID(); openingRequest = request
+        openingHost = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.openingRequest == request { self.openingHost = nil } }
+            await self.reconnectServer(reportError: true, prepareVideo: false)
+            guard !Task.isCancelled, self.pairedServers.activeID == id else { return }
+            guard self.server.state == .connected else { self.busy = false; return }
+            self.prepareScreenSharing(openLibrary: true, desktop: desktop)
+        }
+    }
+    /// Changes the workspace first; video approval is requested only after authentication.
+    private func selectServer(_ id: String) -> Bool {
+        guard pairedServers[id] != nil else { return false }
+        guard id != pairedServers.activeID else { return true }
+        let previous = linkedHostID
         var list = pairedServers; list.activate(id)
-        cancelReconnect(); engine.cancelPairing()
-        if let previous = linkedHostID { engine.clearTemporaryAddress(previous) }
-        do { try savePairedServers(list) } catch { self.error = error.localizedDescription; return }
-        microphone.stop(); hostApps.reset()
-        server.disconnect(); server.forgetTerminals()
-        Task { await reconnectServer(reportError: false) }
+        do { try savePairedServers(list) } catch { self.error = error.localizedDescription; return false }
+        cancelReconnect()
+        if let previous { engine.clearTemporaryAddress(previous) }
+        selectedHost = nil; apps = []; showLibrary = false
+        microphone.stop(); hostApps.reset(); server.disconnect(); server.forgetTerminals()
+        return true
+    }
+    func activateServer(_ id: String) {
+        guard session == nil, !busy, pendingStream == nil, selectServer(id) else { return }
+        Task { await reconnectServer(reportError: true) }
+    }
+    func reconnectHost(_ id: String) {
+        guard session == nil, !busy, pendingStream == nil, selectServer(id) else { return }
+        cancelReconnect(); server.disconnect()
+        Task { await reconnectServer() }
+    }
+    private func prepareScreenSharing(openLibrary: Bool, desktop: Bool = false) {
+        guard let active = pairedServers.active, server.state == .connected else { return }
+        guard server.capabilities.contains("streaming") else {
+            busy = false
+            if openLibrary { failHostSetup("Screen sharing is unavailable on this host. Start the streaming server and reconnect.", serverID: active.id) }
+            return
+        }
+        if hostSetup?.serverID == active.id {
+            if openLibrary { hostSetup?.openLibrary = true; hostSetup?.startDesktop = desktop }
+            return
+        }
+        if !openLibrary, streamingHost(for: active)?.paired == true, hostErrors[active.id] == nil { busy = false; return }
+        hostErrors[active.id] = nil
+        hostSetup = HostSetup(serverID: active.id, openLibrary: openLibrary, startDesktop: desktop)
+        busy = true
+        setupDeadline?.cancel()
+        setupDeadline = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
+            self?.failHostSetup("Screen sharing did not respond. Check Nocturne Server on your host, then try again.")
+        }
+        let address = server.streamingAddress ?? active.invitation.host
+        pendingStreamAddress = address
+        engine.addAddress(address)
+    }
+    func cancelHostConnection() { cancelReconnect() }
+    private func finishHostSetup() {
+        setupDeadline?.cancel(); setupDeadline = nil
+        pendingStreamAddress = nil; hostSetup = nil; busy = false
+    }
+    private func failHostSetup(_ message: String, serverID: String? = nil) {
+        let videoHost = session?.host.id ?? (busy ? selectedHost?.id : nil)
+        let owner = videoHost.flatMap { pairedServers.server(linkedTo: $0)?.id }
+        if let id = serverID ?? hostSetup?.serverID ?? owner { hostErrors[id] = message }
+        error = message
+        engine.cancelPairing(); finishHostSetup()
     }
     func stream(_ app: StreamingApp) {
         guard session == nil, pendingStream == nil, let host = selectedHost else { return }
@@ -284,7 +413,7 @@ final class ClientModel: ObservableObject {
                 let p = current.preferences
                 let values: [String: Any] = ["width":requested.width, "height":requested.height, "fps":requested.frameRate,
                     "bitrate":p.bitrate, "hdr":p.hdr, "pacing":p.framePacing, "touch":p.touchControls,
-                    "absolute":p.absolutePointer, "statistics":p.statistics, "multi":p.multiController]
+                    "absolute":p.absolutePointer, "statistics":p.statistics, "multi":p.multiController, "fill":p.fillEntireScreen]
                 guard let controller = engine.streamHost(current.host.id, app: current.app.id, settings: values, onExit: { [weak self, weak current] in
                     guard let self, let current, self.session === current else { return }; self.endStream()
                 }) else { throw NocturneError.remote("Pair with this computer again before starting a stream.") }
@@ -293,7 +422,7 @@ final class ClientModel: ObservableObject {
             }
         } catch {
             guard session === current else { return }
-            if !(error is CancellationError) { self.error = error.localizedDescription }
+            if !(error is CancellationError) { failHostSetup(error.localizedDescription) }
             endStream()
         }
     }
@@ -360,21 +489,22 @@ final class ClientModel: ObservableObject {
             try savePairedServers(list)
             updateFilesLocation(connected)
             showAdd = false
-            if server.capabilities.contains("streaming") {
-                let address = server.streamingAddress ?? connected.host
-                pendingStreamAddress = address; busy = true
-                try await Task.sleep(nanoseconds: 350_000_000)
-                guard serverPairingGeneration == generation else { return }
-                engine.addAddress(address)
-            }
-        } catch { if serverPairingGeneration == generation { self.error = error.localizedDescription } }
+            prepareScreenSharing(openLibrary: true)
+        } catch {
+            if serverPairingGeneration == generation { failHostSetup(error.localizedDescription) }
+        }
     }
-    func reconnectServer(reportError: Bool = true) async {
+    func reconnectServer(reportError: Bool = true, prepareVideo: Bool = true) async {
         var generation = serverPairingGeneration
         do {
-            if let reconnectTask { try await reconnectTask.value; return }
+            if let reconnectTask {
+                try await reconnectTask.value
+                if prepareVideo { prepareScreenSharing(openLibrary: false) }
+                return
+            }
             guard server.state == .disconnected else {
                 if let connected = server.connectedInvitation { updateFilesLocation(connected) }
+                if prepareVideo { prepareScreenSharing(openLibrary: false) }
                 return
             }
             generation = UUID(); serverPairingGeneration = generation
@@ -382,8 +512,6 @@ final class ClientModel: ObservableObject {
             let task = Task { @MainActor in
                 guard let saved = self.pairedServers.active else { if reportError { self.showAdd = true }; return }
                 var invitation = saved.invitation
-                // Also recover older servers (without the workspace Bonjour ID) using
-                // the already-paired video host. TLS still verifies the workspace key.
                 if let host = self.hosts.first(where: { $0.id == saved.streamingHostID && $0.online && $0.paired }), !host.address.isEmpty, host.address != "127.0.0.1" {
                     invitation = try invitation.replacingAddress(host: host.address)
                 }
@@ -399,6 +527,8 @@ final class ClientModel: ObservableObject {
             reconnectTask = task
             defer { if serverPairingGeneration == generation { reconnectTask = nil } }
             try await task.value
+            guard serverPairingGeneration == generation else { return }
+            if prepareVideo { prepareScreenSharing(openLibrary: false) }
         } catch {
             if reportError, serverPairingGeneration == generation, !(error is CancellationError) { self.error = error.localizedDescription }
         }
@@ -412,6 +542,7 @@ final class ClientModel: ObservableObject {
         do {
             try filesIntegration.forget(target.invitation)
             AppWindowScenes.disconnect(serverID: target.id)
+            hostErrors[target.id] = nil
             var list = pairedServers; list.remove(target.id)
             try savePairedServers(list)
             guard wasActive else { return }
@@ -438,7 +569,7 @@ final class ClientModel: ObservableObject {
     }
     private func savePairedServers(_ list: PairedServerList) throws {
         guard pairedServersLoaded else {
-            throw NocturneError.remote("Your paired Macs could not be read from Keychain. Unlock this device, then reopen Nocturne.")
+            throw NocturneError.remote("Your paired hosts could not be read from Keychain. Unlock this device, then reopen Nocturne.")
         }
         try SecureStore.write(JSONEncoder().encode(list), account: PairedServerList.keychainAccount)
         pairedServers = list

@@ -187,10 +187,6 @@ struct ServerView: View {
             MoonPanel {
                 VStack(alignment: .leading, spacing: 20) {
                     FeatureRow(icon: "ipad.and.iphone", title: "\(model.connections) active connections", subtitle: "One pairing connects streaming, terminal, and shared files on iPhone, iPad, and iPhone Duo.")
-                    HStack {
-                        Text("Address").font(.subheadline)
-                        Picker("Address", selection: $model.address) { ForEach(model.addresses.isEmpty ? ["127.0.0.1"] : model.addresses, id: \.self) { Text($0).tag($0) } }.labelsHidden().frame(maxWidth: 240)
-                    }
                     Button { model.pair() } label: { Label("Pair a device", systemImage: "qrcode") }.buttonStyle(PrimaryButtonStyle())
                 }
             }
@@ -236,8 +232,6 @@ struct ServerView: View {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(device.name).font(.headline).textSelection(.enabled)
                                 Text(deviceFeatures(device)).font(.caption).foregroundStyle(.secondary)
-                                Text(device.address.map { "\($0) · \(device.id.prefix(8))" } ?? "Device ID \(device.id.prefix(8))")
-                                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
                             }.frame(maxWidth: .infinity, alignment: .leading)
                             StatusPill(label: device.connected ? "Connected" : !device.streamIDs.isEmpty && !device.streamingEnabled ? "Disabled" : "Paired", active: device.connected)
                             if model.removingDevice == device.id {
@@ -267,11 +261,11 @@ struct ServerPairingView: View {
         VStack(spacing: 20) {
             HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(NocturneGlassButtonStyle()).keyboardShortcut(.defaultAction) }
             Text("Meet your Mac.").font(.system(size: 32, weight: .semibold, design: .rounded)).tracking(-1)
-            Text("In Nocturne, choose Add computer and scan this code.\nStreaming, terminal, and files connect together.").font(.subheadline).foregroundStyle(MoonStyle.secondary).multilineTextAlignment(.center)
+            Text("In Nocturne, choose Add host and scan this code.\nStreaming, terminal, and files connect together.").font(.subheadline).foregroundStyle(MoonStyle.secondary).multilineTextAlignment(.center)
             if let image = qrImage {
                 Image(nsImage: image).interpolation(.none).resizable().frame(width: 210, height: 210).padding(16).background(.white, in: RoundedRectangle(cornerRadius: 18))
             }
-            Text(invitation.name + " · " + invitation.host).font(.system(size: 12, design: .monospaced)).foregroundStyle(MoonStyle.secondary)
+            Text(invitation.name).font(.subheadline.weight(.medium)).foregroundStyle(MoonStyle.secondary)
             Text("This code pairs one device and expires after five minutes.\nKeep it private. Remove devices individually in Devices.").font(.caption2).foregroundStyle(MoonStyle.secondary).multilineTextAlignment(.center)
         }.padding(28).frame(width: 440).background { NocturneBackdrop() }.tint(MoonStyle.accent)
     }

@@ -27,16 +27,15 @@ struct StreamWorkspaceLayout {
 struct StreamWorkspace: View {
     @ObservedObject var model: ClientModel
     @ObservedObject var session: StreamSession
+    @ObservedObject var workspace = StreamWorkspaceState()
     @Environment(\.displayScale) private var displayScale
-    @State private var showTools = false
     @State private var tool = 0
-    @State private var showControls = false
     @State private var showControlsHint = true
 
     var body: some View {
         GeometryReader { geometry in
             let layout = StreamWorkspaceLayout(size: geometry.size, insets: geometry.safeAreaInsets,
-                fillEntireScreen: session.preferences.fillEntireScreen, showTools: showTools)
+                fillEntireScreen: session.preferences.fillEntireScreen, showTools: workspace.showTools)
             ZStack(alignment: .topLeading) {
                 Group {
                     if let controller = session.controller {
@@ -54,8 +53,8 @@ struct StreamWorkspace: View {
                 .accessibilityAction { openControls() }
                 .accessibilityAction(named: Text("Open stream controls")) { openControls() }
 
-                if showTools {
-                    StreamToolsPanel(model: model, connection: model.server, showTools: $showTools, tool: $tool)
+                if workspace.showTools {
+                    StreamToolsPanel(model: model, connection: model.server, showTools: $workspace.showTools, tool: $tool)
                         .frame(width: layout.tools.width, height: layout.tools.height)
                         .background { NocturneBackdrop() }
                         .clipped()
@@ -63,7 +62,7 @@ struct StreamWorkspace: View {
                 }
 
                 if showControlsHint {
-                    Label("Swipe from the right edge for controls", systemImage: "arrow.left")
+                    Label(model.mouseConnected ? "⌘⇧M releases the pointer and opens controls" : "Swipe from the right edge for controls", systemImage: "arrow.left")
                         .font(.footnote.weight(.medium)).foregroundStyle(.white)
                         .padding(.horizontal, 16).padding(.vertical, 12)
                         .background(.regularMaterial, in: Capsule())
@@ -76,13 +75,13 @@ struct StreamWorkspace: View {
             .onChange(of: displayScale) { _, scale in model.streamViewport(layout.video.size, scale: scale, session: session) }
         }
         .background(Color.black.ignoresSafeArea())
-        .background { StreamControlsGesture(enabled: !showControls) { openControls() }.allowsHitTesting(false) }
+        .background { StreamControlsGesture(enabled: !workspace.showControls) { openControls() }.allowsHitTesting(false) }
         .onReceive(model.microphone.$error.dropFirst()) { error in
             if error != nil { openControls() }
         }
-        .sheet(isPresented: $showControls) {
+        .sheet(isPresented: $workspace.showControls) {
             StreamControlsMenu(model: model, session: session, microphone: model.microphone,
-                connection: model.server, showTools: $showTools, tool: $tool)
+                connection: model.server, showTools: $workspace.showTools, lockPointer: $workspace.lockPointer, tool: $tool)
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
         .task {
@@ -92,7 +91,7 @@ struct StreamWorkspace: View {
         .tint(MoonStyle.accent).preferredColorScheme(.dark).persistentSystemOverlays(.hidden)
     }
 
-    private func openControls() { showControlsHint = false; showControls = true }
+    private func openControls() { showControlsHint = false; workspace.showControls = true }
 }
 
 private struct StreamToolsPanel: View {
@@ -136,6 +135,7 @@ struct StreamControlsMenu: View {
     @ObservedObject var microphone: ClientMicrophone
     @ObservedObject var connection: WorkspaceConnection
     @Binding var showTools: Bool
+    @Binding var lockPointer: Bool
     @Binding var tool: Int
     @Environment(\.dismiss) private var dismiss
     @State private var showMicrophoneInfo = false
@@ -158,7 +158,14 @@ struct StreamControlsMenu: View {
                         ForEach(StreamInputMode.allCases) { mode in Label(mode.title, systemImage: mode.symbol).tag(mode) }
                     }
                 } footer: {
-                    Text("Off keeps the picture inside the safe area, clear of the camera and rounded corners. On uses the whole screen.")
+                    Text("Off keeps the picture inside the safe area, clear of the camera and rounded corners. On fills the screen, cropping edges when needed to preserve proportions.")
+                }
+
+                Section {
+                    Toggle("Lock pointer", isOn: $lockPointer)
+                        .accessibilityIdentifier("streamLockPointer")
+                } footer: {
+                    Text("Keeps your mouse or trackpad inside the stream in full screen. Press ⌘⇧M or swipe from the right edge to release it and open controls. The pointer is free while controls, Terminal, or Files are open.")
                 }
 
                 Section {
