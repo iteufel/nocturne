@@ -1,9 +1,14 @@
 - (BOOL)nocturneUsesRelativeMouse {
-    return [_delegate isKindOfClass:UIViewController.class] && NocturneUsesRelativeMouse(((UIViewController *)_delegate).view);
+    return [_delegate isKindOfClass:UIViewController.class] && ((UIViewController *)_delegate).prefersPointerLocked
+        && NocturneUsesRelativeMouse(((UIViewController *)_delegate).view);
 }
 
 - (void)nocturneSendMouseButton:(int)action button:(int)button {
     LiSendMouseButtonEvent(action, button);
+}
+
+- (void)nocturneSendMouseMoveX:(short)x y:(short)y {
+    LiSendMouseMoveEvent(x, y);
 }
 
 - (void)nocturneHandleMouseButton:(int)action button:(int)button {

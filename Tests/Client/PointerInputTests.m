@@ -32,6 +32,7 @@
 // Observe the actual handlers at their transport boundary without a live host.
 @interface RecordingStreamView : StreamView
 @property NSMutableArray<NSArray<NSNumber *> *> *buttonEvents;
+@property NSMutableArray<NSArray<NSNumber *> *> *keyEvents;
 @property CGPoint cursorLocation;
 @end
 @implementation RecordingStreamView
@@ -40,6 +41,23 @@
     [self.buttonEvents addObject:@[@(action), @(button)]];
 }
 - (void)updateCursorLocation:(CGPoint)location isMouse:(BOOL)isMouse { self.cursorLocation = location; }
+- (BOOL)nocturneSendKeyPress:(UIPress *)press down:(BOOL)down {
+    if (!self.keyEvents) self.keyEvents = [NSMutableArray array];
+    [self.keyEvents addObject:@[@(press.key.keyCode), @(down)]];
+    return YES;
+}
+@end
+
+@interface PointerTestKey : NSObject
+@property UIKeyboardHIDUsage keyCode;
+@property UIKeyModifierFlags modifierFlags;
+@end
+@implementation PointerTestKey
+@end
+@interface PointerTestPress : NSObject
+@property PointerTestKey *key;
+@end
+@implementation PointerTestPress
 @end
 
 @interface PointerTestButton : NSObject
@@ -65,9 +83,14 @@
 @interface RecordingControllerSupport : ControllerSupport
 @property BOOL rawEnabled;
 @property NSMutableArray<NSArray<NSNumber *> *> *buttonEvents;
+@property NSMutableArray<NSArray<NSNumber *> *> *moveEvents;
 @end
 @implementation RecordingControllerSupport
 - (BOOL)nocturneUsesRelativeMouse { return self.rawEnabled; }
+- (void)nocturneSendMouseMoveX:(short)x y:(short)y {
+    if (!self.moveEvents) self.moveEvents = [NSMutableArray array];
+    [self.moveEvents addObject:@[@(x), @(y)]];
+}
 - (void)nocturneSendMouseButton:(int)action button:(int)button {
     if (!self.buttonEvents) self.buttonEvents = [NSMutableArray array];
     [self.buttonEvents addObject:@[@(action), @(button)]];
@@ -208,14 +231,53 @@
     mouse.mouseInput.leftButton = [PointerTestButton new]; mouse.mouseInput.middleButton = [PointerTestButton new];
     mouse.mouseInput.rightButton = [PointerTestButton new];
     [support registerMouseCallbacks:(id)mouse];
+    mouse.mouseInput.mouseMovedHandler(nil, 50, -25);
+    XCTAssertEqual(support.moveEvents.count, 0);
     mouse.mouseInput.leftButton.pressedChangedHandler(nil, 1, YES);
     XCTAssertEqual(support.buttonEvents.count, 0, @"UIKit owns unlocked input; raw callbacks must not double-click");
     support.rawEnabled = YES;
+    mouse.mouseInput.mouseMovedHandler(nil, 50, -25);
+    XCTAssertEqual(support.moveEvents.count, 1, @"Locked input must forward relative movement without screen coordinates");
+    XCTAssertGreaterThan(support.moveEvents.firstObject.firstObject.intValue, 0);
+    XCTAssertGreaterThan(support.moveEvents.firstObject.lastObject.intValue, 0);
     mouse.mouseInput.leftButton.pressedChangedHandler(nil, 1, YES);
     support.rawEnabled = NO;
+    mouse.mouseInput.mouseMovedHandler(nil, 50, -25);
+    XCTAssertEqual(support.moveEvents.count, 1);
     mouse.mouseInput.leftButton.pressedChangedHandler(nil, 0, NO);
     XCTAssertEqualObjects(support.buttonEvents, (@[@[@(BUTTON_ACTION_PRESS), @(BUTTON_LEFT)], @[@(BUTTON_ACTION_RELEASE), @(BUTTON_LEFT)]]));
     [support cleanup];
+}
+- (PointerTestPress *)press:(UIKeyboardHIDUsage)key modifiers:(UIKeyModifierFlags)modifiers {
+    PointerTestPress *press = [PointerTestPress new]; press.key = [PointerTestKey new];
+    press.key.keyCode = key; press.key.modifierFlags = modifiers; return press;
+}
+- (void)testPointerReleaseShortcutStaysLocalAndReleasesHeldKeys {
+    RecordingStreamView *view = [RecordingStreamView new];
+    PointerTestPress *modifier = [self press:UIKeyboardHIDUsageKeyboardLeftGUI modifiers:UIKeyModifierCommand];
+    [view pressesBegan:(id)[NSSet setWithObject:modifier] withEvent:nil];
+    PointerTestPress *shortcut = [self press:UIKeyboardHIDUsageKeyboardM modifiers:UIKeyModifierCommand | UIKeyModifierShift];
+    XCTestExpectation *controls = [self expectationForNotification:NocturneStreamControlsRequestedNotification object:nil handler:nil];
+    [view pressesBegan:(id)[NSSet setWithObject:shortcut] withEvent:nil];
+    shortcut.key.modifierFlags = 0;
+    [view pressesEnded:(id)[NSSet setWithObject:shortcut] withEvent:nil];
+    [view pressesEnded:(id)[NSSet setWithObject:modifier] withEvent:nil];
+    [self waitForExpectations:@[controls] timeout:1];
+    XCTAssertEqualObjects(view.keyEvents, (@[@[@(UIKeyboardHIDUsageKeyboardLeftGUI), @YES], @[@(UIKeyboardHIDUsageKeyboardLeftGUI), @NO]]));
+    // Plain M must still work after returning to the stream.
+    [view pressesBegan:(id)[NSSet setWithObject:shortcut] withEvent:nil];
+    [view pressesEnded:(id)[NSSet setWithObject:shortcut] withEvent:nil];
+    XCTAssertEqualObjects(view.keyEvents.lastObject, (@[@(UIKeyboardHIDUsageKeyboardM), @NO]));
+    XCTAssertEqual(view.keyEvents.count, 4);
+}
+- (void)testCancellingInputReleasesHardwareKeysExactlyOnce {
+    RecordingStreamView *view = [RecordingStreamView new];
+    PointerTestPress *press = [self press:UIKeyboardHIDUsageKeyboardW modifiers:0];
+    [view pressesBegan:(id)[NSSet setWithObject:press] withEvent:nil];
+    [view nocturneCancelInput];
+    [view nocturneCancelInput];
+    [view pressesEnded:(id)[NSSet setWithObject:press] withEvent:nil];
+    XCTAssertEqualObjects(view.keyEvents, (@[@[@(UIKeyboardHIDUsageKeyboardW), @YES], @[@(UIKeyboardHIDUsageKeyboardW), @NO]]));
 }
 - (void)testCancellingDirectTouchReleasesEvenWhenAnotherFingerIsDown {
     StreamView *view = [[StreamView alloc] initWithFrame:CGRectMake(0, 0, 1024, 768)];

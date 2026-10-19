@@ -39,7 +39,7 @@ struct ClientRootView: View {
         .alert("Connection needs attention", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
-        .fullScreenCover(item: $model.session, onDismiss: { model.endStream() }) { session in StreamWorkspace(model: model, session: session) }
+        .background { StreamPresentation(model: model).allowsHitTesting(false) }
         .task { model.start() }
     }
     private func navigation(for page: ClientPage) -> some View {

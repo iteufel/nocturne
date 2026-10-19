@@ -72,6 +72,7 @@
 }
 
 - (void)nocturneCancelInput {
+    [self nocturneReleaseKeyboard];
     NSSet *touches = [nocturneActiveTouches copy] ?: NSSet.set;
     if (!nocturneIgnoredTouches) nocturneIgnoredTouches = [NSHashTable weakObjectsHashTable];
     for (UITouch *touch in touches) [nocturneIgnoredTouches addObject:touch];

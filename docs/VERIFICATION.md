@@ -1,5 +1,11 @@
 # Verification — 19 October 2026
 
+## iPad pointer lock (October 19, 2026)
+
+- Installed signed client version 1.0 build 5 on the physical iPad Pro 13-inch (M5). The user confirmed that pointer lock works with the mouse in a full-screen Desktop stream. The Mac server did not need an update for this change.
+- The full iPad simulator suite completed 66 tests, with three opt-in skips and zero failures. New coverage exercises the presented host's lock preference, release for controls/tools, mouse disconnect, stream readiness and teardown, presentation across video-controller replacement, window-scoped release controls, relative mouse routing, local Command–Shift–M handling, and held-key cleanup. The native iPad Release build and deep/strict signature verification passed. Evidence is under `.build/PointerLockDiagnostics/`.
+- Pointer lock is enabled by default for each stream. Command–Shift–M or a right-edge finger swipe opens controls and releases capture; the Lock pointer toggle can disable it. The physical confirmation covers capture, while shortcut/release transitions have automated coverage; each accessory and iPadOS windowing mode has not been physically tested.
+
 ## Desktop video and audio stuttering (October 19, 2026)
 
 - Reproduced a video freeze in the actual iOS renderer: its display link delivered zero callbacks during a 200 ms touch-tracking interval. Registering it in common run-loop modes delivered 12 callbacks in the same interval on the iPhone simulator; stopping still removes callbacks.

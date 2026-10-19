@@ -19,6 +19,8 @@
 #import <SDL.h>
 #include <Limelight.h>
 
+NSNotificationName const NocturneStreamControlsRequestedNotification = @"NocturneStreamControlsRequested";
+
 @interface StreamFrameViewController (DarkLifecycle)
 - (void)returnToMainFrame;
 - (void)nocturneStopWithCompletion:(void (^)(void))completion;
@@ -32,9 +34,18 @@
 @property (nonatomic) CGSize lastControlSize;
 @property (nonatomic) BOOL absoluteTouchMode;
 @property (nonatomic) BOOL fillEntireScreen;
+@property (nonatomic) BOOL pointerCaptureEnabled;
 - (void)shutdown;
 @end
 @implementation MDStreamController
+- (BOOL)prefersPointerLocked { return self.pointerCaptureEnabled && !self.cleanedUp && [super prefersPointerLocked]; }
+- (void)setPointerCaptureEnabled:(BOOL)enabled {
+    BOOL changed = _pointerCaptureEnabled != enabled;
+    _pointerCaptureEnabled = enabled;
+    if (!enabled && self.isViewLoaded) [self nocturneReleaseInput];
+    if (enabled && changed && self.isViewLoaded) [self nocturneFocusInput];
+    [self setNeedsUpdateOfPrefersPointerLocked];
+}
 - (void)setFillEntireScreen:(BOOL)fill {
     _fillEntireScreen = fill;
     if (self.isViewLoaded) {
@@ -82,6 +93,7 @@
 - (void)shutdown {
     if (self.cleanedUp) return;
     self.cleanedUp = YES;
+    self.pointerCaptureEnabled = NO;
     if (self.isViewLoaded) [self nocturneReleaseInput];
     [self updatePreferredDisplayMode:NO];
     [super willMoveToParentViewController:nil];
@@ -503,6 +515,9 @@
     if ([controller isKindOfClass:MDStreamController.class] && !((MDStreamController *)controller).cleanedUp) {
         ((MDStreamController *)controller).fillEntireScreen = fill;
     }
+}
+- (void)setPointerCapture:(BOOL)enabled controller:(UIViewController *)controller {
+    if ([controller isKindOfClass:MDStreamController.class]) ((MDStreamController *)controller).pointerCaptureEnabled = enabled;
 }
 - (void)stopController:(UIViewController *)controller { if ([controller isKindOfClass:MDStreamController.class]) [(MDStreamController *)controller shutdown]; }
 - (void)stopController:(UIViewController *)controller completion:(void (^)(void))completion {

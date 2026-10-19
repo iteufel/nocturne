@@ -94,6 +94,8 @@ overlay(target, group, 'Input/StreamView.m') do |source|
   source = replace_section(source, '- (CGSize) getVideoAreaSize {', '- (CGPoint) adjustCoordinatesForVideoArea:', "- (CGSize) getVideoAreaSize {\n    return NocturneVideoAreaSize(self.bounds.size, streamAspectRatio, self.nocturneFillEntireScreen);\n}\n\n")
   source = replace_section(source, '    CGSize videoSize;', '    videoOrigin = CGPointMake', "    CGSize videoSize = [self getVideoAreaSize];\n    CGPoint videoOrigin;\n")
   source = replace_once(source, '    NSInteger lastMouseButtonMask;', "    NSInteger lastMouseButtonMask;\n    NSMapTable<UITouch *, NSNumber *> *nocturneMouseTouches;\n    NSMutableSet<UITouch *> *nocturneActiveTouches;\n    NSHashTable<UITouch *> *nocturneIgnoredTouches;")
+  source = replace_once(source, '    NSMutableSet* keysDown;', "    NSMutableSet* keysDown;\n    NSMutableDictionary<NSNumber *, UIPress *> *nocturnePressedKeys;\n    BOOL nocturneControlsKeyDown;")
+  source = replace_section(source, '- (void)pressesBegan:', '- (void)touchesEnded:', File.read('Sources/Client/Bridge/StreamKeyboardInput.inc'))
   source = replace_section(source, '- (BOOL)handleMouseButtonEvent:', '- (void)touchesMoved:', '')
   raise 'Upstream mouse routing changed; review the overlay.' unless source.scan('if ([GCMouse current] != nil)').length == 2
   source = source.gsub('if ([GCMouse current] != nil)', 'if (NocturneUsesRelativeMouse(self))')
@@ -117,6 +119,7 @@ end
 overlay(target, group, 'Input/ControllerSupport.m') do |source|
   source = replace_once(source, '@implementation ControllerSupport {', "@implementation ControllerSupport {\n    NSUInteger nocturneMouseButtons;")
   source = replace_once(source, '        self->accumulatedDeltaX += deltaX / MOUSE_SPEED_DIVISOR;', "        if (![self nocturneUsesRelativeMouse]) return;\n        self->accumulatedDeltaX += deltaX / MOUSE_SPEED_DIVISOR;")
+  source = replace_once(source, '            LiSendMouseMoveEvent(truncatedDeltaX, truncatedDeltaY);', '            [self nocturneSendMouseMoveX:truncatedDeltaX y:truncatedDeltaY];')
   raise 'Upstream mouse buttons changed; review the overlay.' unless source.scan('LiSendMouseButtonEvent(pressed ? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE,').length == 5
   source = source.gsub(/LiSendMouseButtonEvent\(pressed \? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE, (BUTTON_\w+)\);/, '[self nocturneHandleMouseButton:pressed ? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE button:\1];')
   source = replace_once(source, "-(void) unregisterMouseCallbacks:(GCMouse*)mouse API_AVAILABLE(ios(14.0)) {", "-(void) unregisterMouseCallbacks:(GCMouse*)mouse API_AVAILABLE(ios(14.0)) {\n    [self nocturneReleaseMouseButtons];")
