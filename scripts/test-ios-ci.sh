@@ -40,10 +40,13 @@ try:
 except subprocess.TimeoutExpired:
     raise SystemExit('Simulator did not finish booting within five minutes')
 PY
+  # Simulator sysdiagnose collection can stall after passing tests. Keep the
+  # xcresult and test failures, without the automatic verbose diagnostics.
   xcodebuild test -workspace Nocturne.xcworkspace -scheme Nocturne \
     -destination "platform=iOS Simulator,id=$simulator" \
     -derivedDataPath .build/Xcode -resultBundlePath ".build/ClientTests/$device.xcresult" \
     -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
+    -collect-test-diagnostics never \
     -only-testing:NocturneClientTests CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=
   cleanup
   simulator=''
