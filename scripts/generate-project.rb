@@ -67,6 +67,10 @@ def input_methods(source, filename)
   "#import \"NocturneStreamInput.h\"\n" + source.sub(/\n@end\s*\z/, "\n" + File.read("Sources/Client/Bridge/#{filename}") + "\n@end\n")
 end
 overlay(target, group, 'Stream/Connection.m') do |source|
+  source = replace_once(source, 'static SDL_AudioDeviceID audioDevice;', "static SDL_AudioDeviceID audioDevice;\n#define NOCTURNE_ADAPTIVE_AUDIO 1\nstatic struct { uint64_t lastPacketMs; unsigned targetMs; bool hasPacket; } audioTiming;")
+  source = replace_once(source, '    SDL_AudioSpec want, have;', "    SDL_AudioSpec want, have;\n    memset(&audioTiming, 0, sizeof(audioTiming));")
+  source = replace_section(source, 'void ArDecodeAndPlaySample(', 'void ClStageStarting(', File.read('Sources/Client/Bridge/StreamAudioPlayback.inc'))
+  source = replace_once(source, "    // Start playback\n    SDL_PauseAudioDevice(audioDevice, 0);", "    // Playback starts after StreamAudioPlayback primes the jitter cushion.")
   # Loopback is the remote QUIC proxy: retain WAN packet sizing and stream behavior.
   source = replace_once(source, 'if ([Utils isActiveNetworkVPN]) {', 'if ([Utils isActiveNetworkVPN] || [config.host isEqualToString:@"127.0.0.1"]) {')
   source = replace_once(source, "-(void) terminate\n{", "-(void) terminate { [self nocturneTerminateWithCompletion:nil]; }\n\n-(void)nocturneTerminateWithCompletion:(void (^)(void))completion\n{")
@@ -101,8 +105,14 @@ overlay(target, group, 'Input/StreamView.m') do |source|
   input_methods(source, 'StreamViewInput.inc')
 end
 overlay(target, group, 'Stream/VideoDecoderRenderer.m') do |source|
+  # UIKit switches run-loop modes during touch tracking. Default-only delivery
+  # freezes decoding until the gesture ends, then drains a burst of old frames.
+  source = replace_once(source, 'forMode:NSDefaultRunLoopMode];', 'forMode:NSRunLoopCommonModes];')
+  source = replace_once(source, '    CADisplayLink* _displayLink;', "    CADisplayLink* _displayLink;\n    NocturneVideoPacer nocturnePacer;")
+  source = replace_once(source, '    self->frameRate = frameRate;', "    self->frameRate = frameRate;\n    NocturneVideoPacerReset(&nocturnePacer, frameRate, framePacing);")
+  source = replace_section(source, '- (void)displayLinkCallback:', '- (void)stop', File.read('Sources/Client/Bridge/StreamVideoPlayback.inc'))
   source = replace_section(source, '    CGSize videoSize;', '    displayLayer.position =', "    CGSize videoSize = [_view getVideoAreaSize];\n")
-  "#import \"NocturneStreamInput.h\"\n" + source
+  "#import \"NocturneStreamInput.h\"\n#import \"StreamVideoPacing.h\"\n" + source
 end
 overlay(target, group, 'Input/ControllerSupport.m') do |source|
   source = replace_once(source, '@implementation ControllerSupport {', "@implementation ControllerSupport {\n    NSUInteger nocturneMouseButtons;")

@@ -115,6 +115,10 @@ jobs:
           xcodebuild -downloadComponent MetalToolchain
           gem install --user-install xcodeproj -v 1.27.0 --no-document
           scripts/bootstrap.sh
+      - name: Test stream jitter and recovery
+        run: |
+          bash scripts/test-stream-audio.sh
+          bash scripts/test-stream-video.sh
       - name: Test the iPhone and iPad client
         run: scripts/test-ios-ci.sh
       - name: Save client test results
@@ -141,6 +145,7 @@ jobs:
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
+          brew install cmake pkgconf miniupnpc openssl@3
           gem install --user-install xcodeproj -v 1.27.0 --no-document
           scripts/bootstrap.sh
       - name: Test the broker and remote transport
@@ -254,6 +259,7 @@ jobs:
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
+          brew install cmake pkgconf miniupnpc openssl@3
           gem install --user-install xcodeproj -v 1.27.0 --no-document
           scripts/bootstrap.sh
       - name: Import the Developer ID identity
