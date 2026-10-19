@@ -21,6 +21,8 @@ public final class WorkspaceConnection: ObservableObject {
         return state == .connected ? "Local network" : nil
     }
     private var remoteTunnel: RemoteTunnel?
+    /// The hashed pairing key of the Mac at the far end of `remoteTunnel`.
+    private var tunnelServer: Data?
     private weak var mediaParent: WorkspaceConnection?
     private var terminalServer: Data?
     public func selectTerminal(_ id: String) {
@@ -49,8 +51,9 @@ public final class WorkspaceConnection: ObservableObject {
         try await withTaskCancellationHandler {
             do {
                 try Task.checkCancellation()
-                if let shared = mediaParent?.remoteTunnel {
-                    remoteTunnel = shared
+                // App windows can belong to a Mac other than the parent's; only that Mac's own tunnel reaches it.
+                if let parent = mediaParent, parent.tunnelServer == server, let shared = parent.remoteTunnel {
+                    remoteTunnel = shared; tunnelServer = server
                     try await establish(invitation, endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: shared.workspacePort)!), restoreTerminalSessions: restoreTerminalSessions, epoch: epoch)
                     return
                 }
@@ -71,7 +74,7 @@ public final class WorkspaceConnection: ObservableObject {
                 if let access = invitation.remoteAccess {
                     let tunnel = try await RemoteTunnel.connect(access, streaming: remoteStreaming)
                     guard generation == epoch else { tunnel.stop(); throw NocturneError.disconnected }
-                    remoteTunnel = tunnel
+                    remoteTunnel = tunnel; tunnelServer = server
                     try await establish(invitation, endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: tunnel.workspacePort)!), restoreTerminalSessions: restoreTerminalSessions, epoch: epoch)
                 }
             } catch {
@@ -134,7 +137,7 @@ public final class WorkspaceConnection: ObservableObject {
     }
     private func closeTransport() {
         channel?.cancel(); channel = nil; state = .disconnected; connectedInvitation = nil
-        remoteTunnel = nil
+        remoteTunnel = nil; tunnelServer = nil
         capabilities = []
         ready?.resume(throwing: NocturneError.disconnected); ready = nil
         let waiting = pending; pending.removeAll(); deadlines.values.forEach { $0.cancel() }; deadlines.removeAll()

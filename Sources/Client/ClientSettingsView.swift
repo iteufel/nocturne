@@ -3,7 +3,9 @@ import NocturneKit
 
 struct ClientSettingsView: View {
     @ObservedObject var model: ClientModel
-    @State private var confirmForget = false
+    @ObservedObject private var connection: WorkspaceConnection
+    @State private var forgetting: PairedServer?
+    init(model: ClientModel) { self.model = model; connection = model.server }
     @AppStorage("nocturne.appearance") private var appearance = NocturneAppearance.system
     var body: some View {
         Form {
@@ -54,13 +56,7 @@ struct ClientSettingsView: View {
                 Text("Each stream starts muted. Backgrounding, disconnecting, resizing the stream, or changing audio devices mutes it again. Headphones are recommended; Bluetooth microphone use can reduce playback quality.")
                     .font(.caption).foregroundStyle(MoonStyle.secondary)
             }.listRowBackground(MoonStyle.surface)
-            Section("Nocturne Server") {
-                if let name = model.savedServerName {
-                    LabeledContent("Paired Mac", value: name)
-                    Button("Reconnect") { Task { await model.reconnectServer() } }
-                    Button("Forget paired Mac", role: .destructive) { confirmForget = true }
-                } else { Button("Pair Nocturne Server") { model.preferServer = true; model.showAdd = true } }
-            }.listRowBackground(MoonStyle.surface)
+            pairedMacs
             FilesIntegrationSettings(integration: model.filesIntegration, paired: model.savedServerName != nil) {
                 Task { await model.reconnectServer() }
             }
@@ -71,9 +67,47 @@ struct ClientSettingsView: View {
                     .font(.caption2).foregroundStyle(MoonStyle.secondary)
             }.listRowBackground(MoonStyle.surface)
         }.scrollContentBackground(.hidden)
-            .confirmationDialog("Forget this Mac?", isPresented: $confirmForget, titleVisibility: .visible) {
-                Button("Forget Mac", role: .destructive) { model.forgetServer() }
-            } message: { Text("The saved pairing key will be removed from this device.") }
+            .confirmationDialog("Forget this Mac?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
+                                titleVisibility: .visible, presenting: forgetting) { paired in
+                Button("Forget \(paired.name)", role: .destructive) { model.forgetServer(paired.id) }
+            } message: { paired in Text("The saved pairing key for \(paired.name), its Files location, and its video approval will be removed from this device. Your other Macs stay paired.") }
+    }
+    private var pairedMacs: some View {
+        Section {
+            ForEach(model.pairedServers.servers) { paired in
+                Button { model.activateServer(paired.id) } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(paired.name).foregroundStyle(.primary)
+                            Text(status(of: paired)).font(.caption).foregroundStyle(MoonStyle.secondary)
+                        }
+                        Spacer()
+                        if paired.id == model.pairedServers.activeID { Image(systemName: "checkmark").foregroundStyle(MoonStyle.accent) }
+                    }
+                }
+                .tint(.primary).disabled(model.busy || model.session != nil)
+                .swipeActions { Button("Forget", role: .destructive) { forgetting = paired } }
+                .contextMenu { Button("Forget \(paired.name)", systemImage: "trash", role: .destructive) { forgetting = paired } }
+                .accessibilityAddTraits(paired.id == model.pairedServers.activeID ? .isSelected : [])
+            }
+            if let active = model.pairedServers.active {
+                Button("Reconnect to \(active.name)") { Task { await model.reconnectServer() } }
+                Button("Forget \(active.name)", role: .destructive) { forgetting = active }
+            }
+            Button(model.pairedServers.servers.isEmpty ? "Pair Nocturne Server" : "Pair another Mac") { model.preferServer = true; model.showAdd = true }
+        } header: { Text("Paired Macs") } footer: {
+            if model.pairedServers.servers.count > 1 {
+                Text("Apps, Terminal, and Files use the selected Mac. Opening a computer’s library switches to the Mac it belongs to. Open shells keep running on each Mac.")
+            }
+        }.listRowBackground(MoonStyle.surface)
+    }
+    private func status(of paired: PairedServer) -> String {
+        guard paired.id == model.pairedServers.activeID else { return "Paired" }
+        switch connection.state {
+        case .connected: return "Connected"
+        case .connecting: return "Connecting…"
+        case .disconnected: return "Selected"
+        }
     }
     private func inputStatus(_ name: String, symbol: String, connected: Bool) -> some View {
         HStack { Label(name, systemImage: symbol); Spacer(); Text(connected ? "Connected" : "Not connected").font(.caption).foregroundStyle(connected ? MoonStyle.mint : MoonStyle.secondary) }

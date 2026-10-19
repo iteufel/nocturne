@@ -80,8 +80,11 @@ enum AppWindowScenes {
         }
         UIApplication.shared.requestSceneSessionActivation(existing, userActivity: activity(route), options: nil, errorHandler: failed)
     }
-    static func disconnectAll() {
-        for scene in UIApplication.shared.connectedScenes { (scene.delegate as? DarkSceneDelegate)?.appStream?.deactivate() }
+    static func disconnect(serverID: String) {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let stream = (scene.delegate as? DarkSceneDelegate)?.appStream, stream.route.serverID == serverID else { continue }
+            stream.deactivate()
+        }
     }
     static func close(_ session: UISceneSession, failed: ((Error) -> Void)? = nil) {
         (session.scene?.delegate as? DarkSceneDelegate)?.appStream?.deactivate()

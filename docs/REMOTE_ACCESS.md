@@ -96,8 +96,9 @@ its tunnel as well as its workspace/video authorization. Stop server, reset
 pairing, and client backgrounding release their transport resources. All local
 forwarders bind only to loopback. The client preserves the Mac's actual LAN
 address and public endpoint identity rather than saving an ephemeral proxy port.
-Only one remote streaming host is active per iOS app, matching the current
-single saved workspace/stream model.
+Only one remote streaming host is active per iOS app: the selected paired Mac.
+An app window from another paired Mac opens its own workspace-only tunnel
+instead of reusing the selected Mac's tunnel.
 
 ## Build and verification
 

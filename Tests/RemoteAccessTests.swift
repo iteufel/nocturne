@@ -66,6 +66,22 @@ final class RemoteAccessTests: XCTestCase {
         try await media.connect(invitation, restoreTerminalSessions: false)
         XCTAssertEqual(media.state, .connected)
         media.disconnect()
+        // An app window from another paired Mac must not ride this Mac's tunnel.
+        let officeDevices = try WorkspaceDeviceStore(url: root.appendingPathComponent("office-devices.json"))
+        let office = try WorkspaceServer(folder: root.appendingPathComponent("office"), name: "Office Mac", devices: officeDevices, permissions: .init(terminal: false, files: true))
+        defer { office.stop() }
+        let officeReady = expectation(description: "Second Mac ready")
+        var officeSignalled = false
+        office.onStatus = { status, _ in if status == "Ready", !officeSignalled { officeSignalled = true; officeReady.fulfill() } }
+        let officeKey = try SecureStore.randomKey(), officePort = port + 2
+        try office.start(secret: officeKey, port: officePort)
+        await fulfillment(of: [officeReady], timeout: 5)
+        let officeWindow = client.mediaConnection(); defer { officeWindow.disconnect() }
+        try await officeWindow.connect(PairingInvitation(host: "127.0.0.1", port: officePort, name: "Office Mac", secret: officeKey,
+            enrollmentToken: officeDevices.createInvitation()), restoreTerminalSessions: false)
+        XCTAssertEqual(officeWindow.name, "Office Mac")
+        XCTAssertEqual(officeWindow.connectionRoute, "Local network")
+        officeWindow.disconnect(); office.stop()
         // Files keeps the public remote route, strips enrollment, and opens its own
         // workspace-only tunnel while the containing app is connected or suspended.
         let account = try FilesProviderAccount(invitation: invitation, certificate: identity.certificate,

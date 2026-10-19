@@ -5,14 +5,19 @@ import Security
 /// Only the app and its Files extension can read this account from their shared Keychain group.
 /// Enrollment tokens are deliberately omitted: Files can reconnect an enrolled device, never enroll one.
 public struct FilesProviderAccount: Codable {
-    public static let keychainAccount = "files-provider"
+    /// The single-Mac account saved by earlier versions.
+    public static let legacyKeychainAccount = "files-provider"
+    /// Each paired Mac is its own Files location, and its extension may read only that location's account.
+    public static func keychainAccount(domainIdentifier: String) -> String { "files-provider." + domainIdentifier }
+    public static func domainIdentifier(secret: Data) -> String {
+        "host-files-" + SHA256.hash(data: secret).map { String(format: "%02x", $0) }.joined()
+    }
     public let invitation: PairingInvitation
     public let certificate: Data
     public let privateKey: Data
     public let deviceName: String
-    public var domainIdentifier: String {
-        "host-files-" + SHA256.hash(data: invitation.secret).map { String(format: "%02x", $0) }.joined()
-    }
+    public var domainIdentifier: String { Self.domainIdentifier(secret: invitation.secret) }
+    public var keychainAccount: String { Self.keychainAccount(domainIdentifier: domainIdentifier) }
 
     public init(invitation: PairingInvitation, certificate: Data, privateKey: Data, deviceName: String) throws {
         self.invitation = try PairingInvitation(host: invitation.host, port: invitation.port,
