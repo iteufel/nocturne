@@ -78,6 +78,8 @@ struct ClientRootView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Add computer", systemImage: "plus") { model.preferServer = false; model.showAdd = true }.accessibilityIdentifier("addComputer")
                     }
+                } else if [.hostApps, .terminal, .files].contains(page), model.pairedServers.servers.count > 1 {
+                    ToolbarItem(placement: .topBarLeading) { PairedMacMenu(model: model) }
                 }
             }
         }
@@ -185,13 +187,16 @@ struct WorkspaceCard: View {
                 }
                 Text(connection.state == .connected ? "\(connection.name) is connected. Your terminal and shared files are a tap away." : "Connect to Nocturne Server for streaming, your terminal, and shared files.")
                     .font(.system(size: 13)).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
+                if !model.pairedServers.servers.isEmpty {
+                    PairedMacMenu(model: model).font(.system(size: 13, weight: .medium))
+                }
                 NocturneGlassGroup { HStack(spacing: 12) {
                     if connection.state == .connected {
                         Button { model.page = .hostApps } label: { Label("Apps", systemImage: "square.grid.2x2") }
                         Button { model.page = .terminal } label: { Label("Terminal", systemImage: "terminal") }
                         Button { model.page = .files } label: { Label("Files", systemImage: "folder") }
-                    } else if model.savedServerName != nil {
-                        Button { Task { await model.reconnectServer() } } label: { Label(connection.state == .connecting ? "Connecting…" : "Reconnect to Mac", systemImage: "link") }
+                    } else if let name = model.savedServerName {
+                        Button { Task { await model.reconnectServer() } } label: { Label(connection.state == .connecting ? "Connecting…" : "Reconnect to \(name)", systemImage: "link") }
                             .disabled(connection.state == .connecting)
                     } else {
                         Button { model.preferServer = true; model.showAdd = true } label: { HStack { Text("Pair your Mac"); Image(systemName: "arrow.right") } }
@@ -199,6 +204,29 @@ struct WorkspaceCard: View {
                 }.buttonStyle(NocturneGlassButtonStyle()).controlSize(.large).font(.system(size: 13, weight: .semibold)).tint(MoonStyle.accent) }
             }
         }
+    }
+}
+
+/// Chooses the paired Mac that Apps, Terminal, and Files use, or pairs another one.
+struct PairedMacMenu: View {
+    @ObservedObject var model: ClientModel
+    var body: some View {
+        Menu {
+            Picker("Your Macs", selection: Binding(get: { model.pairedServers.activeID ?? "" }, set: { model.activateServer($0) })) {
+                ForEach(model.pairedServers.servers) { paired in Text(paired.name).tag(paired.id) }
+            }
+            Divider()
+            Button("Pair another Mac", systemImage: "plus") { model.preferServer = true; model.showAdd = true }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "desktopcomputer")
+                Text(model.savedServerName ?? "Choose a Mac").lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down").font(.caption2)
+            }
+        }
+        .disabled(model.busy || model.session != nil)
+        .accessibilityLabel("Current Mac: \(model.savedServerName ?? "none")")
+        .accessibilityIdentifier("pairedMacMenu")
     }
 }
 

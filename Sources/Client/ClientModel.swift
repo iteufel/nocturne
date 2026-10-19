@@ -70,14 +70,17 @@ final class ClientModel: ObservableObject {
     @Published var controllers: [String] = []
     @Published var keyboardConnected = false
     @Published var mouseConnected = false
-    @Published var savedServerName: String?
+    @Published private(set) var pairedServers = PairedServerList()
+    var savedServerName: String? { pairedServers.active?.name }
     @Published var preferences: StreamPreferences {
         didSet { if let data = try? JSONEncoder().encode(preferences) { UserDefaults.standard.set(data, forKey: "streamPreferences") } }
     }
     private var reconnectTask: Task<Void, Error>?
     private var networkTask: Task<Void, Never>?
     private var pendingStreamAddress: String?
-    private var linkedHostID = UserDefaults.standard.string(forKey: "serverHostID")
+    private var linkedHostID: String? { pairedServers.active?.streamingHostID }
+    /// Saving is refused until Keychain has been read, so a locked Keychain cannot erase other pairings.
+    private var pairedServersLoaded = false
     private var pendingStream: Task<Void, Never>?
     private var closingStream: Task<Void, Never>?
     private var serverPairingGeneration = UUID()
@@ -89,7 +92,7 @@ final class ClientModel: ObservableObject {
             name: UIDevice.current.name) { streamingEngine.signWorkspaceChallenge($0) })
         hostApps = HostAppsModel(connection: server)
         preferences = UserDefaults.standard.data(forKey: "streamPreferences").flatMap { try? JSONDecoder().decode(StreamPreferences.self, from: $0) } ?? .init()
-        savedServerName = UserDefaults.standard.string(forKey: "serverName")
+        loadPairedServers()
         engine.hostsChanged = { [weak self] hosts in self?.hosts = hosts.map(StreamingHost.init) }
         engine.appsChanged = { [weak self] hostID, apps in
             guard let self, self.selectedHost?.id == hostID,
@@ -98,9 +101,15 @@ final class ClientModel: ObservableObject {
             self.selectedHost = host; self.showLibrary = true
         }
         engine.addressDiscovered = { [weak self] hostID, address in
-            guard let self, self.pendingStreamAddress == address else { return }
-            self.pendingStreamAddress = nil; self.linkedHostID = hostID
-            UserDefaults.standard.set(hostID, forKey: "serverHostID")
+            guard let self, self.pendingStreamAddress == address, let active = self.pairedServers.active else { return }
+            self.pendingStreamAddress = nil
+            var list = self.pairedServers
+            let superseded = list.link(streamingHostID: hostID, to: active.id)
+            do { try self.savePairedServers(list) } catch { self.error = error.localizedDescription; self.busy = false; return }
+            for stale in superseded {
+                AppWindowScenes.disconnect(serverID: stale.id)
+                do { try self.filesIntegration.forget(stale.invitation) } catch { self.error = error.localizedDescription }
+            }
             if let host = self.hosts.first(where: { $0.id == hostID }) { self.busy = false; self.select(host) }
         }
         engine.canPairHost = { [weak self] hostID in
@@ -143,7 +152,8 @@ final class ClientModel: ObservableObject {
         }
     }
     func start() {
-        filesIntegration.refresh()
+        if !pairedServersLoaded { loadPairedServers() }
+        if pairedServersLoaded { filesIntegration.refresh(pairedServers.servers.map(\.invitation)) }
         if session == nil { engine.start() }; refreshInputs()
         guard networkTask == nil else { return }
         networkTask = Task { [weak self] in
@@ -154,7 +164,7 @@ final class ClientModel: ObservableObject {
         }
     }
     private func maintainConnection() async {
-        guard savedServerName != nil, !showAdd else { return }
+        guard pairedServers.active != nil, !showAdd else { return }
         if server.state == .disconnected { await reconnectServer(reportError: false) }
         else if server.state == .connected {
             let generation = serverPairingGeneration
@@ -196,7 +206,21 @@ final class ClientModel: ObservableObject {
     }
     func select(_ host: StreamingHost) {
         guard !busy, session == nil, pendingStream == nil else { return }
+        // Display control and pairing approval come from the Mac that owns this video host.
+        if let owner = pairedServers.server(linkedTo: host.id) { activateServer(owner.id) }
         selectedHost = host; busy = true; apps = []; engine.selectHost(host.id)
+    }
+    /// Makes another paired Mac the one used by Apps, Terminal, Files, and display control.
+    /// Its shells keep running on the previous Mac and are restored when switching back.
+    func activateServer(_ id: String) {
+        guard id != pairedServers.activeID, pairedServers[id] != nil, session == nil, !busy else { return }
+        var list = pairedServers; list.activate(id)
+        cancelReconnect(); engine.cancelPairing()
+        if let previous = linkedHostID { engine.clearTemporaryAddress(previous) }
+        do { try savePairedServers(list) } catch { self.error = error.localizedDescription; return }
+        microphone.stop(); hostApps.reset()
+        server.disconnect(); server.forgetTerminals()
+        Task { await reconnectServer(reportError: false) }
     }
     func stream(_ app: StreamingApp) {
         guard session == nil, pendingStream == nil, let host = selectedHost else { return }
@@ -328,12 +352,12 @@ final class ClientModel: ObservableObject {
         do {
             guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw NocturneError.invalidInvitation }
             let invitation = try PairingInvitation(url: url)
+            if let previous = linkedHostID { engine.clearTemporaryAddress(previous) }
             try await server.connect(invitation, rediscover: true)
             guard serverPairingGeneration == generation else { return }
             let connected = server.connectedInvitation ?? invitation
-            try SecureStore.write(JSONEncoder().encode(connected), account: "server")
-            linkedHostID = nil; UserDefaults.standard.removeObject(forKey: "serverHostID")
-            savedServerName = invitation.name; UserDefaults.standard.set(invitation.name, forKey: "serverName")
+            var list = pairedServers; list.pair(connected)
+            try savePairedServers(list)
             updateFilesLocation(connected)
             showAdd = false
             if server.capabilities.contains("streaming") {
@@ -356,18 +380,20 @@ final class ClientModel: ObservableObject {
             generation = UUID(); serverPairingGeneration = generation
             let attempt = generation
             let task = Task { @MainActor in
-                guard let data = try SecureStore.read("server") else { if reportError { self.showAdd = true }; return }
-                var invitation = try JSONDecoder().decode(PairingInvitation.self, from: data)
+                guard let saved = self.pairedServers.active else { if reportError { self.showAdd = true }; return }
+                var invitation = saved.invitation
                 // Also recover older servers (without the workspace Bonjour ID) using
                 // the already-paired video host. TLS still verifies the workspace key.
-                if let host = self.hosts.first(where: { $0.id == self.linkedHostID && $0.online && $0.paired }), !host.address.isEmpty, host.address != "127.0.0.1" {
+                if let host = self.hosts.first(where: { $0.id == saved.streamingHostID && $0.online && $0.paired }), !host.address.isEmpty, host.address != "127.0.0.1" {
                     invitation = try invitation.replacingAddress(host: host.address)
                 }
                 try await self.server.connect(invitation, rediscover: true)
                 try Task.checkCancellation()
-                guard self.serverPairingGeneration == attempt, let connected = self.server.connectedInvitation else { return }
-                if let id = self.linkedHostID { self.engine.updateHostAddress(id, address: self.server.streamingAddress ?? connected.host) }
-                try SecureStore.write(JSONEncoder().encode(connected), account: "server")
+                guard self.serverPairingGeneration == attempt, self.pairedServers.activeID == saved.id,
+                      let connected = self.server.connectedInvitation else { return }
+                if let id = saved.streamingHostID { self.engine.updateHostAddress(id, address: self.server.streamingAddress ?? connected.host) }
+                var list = self.pairedServers; list.update(connected)
+                try self.savePairedServers(list)
                 self.updateFilesLocation(connected)
             }
             reconnectTask = task
@@ -377,30 +403,61 @@ final class ClientModel: ObservableObject {
             if reportError, serverPairingGeneration == generation, !(error is CancellationError) { self.error = error.localizedDescription }
         }
     }
-    func forgetServer() {
-        cancelReconnect()
-        if let linkedHostID, !removeStreamingHost(linkedHostID) { return }
+    /// Forgets one paired Mac (the active one by default), with its video approval, Files location, and app windows.
+    func forgetServer(_ id: String? = nil) {
+        guard let target = if let id { pairedServers[id] } else { pairedServers.active } else { return }
+        let wasActive = target.id == pairedServers.activeID
+        if wasActive { cancelReconnect() }
+        if let hostID = target.streamingHostID, !removeStreamingHost(hostID) { return }
         do {
-            try filesIntegration.forget()
-            AppWindowScenes.disconnectAll()
-            try SecureStore.delete("server"); server.disconnect(); server.forgetTerminals(); savedServerName = nil
-            UserDefaults.standard.removeObject(forKey: "serverName"); UserDefaults.standard.removeObject(forKey: "serverHostID"); linkedHostID = nil; pendingStreamAddress = nil
+            try filesIntegration.forget(target.invitation)
+            AppWindowScenes.disconnect(serverID: target.id)
+            var list = pairedServers; list.remove(target.id)
+            try savePairedServers(list)
+            guard wasActive else { return }
+            server.disconnect(); server.forgetTerminals(); hostApps.reset(); pendingStreamAddress = nil
+            if list.active != nil { Task { await reconnectServer(reportError: false) } }
         } catch { self.error = error.localizedDescription }
+    }
+    private func loadPairedServers() {
+        do {
+            if let data = try SecureStore.read(PairedServerList.keychainAccount) {
+                pairedServers = (try? JSONDecoder().decode(PairedServerList.self, from: data)) ?? PairedServerList()
+            } else {
+                let legacy = try SecureStore.read(PairedServerList.legacyKeychainAccount).flatMap {
+                    try? JSONDecoder().decode(PairingInvitation.self, from: $0)
+                }
+                let list = PairedServerList(legacy: legacy, streamingHostID: UserDefaults.standard.string(forKey: "serverHostID"))
+                try SecureStore.write(JSONEncoder().encode(list), account: PairedServerList.keychainAccount)
+                try SecureStore.delete(PairedServerList.legacyKeychainAccount)
+                UserDefaults.standard.removeObject(forKey: "serverHostID"); UserDefaults.standard.removeObject(forKey: "serverName")
+                pairedServers = list
+            }
+            pairedServersLoaded = true
+        } catch { self.error = error.localizedDescription }
+    }
+    private func savePairedServers(_ list: PairedServerList) throws {
+        guard pairedServersLoaded else {
+            throw NocturneError.remote("Your paired Macs could not be read from Keychain. Unlock this device, then reopen Nocturne.")
+        }
+        try SecureStore.write(JSONEncoder().encode(list), account: PairedServerList.keychainAccount)
+        pairedServers = list
     }
     private func updateFilesLocation(_ invitation: PairingInvitation) {
         filesIntegration.configure(invitation: invitation, certificate: engine.workspaceCertificate(),
             privateKey: engine.workspacePrivateKey(), deviceName: UIDevice.current.name,
             enabled: server.capabilities.contains("files"))
     }
+    /// App windows reconnect to their own Mac, which need not be the active one.
     func appWindowInvitation(serverID: String? = nil) throws -> PairingInvitation {
-        guard let data = try SecureStore.read("server") else {
-            throw NocturneError.remote("Pair your Mac in Nocturne before opening an app window.")
+        if let serverID {
+            guard let paired = pairedServers[serverID] else {
+                throw NocturneError.remote("This window belongs to a Mac that is no longer paired. Pair it again to open its apps.")
+            }
+            return paired.invitation
         }
-        let invitation = try JSONDecoder().decode(PairingInvitation.self, from: data)
-        guard serverID == nil || WorkspaceIdentity.fingerprint(invitation.secret) == serverID else {
-            throw NocturneError.remote("This window belongs to a different Mac. Open an app from your currently paired Mac.")
-        }
-        return invitation
+        guard let active = pairedServers.active else { throw NocturneError.remote("Pair your Mac in Nocturne before opening an app window.") }
+        return active.invitation
     }
     func makeAppWindowStream(_ route: AppWindowRoute) -> AppWindowStreamModel {
         AppWindowStreamModel(route: route, connection: server.mediaConnection()) { [weak self] in
@@ -409,7 +466,7 @@ final class ClientModel: ObservableObject {
         }
     }
     func forgetHost(_ hostID: String) {
-        if hostID == linkedHostID { forgetServer() }
+        if let owner = pairedServers.server(linkedTo: hostID) { forgetServer(owner.id) }
         else { _ = removeStreamingHost(hostID) }
     }
     private func removeStreamingHost(_ hostID: String) -> Bool {

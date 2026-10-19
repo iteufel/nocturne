@@ -32,7 +32,9 @@ final class FilesExtension: NSFileProviderExtension {
     private var transfers: [URL: Progress] = [:]
 
     private func credentials() throws -> FilesProviderAccount {
-        guard let data = try SecureStore.read(FilesProviderAccount.keychainAccount) else { throw NSFileProviderError(.notAuthenticated) }
+        guard let data = try SecureStore.read(FilesProviderAccount.keychainAccount(domainIdentifier: hostDomain.identifier.rawValue)) else {
+            throw NSFileProviderError(.notAuthenticated)
+        }
         let account = try JSONDecoder().decode(FilesProviderAccount.self, from: data)
         guard account.domainIdentifier == hostDomain.identifier.rawValue else { throw NSFileProviderError(.notAuthenticated) }
         return account
