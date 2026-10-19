@@ -200,6 +200,10 @@ final class ClientModel: ObservableObject {
             engine.setTouchMode(mode == .touch, controller: controller)
         }
     }
+    func setFillEntireScreen(_ fill: Bool) {
+        preferences.fillEntireScreen = fill
+        session?.preferences.fillEntireScreen = fill
+    }
     func select(_ host: StreamingHost) {
         guard !busy, session == nil, pendingStream == nil else { return }
         // Display control and pairing approval come from the Mac that owns this video host.
