@@ -142,7 +142,7 @@ public sealed record AppInput(string Kind, double X = 0, double Y = 0, int Butto
     [JsonIgnore] public bool IsValid => Kind is "move" or "down" or "up" or "scroll" or "keyDown" or "keyUp" or "text" &&
         double.IsFinite(X) && double.IsFinite(Y) && X is >= 0 and <= 1 && Y is >= 0 and <= 1 &&
         Button is >= 0 and <= 2 && (ClickCount ?? 1) is >= 1 and <= 3 && double.IsFinite(DeltaX) && double.IsFinite(DeltaY) &&
-        Math.Abs(DeltaX) <= 4096 && Math.Abs(DeltaY) <= 4096 && KeyCode <= 127 && Text.Length <= 1024;
+        Math.Abs(DeltaX) <= 4096 && Math.Abs(DeltaY) <= 4096 && KeyCode <= 127 && Text != null && Text.Length <= 1024;
 }
 public sealed record AppVideo(byte[] Data, byte[][] ParameterSets, double Timestamp);
 

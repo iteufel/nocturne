@@ -82,7 +82,7 @@ public sealed class WorkspaceServer : IAsyncDisposable
             while (!stopped.IsCancellationRequested)
             {
                 var client = await listener!.AcceptTcpClientAsync(stopped.Token);
-                if (sessions.Count >= 8) { client.Dispose(); continue; }
+                if (sessions.Count >= 32) { client.Dispose(); continue; }
                 client.NoDelay = true;
                 client.ReceiveTimeout = 12_000; client.SendTimeout = 15_000;
                 var id = Guid.NewGuid(); var session = new Session(this, id, client);
@@ -129,17 +129,17 @@ public sealed class WorkspaceServer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        List<Exception> failures = [];
         stopped.Cancel(); listener?.Stop();
-        remote?.Dispose();
-        if (mediaTimer != null) await mediaTimer.DisposeAsync();
+        try { remote?.Dispose(); } catch (Exception error) { failures.Add(error); }
+        if (mediaTimer != null) try { await mediaTimer.DisposeAsync(); } catch (Exception error) { failures.Add(error); }
         foreach (var session in sessions.Values) session.Close();
-        if (acceptTask != null) await acceptTask;
-        try { await Task.WhenAll(tasks.Values.ToArray()); }
-        finally
-        {
-            terminals.Dispose(); files?.Dispose(); microphone?.Dispose(); display?.Dispose(); applications?.Dispose();
-            CryptographicOperations.ZeroMemory(secret);
-        }
+        if (acceptTask != null) try { await acceptTask; } catch (Exception error) { failures.Add(error); }
+        try { await Task.WhenAll(tasks.Values.ToArray()); } catch (Exception error) { failures.Add(error); }
+        foreach (var resource in new IDisposable?[] { terminals, files, microphone, display, applications })
+            try { resource?.Dispose(); } catch (Exception error) { failures.Add(error); }
+        CryptographicOperations.ZeroMemory(secret);
+        if (failures.Count != 0) throw new AggregateException("Some host resources could not be restored.", failures);
     }
 
     private sealed class Session(WorkspaceServer server, Guid id, TcpClient client)
@@ -195,8 +195,9 @@ public sealed class WorkspaceServer : IAsyncDisposable
             {
                 Close();
                 writer?.GetAwaiter().GetResult();
-                server.terminals.Detach(id); DiscardUploads();
-                server.microphone?.Disconnected(id); server.display?.Disconnected(id); server.applications?.Disconnected(id);
+                foreach (var cleanup in new Action[] { () => server.terminals.Detach(id), DiscardUploads,
+                    () => server.microphone?.Disconnected(id), () => server.display?.Disconnected(id), () => server.applications?.Disconnected(id) })
+                    try { cleanup(); } catch (Exception error) { server.SessionError?.Invoke(error.Message); }
                 server.sessions.TryRemove(id, out _); server.DevicesChanged?.Invoke();
             }
         }

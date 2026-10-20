@@ -9,6 +9,7 @@
 #include <fstream>
 #include <map>
 #include <algorithm>
+#include <array>
 
 using namespace winrt;
 using namespace winrt::Windows::Data::Json;
@@ -49,7 +50,14 @@ std::vector<Monitor> monitors() {
     }
     std::vector<Monitor> result; for (auto const& [_, item] : found) result.push_back(item); return result;
 }
-struct SavedHeader { uint32_t magic = 0x4E434431, paths = 0, modes = 0, path_size = sizeof(DISPLAYCONFIG_PATH_INFO), mode_size = sizeof(DISPLAYCONFIG_MODE_INFO); };
+struct SavedHeader { uint32_t magic = 0x4E434432, paths = 0, modes = 0, path_size = sizeof(DISPLAYCONFIG_PATH_INFO), mode_size = sizeof(DISPLAYCONFIG_MODE_INFO); };
+using DevicePath = std::array<wchar_t, 128>;
+DevicePath target_path(DISPLAYCONFIG_PATH_INFO const& path) {
+    DISPLAYCONFIG_TARGET_DEVICE_NAME name{};
+    name.header = { DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME, sizeof(name), path.targetInfo.adapterId, path.targetInfo.id };
+    check_win32(DisplayConfigGetDeviceInfo(&name.header));
+    DevicePath result{}; memcpy(result.data(), name.monitorDevicePath, sizeof(result)); return result;
+}
 DEVMODEW current_mode(std::wstring const& device) {
     DEVMODEW mode{}; mode.dmSize = sizeof(mode);
     if (!EnumDisplaySettingsExW(device.c_str(), ENUM_CURRENT_SETTINGS, &mode, 0)) {
@@ -97,6 +105,10 @@ NC_EXPORT wchar_t const* nocturne_displays() {
             JsonObject row; row.SetNamedValue(L"id", JsonValue::CreateStringValue(item.id));
             row.SetNamedValue(L"name", JsonValue::CreateStringValue(item.name));
             row.SetNamedValue(L"isVirtual", JsonValue::CreateBooleanValue(item.virtual_display));
+            DISPLAY_DEVICEW device{}; device.cb = sizeof(device); bool primary = false;
+            for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &device, 0); ++i)
+                if (item.id == device.DeviceName) { primary = (device.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) != 0; break; }
+            row.SetNamedValue(L"isPrimary", JsonValue::CreateBooleanValue(primary));
             result.Append(row);
         }
         result_text = result.Stringify();
@@ -108,12 +120,14 @@ NC_EXPORT int nocturne_display_save(wchar_t const* path) {
         auto value = topology(QDC_ONLY_ACTIVE_PATHS);
         require(!value.paths.empty(), L"No active display configuration could be saved.");
         SavedHeader header; header.paths = static_cast<uint32_t>(value.paths.size()); header.modes = static_cast<uint32_t>(value.modes.size());
+        std::vector<DevicePath> identities; for (auto const& item : value.paths) identities.push_back(target_path(item));
         auto temporary = std::filesystem::path(path); temporary += L".tmp";
         {
             std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
             file.write(reinterpret_cast<char*>(&header), sizeof(header));
             file.write(reinterpret_cast<char*>(value.paths.data()), value.paths.size() * sizeof(DISPLAYCONFIG_PATH_INFO));
             file.write(reinterpret_cast<char*>(value.modes.data()), value.modes.size() * sizeof(DISPLAYCONFIG_MODE_INFO));
+            file.write(reinterpret_cast<char*>(identities.data()), identities.size() * sizeof(DevicePath));
             file.flush(); require(file.good(), L"The display recovery file could not be saved.");
         }
         if (!MoveFileExW(temporary.c_str(), path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) throw_last_error();
@@ -152,12 +166,34 @@ NC_EXPORT int nocturne_display_restore(wchar_t const* path) {
         std::ifstream file(std::filesystem::path(path), std::ios::binary);
         require(file.good(), L"The display recovery file is missing.");
         SavedHeader header; file.read(reinterpret_cast<char*>(&header), sizeof(header));
-        require(file.good() && header.magic == 0x4E434431 && header.paths > 0 && header.paths <= 512 && header.modes <= 4096 &&
+        require(file.good() && header.magic == 0x4E434432 && header.paths > 0 && header.paths <= 512 && header.modes <= 4096 &&
             header.path_size == sizeof(DISPLAYCONFIG_PATH_INFO) && header.mode_size == sizeof(DISPLAYCONFIG_MODE_INFO), L"The display recovery file is invalid.");
         Topology value{ std::vector<DISPLAYCONFIG_PATH_INFO>(header.paths), std::vector<DISPLAYCONFIG_MODE_INFO>(header.modes) };
         file.read(reinterpret_cast<char*>(value.paths.data()), value.paths.size() * sizeof(DISPLAYCONFIG_PATH_INFO));
         file.read(reinterpret_cast<char*>(value.modes.data()), value.modes.size() * sizeof(DISPLAYCONFIG_MODE_INFO));
+        std::vector<DevicePath> identities(header.paths);
+        file.read(reinterpret_cast<char*>(identities.data()), identities.size() * sizeof(DevicePath));
         require(file.good() && file.peek() == EOF, L"The display recovery file is incomplete.");
+        auto available = topology(QDC_ALL_PATHS);
+        for (size_t index = 0; index < value.paths.size(); ++index) {
+            auto& saved = value.paths[index];
+            require(identities[index].back() == 0, L"The saved monitor identity is invalid.");
+            for (auto const& current : available.paths) {
+                if (!current.targetInfo.targetAvailable) continue;
+                DevicePath current_identity{};
+                try { current_identity = target_path(current); } catch (hresult_error const&) { continue; }
+                if (_wcsicmp(identities[index].data(), current_identity.data()) != 0) continue;
+                saved.sourceInfo.adapterId = current.sourceInfo.adapterId; saved.sourceInfo.id = current.sourceInfo.id;
+                saved.targetInfo.adapterId = current.targetInfo.adapterId; saved.targetInfo.id = current.targetInfo.id;
+                if (saved.sourceInfo.modeInfoIdx < value.modes.size()) {
+                    auto& mode = value.modes[saved.sourceInfo.modeInfoIdx]; mode.adapterId = current.sourceInfo.adapterId; mode.id = current.sourceInfo.id;
+                }
+                if (saved.targetInfo.modeInfoIdx < value.modes.size()) {
+                    auto& mode = value.modes[saved.targetInfo.modeInfoIdx]; mode.adapterId = current.targetInfo.adapterId; mode.id = current.targetInfo.id;
+                }
+                break;
+            }
+        }
         auto status = SetDisplayConfig(header.paths, value.paths.data(), header.modes, value.modes.data(), SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES | SDC_SAVE_TO_DATABASE);
         // Hardware may have been replaced while the app was stopped. Let Windows
         // recover the currently present monitors rather than retaining a black screen.

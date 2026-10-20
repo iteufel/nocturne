@@ -16,17 +16,36 @@ public partial class MainWindow : Window
     private bool closing;
     public MainWindow() : this(new ServerModel()) { }
     internal MainWindow(ServerModel model) { this.model = model; InitializeComponent(); DataContext = model; }
+    internal Task InitializeHostAsync() => model.RunAsync(model.InitializeAsync);
     private void Navigate(object sender, RoutedEventArgs e)
     {
         var selected = (string)((Button)sender).Tag;
-        foreach (var panel in new[] { Overview, Sharing, Devices }) panel.Visibility = panel.Name == selected ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var panel in new[] { Overview, Sharing, DisplaysPanel, RemotePanel, Devices }) panel.Visibility = panel.Name == selected ? Visibility.Visible : Visibility.Collapsed;
     }
     private async void ToggleServer(object sender, RoutedEventArgs e) => await model.RunAsync(model.Running ? model.StopAsync : model.StartAsync);
-    private async void SaveSettings(object sender, RoutedEventArgs e) => await model.RunAsync(() => { model.SaveSettings(); return Task.CompletedTask; });
+    private async void SaveSettings(object sender, RoutedEventArgs e) => await model.RunAsync(model.ApplySettingsAsync);
+    private void DiscardSettings(object sender, RoutedEventArgs e) => model.DiscardSettings();
+    private async void RefreshHardware(object sender, RoutedEventArgs e) => await model.RunAsync(model.RefreshHardwareAsync);
+    private async void RestoreDisplays(object sender, RoutedEventArgs e) => await model.RunAsync(model.RecoverDisplaysAsync);
+    private void DriverSetup(object sender, RoutedEventArgs e) => Process.Start(new ProcessStartInfo("https://github.com/VirtualDrivers/Virtual-Driver-Control/releases") { UseShellExecute = true });
+    private async void ConfigureDisplayDriver(object sender, RoutedEventArgs e) => await model.RunAsync(async () =>
+    {
+        await model.StopAsync();
+        var script = System.IO.Path.Combine(AppContext.BaseDirectory, "configure-windows-display.ps1");
+        if (!System.IO.File.Exists(script)) throw new System.IO.IOException("The display setup helper is missing. Install the complete Windows package.");
+        using var process = Process.Start(new ProcessStartInfo("powershell.exe")
+        {
+            UseShellExecute = true, Verb = "runas", ArgumentList = { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
+                "-UserSid", System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value }
+        }) ?? throw new System.IO.IOException("Display setup could not start.");
+        await process.WaitForExitAsync();
+        if (process.ExitCode != 0) throw new System.IO.IOException("Display setup did not complete. Install the driver and retry.");
+        await model.RefreshHardwareAsync();
+    });
     private void ChooseFolder(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog { Title = "Choose the folder to share", Multiselect = false };
-        if (dialog.ShowDialog(this) == true) { model.SharedFolder = dialog.FolderName; DataContext = null; DataContext = model; }
+        if (dialog.ShowDialog(this) == true) model.SharedFolder = dialog.FolderName;
     }
     private async void RemoveDevice(object sender, RoutedEventArgs e)
     {
@@ -36,8 +55,9 @@ public partial class MainWindow : Window
     }
     private async void OpenLog(object sender, RoutedEventArgs e) => await model.RunAsync(() =>
     {
-        if (!System.IO.File.Exists(model.LogPath)) throw new System.IO.IOException("Start the server once to create its log.");
-        Process.Start(new ProcessStartInfo("notepad.exe") { ArgumentList = { model.LogPath }, UseShellExecute = false });
+        var path = ((Button)sender).Tag is string value && value == "engine" ? model.EngineLogPath : model.LogPath;
+        if (!System.IO.File.Exists(path)) throw new System.IO.IOException("Start the server once to create its log.");
+        Process.Start(new ProcessStartInfo("notepad.exe") { ArgumentList = { path }, UseShellExecute = false });
         return Task.CompletedTask;
     });
 
@@ -48,7 +68,7 @@ public partial class MainWindow : Window
         var window = new Window { Title = "Pair a device", Owner = this, Width = 510, Height = 680, MinWidth = 460, MinHeight = 620, WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize };
         var content = new StackPanel { Margin = new Thickness(30) };
         content.Children.Add(new TextBlock { Text = "Bring your workspace along.", FontFamily = new FontFamily("Bahnschrift"), FontSize = 25, Margin = new Thickness(0, 0, 0, 10) });
-        content.Children.Add(new TextBlock { Text = "In Nocturne on iPhone or iPad, choose Add computer → Scan QR code.", Margin = new Thickness(0, 0, 0, 18) });
+        content.Children.Add(new TextBlock { Text = "In Nocturne on iPhone or iPad, choose Add host → Scan QR code.", Margin = new Thickness(0, 0, 0, 18) });
         var address = new ComboBox { ItemsSource = addresses, SelectedIndex = 0, Margin = new Thickness(0, 0, 0, 18), Padding = new Thickness(8), Foreground = Brushes.Black };
         System.Windows.Automation.AutomationProperties.SetName(address, "PC network address");
         content.Children.Add(address);

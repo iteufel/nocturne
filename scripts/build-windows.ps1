@@ -21,8 +21,10 @@ if (-not $SkipTests) {
     & $Dotnet test (Join-Path $root 'Windows/Nocturne.Host.Tests/Nocturne.Host.Tests.csproj') -c Release -p:RestoreLockedMode=true --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Windows host tests failed.' }
     if ($IsWindows) {
+        $env:NOCTURNE_WINDOWS_TEST_ARTIFACTS = Join-Path $root ".build/WindowsTests-$Architecture"
         & $Dotnet test (Join-Path $root 'Windows/Nocturne.Server.Tests/Nocturne.Server.Tests.csproj') -c Release -p:RestoreLockedMode=true "-p:NativeArchitecture=$Architecture" --nologo
         if ($LASTEXITCODE -ne 0) { throw 'Windows application startup tests failed.' }
+        Remove-Item Env:NOCTURNE_WINDOWS_TEST_ARTIFACTS
     }
 }
 $release = Join-Path $root '.build/WindowsRelease'
@@ -36,6 +38,7 @@ foreach ($file in @('LICENSE', 'THIRD_PARTY_NOTICES.md')) { Copy-Item (Join-Path
 Copy-Item (Join-Path $root 'docs/WINDOWS.md') (Join-Path $output 'README.md')
 Copy-Item (Join-Path $root 'Windows/engine.lock.json') $output
 Copy-Item (Join-Path $PSScriptRoot 'configure-windows-firewall.ps1') $output
+Copy-Item (Join-Path $PSScriptRoot 'configure-windows-display.ps1') $output
 $notices = Join-Path $output 'licenses'
 New-Item $notices -ItemType Directory -Force | Out-Null
 $assets = Get-Content (Join-Path $root 'Windows/Nocturne.Server/obj/project.assets.json') -Raw | ConvertFrom-Json

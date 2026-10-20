@@ -22,4 +22,4 @@ For redistribution, provide this repository plus all corresponding pinned upstre
 
 ## Remote transport
 
-The Rust broker and native tunnel use [iroh](https://github.com/n0-computer/iroh) and iroh-relay (MIT OR Apache-2.0), with netwatch, Tokio, rustls, and their dependencies. Exact versions and checksums are recorded in `remote/Cargo.lock`. The transport is statically linked into the apps; the broker is a separate self-hosted executable.
+The Rust broker and native tunnel use [iroh](https://github.com/n0-computer/iroh) and iroh-relay (MIT OR Apache-2.0), with netwatch, Tokio, rustls, and their dependencies. Exact versions and checksums are recorded in `remote/Cargo.lock`. Apple apps statically link the transport; Windows packages include `nocturne_remote.dll`, built from the same source and lock file. The broker is a separate self-hosted executable. Windows capture, codec, and audio modules use operating-system APIs rather than redistributing a separate video codec. Virtual display and audio drivers are installed separately from their publishers and are not bundled by Nocturne.

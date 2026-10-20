@@ -2,10 +2,10 @@
 
 Stream your Mac or Windows PC to iPhone and iPad, with a native terminal and file transfer alongside your desktop.
 
-- Stream your desktop or open individual Mac app windows on iPad.
+- Stream your desktop or open individual app windows on iPad.
 - Use touch, a keyboard, a mouse, or a game controller.
 - Keep terminal sessions running on your computer and access shared files in Apple’s Files app.
-- Connect locally or enable remote access on the Mac host for other networks.
+- Connect locally or enable remote access for other networks.
 - Pair several computers and switch between them.
 
 Requires iOS/iPadOS 17+ and either an Apple Silicon Mac running macOS 14+ or a supported Windows PC. Nocturne Server includes its streaming engine; no separate Sunshine installation is needed.
@@ -17,7 +17,7 @@ Requires iOS/iPadOS 17+ and either an Apple Silicon Mac running macOS 14+ or a s
 3. In Nocturne on iPhone or iPad, choose **Add host → Scan QR code** and scan the code shown by **Pair a device** on the Mac.
 4. Choose **Desktop** to stream, or **Apps** to open a Mac app window. Enable optional terminal and file access in the Mac app’s **Sharing** settings.
 
-For the Windows host, follow the [Windows build and setup guide](docs/WINDOWS.md) for x64/ARM64 packages, QR pairing, PowerShell tabs, and file sharing. Choose a fixed resolution in the client. App windows, remote access, headless displays, and client microphone forwarding require the Mac host.
+For the Windows host, follow the [Windows build and setup guide](docs/WINDOWS.md) for x64/ARM64 packages, app windows, remote access, PowerShell, files, and microphone forwarding. Headless monitors and microphone input use compatible Windows virtual-device drivers.
 
 For the iPhone/iPad app, see the [build and TestFlight guide](docs/RELEASING.md) or [build from source](docs/DEVELOPMENT.md).
 

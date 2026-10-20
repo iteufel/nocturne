@@ -7,6 +7,11 @@
 #include <mferror.h>
 #include <mftransform.h>
 #include <wmcodecdsp.h>
+#include <algorithm>
+#include <thread>
+#include <future>
+#include <dxgi.h>
+#include <winrt/Windows.Graphics.Capture.h>
 
 static void decode(nocturne::EncodedFrame const& frame) {
     using namespace winrt;
@@ -57,9 +62,78 @@ static void decode(nocturne::EncodedFrame const& frame) {
         com_ptr<IMFMediaBuffer> decoded; check_hresult(output->ConvertToContiguousBuffer(decoded.put()));
         DWORD length = 0; check_hresult(decoded->GetCurrentLength(&length));
         nocturne::require(length >= 640 * 480 * 3 / 2, L"The decoded image is incomplete.");
+        BYTE* image = nullptr; check_hresult(decoded->Lock(&image, nullptr, nullptr));
+        auto center = image[240 * 640 + 320];
+        auto u = image[640 * 480 + 120 * 640 + 320], v = image[640 * 480 + 120 * 640 + 321];
+        check_hresult(decoded->Unlock());
+        nocturne::require(center >= 30 && center < 115 && u < 150 && v > 150, L"The decoded window pixel is not red; capture may include the occluding green window.");
         return;
     }
     nocturne::require(false, L"The H.264 decoder did not produce an image.");
+}
+
+class TestWindow {
+    std::thread thread;
+    HWND window = nullptr;
+    static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+        if (message == WM_NCCREATE) {
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(reinterpret_cast<CREATESTRUCTW*>(lparam)->lpCreateParams));
+        }
+        if (message == WM_PAINT) {
+            PAINTSTRUCT paint{}; auto dc = BeginPaint(window, &paint);
+            auto brush = CreateSolidBrush(static_cast<COLORREF>(GetWindowLongPtrW(window, GWLP_USERDATA)));
+            FillRect(dc, &paint.rcPaint, brush); DeleteObject(brush); EndPaint(window, &paint); return 0;
+        }
+        if (message == WM_DESTROY) { PostQuitMessage(0); return 0; }
+        return DefWindowProcW(window, message, wparam, lparam);
+    }
+public:
+    explicit TestWindow(COLORREF color) {
+        std::promise<HWND> ready; auto result = ready.get_future();
+        thread = std::thread([color, &ready] {
+            WNDCLASSW cls{}; cls.lpfnWndProc = procedure; cls.hInstance = GetModuleHandleW(nullptr); cls.lpszClassName = L"NocturneNativeCaptureTest";
+            RegisterClassW(&cls);
+            auto handle = CreateWindowExW(WS_EX_TOOLWINDOW, cls.lpszClassName, L"Nocturne capture verification", WS_OVERLAPPEDWINDOW,
+                80, 80, 700, 540, nullptr, nullptr, cls.hInstance, reinterpret_cast<void*>(static_cast<uintptr_t>(color)));
+            if (handle) { ShowWindow(handle, SW_SHOWNOACTIVATE); UpdateWindow(handle); }
+            ready.set_value(handle);
+            if (!handle) return;
+            MSG message{}; while (GetMessageW(&message, nullptr, 0, 0) > 0) { TranslateMessage(&message); DispatchMessageW(&message); }
+        });
+        window = result.get();
+        if (!window) { thread.join(); throw winrt::hresult_error(E_FAIL, L"The test window could not be created."); }
+    }
+    ~TestWindow() { if (window) PostMessageW(window, WM_CLOSE, 0, 0); if (thread.joinable()) thread.join(); }
+    HWND handle() const { return window; }
+};
+
+static void capture_window() {
+    DWORD session = 0; ProcessIdToSessionId(GetCurrentProcessId(), &session);
+    if (session != WTSGetActiveConsoleSessionId() || !winrt::Windows::Graphics::Capture::GraphicsCaptureSession::IsSupported()) {
+        std::cout << "Window capture skipped: the runner has no supported interactive console.\n"; return;
+    }
+    TestWindow red(RGB(220, 0, 0)), green(RGB(0, 220, 0));
+    SetWindowPos(green.handle(), HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    void* capture = nocturne_capture_open(red.handle(), 640, 480, 30);
+    if (!capture && (nocturne::last_hresult == DXGI_ERROR_UNSUPPORTED || nocturne::last_hresult == E_NOTIMPL)) {
+        std::cout << "Window capture skipped: the runner's display driver does not support Graphics Capture.\n"; return;
+    }
+    nocturne::require(capture != nullptr, nocturne_host_error());
+    try {
+        std::vector<uint8_t> bytes(4194304), header(8192); bool received = false;
+        for (int attempt = 0; attempt < 24; ++attempt) {
+            int length = 0, header_length = 0; double timestamp = 0;
+            nocturne::require(nocturne_capture_read(capture, bytes.data(), static_cast<int>(bytes.size()), &length,
+                header.data(), static_cast<int>(header.size()), &header_length, &timestamp) > 0, nocturne_host_error());
+            if (length == 0) continue;
+            decode({ std::vector<uint8_t>(bytes.begin(), bytes.begin() + length), std::vector<uint8_t>(header.begin(), header.begin() + header_length), timestamp });
+            received = true; break;
+        }
+        nocturne::require(received, L"The app-window capture did not produce a video frame.");
+        std::cout << "An occluded window was captured and decoded without including the overlapping window.\n";
+    }
+    catch (...) { nocturne_capture_close(capture); throw; }
+    nocturne_capture_close(capture);
 }
 
 int main() {
@@ -70,20 +144,24 @@ int main() {
         nocturne::Encoder encoder(640, 480, 30);
         std::vector<uint8_t> pixels(640 * 480 * 4, 0);
         for (size_t i = 0; i < pixels.size(); i += 4) { pixels[i + 2] = 220; pixels[i + 3] = 255; }
-        bool encoded = false;
-        for (int index = 0; index < 20; ++index) {
+        bool encoded = false; int frames = 0;
+        for (int index = 0; index < 30; ++index) {
             auto frame = encoder.encode(pixels.data(), 640, 480, 640 * 4, index * (10000000 / 30));
             if (frame.data.empty()) continue;
             nocturne::require(frame.data.size() <= 4194304 && !frame.header.empty() && frame.header.size() <= 8192, L"Invalid H.264 output.");
-            decode(frame);
-            std::ofstream fixture("native-h264-frame.bin", std::ios::binary | std::ios::trunc);
-            auto header_size = static_cast<uint32_t>(frame.header.size());
-            fixture.write(reinterpret_cast<char*>(&header_size), sizeof(header_size));
-            fixture.write(reinterpret_cast<char*>(frame.header.data()), frame.header.size());
-            fixture.write(reinterpret_cast<char*>(frame.data.data()), frame.data.size());
-            encoded = true; break;
+            if (!encoded) {
+                decode(frame);
+                std::ofstream fixture("native-h264-frame.bin", std::ios::binary | std::ios::trunc);
+                auto header_size = static_cast<uint32_t>(frame.header.size());
+                fixture.write(reinterpret_cast<char*>(&header_size), sizeof(header_size));
+                fixture.write(reinterpret_cast<char*>(frame.header.data()), frame.header.size());
+                fixture.write(reinterpret_cast<char*>(frame.data.data()), frame.data.size());
+            }
+            encoded = true; frames++;
         }
         nocturne::require(encoded, L"The H.264 encoder did not produce a frame.");
+        nocturne::require(frames >= 15, L"The H.264 encoder stalled during sustained capture.");
+        capture_window();
         // Hosted Windows runners may lack an interactive display/audio session.
         // Device availability is checked by the application when enabling a feature.
         std::cout << "Native H.264 encode/decode passed. Displays available: " << (nocturne_displays() != nullptr)

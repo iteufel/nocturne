@@ -194,7 +194,7 @@ struct Capture {
         D3D11_MAPPED_SUBRESOURCE mapped{}; check_hresult(context->Map(staging.get(), 0, D3D11_MAP_READ, 0, &mapped));
         EncodedFrame result;
         try { result = encoder.encode(static_cast<uint8_t*>(mapped.pData), size.Width, size.Height,
-            static_cast<int>(mapped.RowPitch), frame.SystemRelativeTime().Value().count()); }
+            static_cast<int>(mapped.RowPitch), frame.SystemRelativeTime().count()); }
         catch (...) { context->Unmap(staging.get(), 0); throw; }
         context->Unmap(staging.get(), 0); return result;
     }

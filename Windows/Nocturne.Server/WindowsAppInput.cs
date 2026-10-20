@@ -57,8 +57,8 @@ internal sealed class WindowsAppInput(nint window)
     }
     public void Release()
     {
-        foreach (var key in keys.ToArray()) Synchronize(key, false);
-        foreach (var button in buttons) Mouse(ButtonFlag(button, false));
+        foreach (var key in keys.ToArray()) try { Synchronize(key, false); } catch (IOException) { }
+        foreach (var button in buttons) try { Mouse(ButtonFlag(button, false)); } catch (IOException) { }
         buttons.Clear();
     }
     private static uint ButtonFlag(int button, bool down) => (button, down) switch

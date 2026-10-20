@@ -20,6 +20,8 @@ public sealed class HostLifecycle(HostSettings saved, ILoginStartup login, Actio
 {
     private readonly SemaphoreSlim gate = new(1);
     private readonly CancellationTokenSource lifetime = new();
+    private readonly object disposalGate = new();
+    private Task? disposal;
     public HostSettings Settings { get; private set; } = saved with { LaunchAtLogin = login.Enabled };
     public IRunningHost? Runtime { get; private set; }
     public bool Running => Runtime != null;
@@ -54,5 +56,6 @@ public sealed class HostLifecycle(HostSettings saved, ILoginStartup login, Actio
         try { var previous = Runtime; Runtime = null; if (previous != null) await previous.DisposeAsync(); }
         finally { gate.Release(); }
     }
-    public async ValueTask DisposeAsync() { lifetime.Cancel(); await StopAsync(); lifetime.Dispose(); }
+    public ValueTask DisposeAsync() { lock (disposalGate) return new(disposal ??= CloseAsync()); }
+    private async Task CloseAsync() { lifetime.Cancel(); try { await StopAsync(); } finally { lifetime.Dispose(); } }
 }

@@ -30,7 +30,8 @@ internal sealed class WindowsApplications : IAppWindowHost
             foreach (var root in new[] { Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu) })
             {
                 if (!System.IO.Directory.Exists(root)) continue;
-                foreach (var file in System.IO.Directory.EnumerateFiles(root, "*.lnk", SearchOption.AllDirectories))
+                foreach (var file in System.IO.Directory.EnumerateFiles(root, "*.lnk", new EnumerationOptions
+                { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint, MaxRecursionDepth = 16 }))
                 {
                     object? link = null;
                     try
@@ -39,6 +40,7 @@ internal sealed class WindowsApplications : IAppWindowHost
                         string path = ((dynamic)link).TargetPath;
                         if (!Path.IsPathFullyQualified(path) || !path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(path)) continue;
                         path = Path.GetFullPath(path);
+                        if (string.Equals(path, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) continue;
                         catalog.TryAdd(path, new(path, Path.GetFileNameWithoutExtension(file), path, ((dynamic)link).Arguments, ((dynamic)link).WorkingDirectory));
                     }
                     catch (Exception ex) when (ex is COMException or IOException or UnauthorizedAccessException) { }
@@ -47,18 +49,18 @@ internal sealed class WindowsApplications : IAppWindowHost
             }
             shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!);
             dynamic folder = ((dynamic)shell!).NameSpace("shell:AppsFolder");
-            foreach (dynamic item in folder.Items())
+            if (folder != null) foreach (dynamic item in folder.Items())
             {
                 try
                 {
                     string? id = item.ExtendedProperty("System.AppUserModel.ID");
-                    if (string.IsNullOrEmpty(id) || id.Length > 512 || id.Any(char.IsControl)) continue;
+                    if (string.IsNullOrEmpty(id) || !id.Contains('!') || id.Length > 512 || id.Any(char.IsControl)) continue;
                     string name = item.Name;
                     catalog.TryAdd("app:" + id, new("app:" + id, name, "", AppUserModelID: id));
                 }
                 finally { Marshal.ReleaseComObject(item); }
             }
-            Marshal.ReleaseComObject(folder);
+            if (folder != null) Marshal.ReleaseComObject(folder);
         }
         catch (Exception ex) when (ex is COMException or IOException or UnauthorizedAccessException) { }
         finally { if (script != null) Marshal.ReleaseComObject(script); if (shell != null) Marshal.ReleaseComObject(shell); }
@@ -68,7 +70,7 @@ internal sealed class WindowsApplications : IAppWindowHost
             {
                 using var process = Process.GetProcessById((int)window.Process);
                 var file = process.MainModule?.FileName;
-                if (file == null || !File.Exists(file)) continue;
+                if (file == null || !File.Exists(file) || string.Equals(file, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) continue;
                 catalog.TryAdd(file, new(file, process.MainModule?.FileVersionInfo.FileDescription ?? process.ProcessName, file));
             }
             catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or ArgumentException) { }
@@ -78,15 +80,32 @@ internal sealed class WindowsApplications : IAppWindowHost
     private Application Find(string id) { Scan(); return catalog.GetValueOrDefault(id) ?? throw new IOException("This app is no longer installed. Refresh Apps on your device."); }
     private string? Owner(nint window, uint pid)
     {
+        string? AppIdentity(uint processId)
+        {
+            try
+            {
+                using var target = Process.GetProcessById((int)processId);
+                var count = 0u;
+                if (Native.GetApplicationUserModelId(target.Handle, ref count, null) != 122 || count is 0 or >= 1024) return null;
+                var text = new StringBuilder((int)count);
+                return Native.GetApplicationUserModelId(target.Handle, ref count, text) == 0 && catalog.ContainsKey("app:" + text) ? "app:" + text : null;
+            }
+            catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or ArgumentException) { return null; }
+        }
+        var identity = AppIdentity(pid);
+        if (identity != null) return identity;
+        // Older UWP apps put their content in a child owned by another process.
+        // Associate the frame with that app rather than ApplicationFrameHost.exe.
+        Native.EnumChildWindows(window, (child, _) =>
+        {
+            Native.GetWindowThreadProcessId(child, out var owner);
+            if (owner != pid) identity = AppIdentity(owner);
+            return identity == null;
+        }, 0);
+        if (identity != null) return identity;
         try
         {
             using var process = Process.GetProcessById((int)pid);
-            var count = 0u;
-            if (Native.GetApplicationUserModelId(process.Handle, ref count, null) == 122 && count is > 0 and < 1024)
-            {
-                var value = new StringBuilder((int)count);
-                if (Native.GetApplicationUserModelId(process.Handle, ref count, value) == 0 && catalog.ContainsKey("app:" + value)) return "app:" + value;
-            }
             var executable = process.MainModule?.FileName;
             if (executable != null && catalog.TryGetValue(executable, out var app)) return app.Id;
         }
@@ -103,7 +122,23 @@ internal sealed class WindowsApplications : IAppWindowHost
     }
     public byte[] Icon(string application)
     {
-        var app = Find(application); var info = new Native.FileInfo();
+        var app = Find(application);
+        if (app.AppUserModelID != null)
+        {
+            var iid = typeof(Native.ShellImageFactory).GUID;
+            var result = Native.SHCreateItemFromParsingName("shell:AppsFolder\\" + app.AppUserModelID, 0, ref iid, out var factory);
+            if (result >= 0)
+            {
+                nint bitmap = 0;
+                try
+                {
+                    factory.GetImage(new() { Width = 96, Height = 96 }, 4, out bitmap);
+                    return EncodeIcon(Imaging.CreateBitmapSourceFromHBitmap(bitmap, 0, System.Windows.Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(96, 96)));
+                }
+                finally { if (bitmap != 0) Native.DeleteObject(bitmap); Marshal.ReleaseComObject(factory); }
+            }
+        }
+        var info = new Native.FileInfo();
         var path = app.Executable.Length == 0 ? "application.exe" : app.Executable;
         var flags = 0x100u | (app.Executable.Length == 0 ? 0x10u : 0);
         if (Native.SHGetFileInfo(path, 0x80, ref info, (uint)Marshal.SizeOf<Native.FileInfo>(), flags) == 0 || info.Icon == 0)
@@ -111,16 +146,21 @@ internal sealed class WindowsApplications : IAppWindowHost
         try
         {
             var bitmap = Imaging.CreateBitmapSourceFromHIcon(info.Icon, System.Windows.Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(96, 96));
-            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-            using var stream = new MemoryStream(); encoder.Save(stream);
-            if (stream.Length > 131072) throw new IOException("The application icon is too large.");
-            return stream.ToArray();
+            return EncodeIcon(bitmap);
         }
         finally { Native.DestroyIcon(info.Icon); }
+    }
+    private static byte[] EncodeIcon(System.Windows.Media.Imaging.BitmapSource bitmap)
+    {
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = new MemoryStream(); encoder.Save(stream);
+        if (stream.Length > 131072) throw new IOException("The application icon is too large.");
+        return stream.ToArray();
     }
     public RemoteAppWindow[] Launch(string application)
     {
         var app = Find(application);
+        var existing = Windows(app.Id); if (existing.Length != 0) return existing;
         ProcessStartInfo start;
         if (app.AppUserModelID != null) start = new("explorer.exe") { UseShellExecute = false, ArgumentList = { "shell:AppsFolder\\" + app.AppUserModelID } };
         else start = new(app.Executable) { UseShellExecute = false, Arguments = app.Arguments, WorkingDirectory = app.Directory.Length == 0 ? Path.GetDirectoryName(app.Executable)! : app.Directory };
@@ -154,6 +194,7 @@ internal sealed class WindowsApplications : IAppWindowHost
     {
         internal delegate bool EnumWindow(nint window, nint context);
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool EnumWindows(EnumWindow callback, nint context);
+        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool EnumChildWindows(nint parent, EnumWindow callback, nint context);
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool IsWindowVisible(nint window);
         [DllImport("user32.dll")] internal static extern nint GetWindow(nint window, uint command);
         [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint window, out uint process);
@@ -163,6 +204,12 @@ internal sealed class WindowsApplications : IAppWindowHost
         { public nint Icon; public int Index; public uint Attributes; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string DisplayName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string TypeName; }
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)] internal static extern nint SHGetFileInfo(string path, uint attributes, ref FileInfo info, uint size, uint flags);
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool DestroyIcon(nint icon);
+        [DllImport("gdi32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool DeleteObject(nint bitmap);
+        [StructLayout(LayoutKind.Sequential)] internal struct Size { public int Width, Height; }
+        [ComImport, Guid("BCC18B79-BA16-442F-80C4-8A59C30C463B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface ShellImageFactory { void GetImage(Size size, uint flags, out nint bitmap); }
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        internal static extern int SHCreateItemFromParsingName(string path, nint bind, ref Guid iid, out ShellImageFactory factory);
     }
 }
 

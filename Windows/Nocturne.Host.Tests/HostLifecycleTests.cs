@@ -51,6 +51,15 @@ public sealed class HostLifecycleTests
         Assert.True(settings.ScreenSharing); Assert.True(settings.Terminal);
         Assert.False(settings.RemoteAccess); Assert.False(settings.Microphone); Assert.False(settings.HeadlessDisplay);
     }
+    [Fact]
+    public async Task ShutdownCanBeAwaitedMoreThanOnce()
+    {
+        var runtime = new Running();
+        var lifecycle = new HostLifecycle(new(), new Login(), _ => { }, (_, _) => Task.FromResult<IRunningHost>(runtime));
+        await lifecycle.StartAsync();
+        await Task.WhenAll(lifecycle.DisposeAsync().AsTask(), lifecycle.DisposeAsync().AsTask());
+        Assert.True(runtime.Stopped); Assert.False(lifecycle.Running);
+    }
     [Theory]
     [InlineData("https://relay.example.com", "https://relay.example.com")]
     [InlineData("http://127.0.0.1:47991/", "http://127.0.0.1:47991")]

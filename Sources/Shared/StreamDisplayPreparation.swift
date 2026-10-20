@@ -16,7 +16,7 @@ public enum StreamDisplayPreparation {
         }
         guard capabilities.contains("display") else {
             if matchesDevice {
-                throw NocturneError.remote("Choose a fixed resolution such as 1080p in Settings to stream this computer. Match device requires Headless virtual monitor in the Mac server’s display settings.")
+                throw NocturneError.remote("Choose a fixed resolution such as 1080p in Settings to stream this computer. Match device requires display control and a compatible monitor on the host.")
             }
             return nil
         }

@@ -1,140 +1,197 @@
 # Nocturne Server for Windows
 
-The Windows host is a native .NET 10 WPF application. It bundles and manages the
-Windows Sunshine executable, uses the existing Nocturne iOS client, and provides
-QR pairing, desktop streaming, persistent PowerShell terminals, file transfers,
-and individual device removal. No separate Sunshine installation or web setup
-is required.
+The native .NET 10 Windows host uses the same iPhone/iPad client and authenticated
+workspace protocol as the Mac host. It provides desktop and individual app-window
+streaming, persistent PowerShell tabs, shared files, client microphone forwarding,
+display control, and direct/relay remote access.
 
 ## Build and run
 
-Use Windows 11 or Windows 10 version 2004 (build 19041) or later, with an active,
-unlocked desktop, a connected monitor, and a GPU/driver supported by Sunshine.
-Windows on ARM has a separate ARM64 package. Build with the **.NET 10 SDK** and
-PowerShell 7:
+Use Windows 11 or Windows 10 version 2004 (build 19041) or later. The host runs as
+the signed-in Windows user. Desktop capture needs a supported GPU/driver; app
+windows also use Windows Graphics Capture and Media Foundation. Windows N editions
+need the Media Feature Pack. x64 and ARM64 have separate native packages.
+
+Install the .NET 10 SDK, PowerShell 7, CMake, Visual Studio's Desktop development
+with C++ workload and Windows SDK, and Rust 1.99.1. Then run:
 
 ```powershell
-pwsh -File scripts/build-windows.ps1
+pwsh -File scripts/build-windows.ps1 -Architecture x64
 # Windows on ARM:
 pwsh -File scripts/build-windows.ps1 -Architecture arm64
 ```
 
-The script verifies the pinned upstream download, runs the host tests, publishes
-a self-contained application, and produces the requested architecture:
+The script downloads the checksum-pinned Sunshine runtime, builds the native media
+and Rust QUIC libraries, runs native and .NET tests, and packages:
 
 ```text
 .build/WindowsRelease/Nocturne-Server-Windows-x64.zip
 .build/WindowsRelease/Nocturne-Server-Windows-arm64.zip
 ```
 
-These are unsigned development packages; no Windows release is uploaded
-automatically. Windows CI saves both architectures as build artifacts. The .NET
-runtime is included, so the destination PC needs no SDK or runtime installation.
-Extract the entire ZIP into a local folder before opening **Nocturne Server.exe**.
-Keep the `engine` folder next to the executable. `dotnet run` alone does not stage
-the bundled engine; use the packaging script for a runnable application.
+These are unsigned development packages. Both native architectures are tested in
+Windows CI and saved as download artifacts. The .NET runtime is included. Extract
+the whole package and open **Nocturne Server.exe**; launching only the executable
+without its libraries and `engine` folder is unsupported.
 
-1. Open the Windows app and select **Start server**. Stop another Sunshine or
-   GameStream host first if one is running.
-2. Allow the applications through Windows Firewall on your **private** home
-   network. If needed, explicitly run the packaged
-   `configure-windows-firewall.ps1` from an elevated PowerShell. Its rules are
-   limited to the private profile and local subnet; local administration on TCP
-   47990 is excluded. Pass `-Remove` to remove those rules.
-3. Choose **Pair a device**. Select the PC address on the same network as your
-   iPhone/iPad, then scan its QR code from **Add computer → Scan QR code** in
-   Nocturne. Each code enrolls one device and expires after five minutes.
-4. On iOS, choose **Settings → Resolution → 1080p** (or another fixed resolution),
-   then open **Desktop**. Windows streams an existing monitor. The default
-   **Match device** setting requires the Mac host's virtual display feature.
-5. To enable PowerShell or files, stop the server, open **Sharing**, enable the
-   feature, select **Save settings**, start the server, and reconnect the client.
-   Both features are disabled by default.
+On macOS, .NET projects can be cross-compiled for build checks. Complete packaging
+also requires native Windows libraries built for the selected architecture; pass
+`-NativeDirectory` to use those prebuilt libraries.
 
-Closing the app stops streaming, terminal processes, and transfers. The host runs
-as the signed-in desktop user; it installs no Windows service and does not run at
-the lock screen, bypass UAC, or log in automatically. Windows keyboard/mouse and
-controller behavior depends on the bundled engine and installed input drivers;
-this app does not install drivers or activate a driver license. See the
-[pinned Sunshine release](https://github.com/LizardByte/Sunshine/releases/tag/v2026.1018.5342)
-for driver requirements. Headless/virtual monitors, monitor power control,
-and client microphone forwarding are not implemented by the Windows host.
+## Sharing and startup
+
+Enabled services start when Nocturne opens. Screen sharing and app windows are
+enabled initially; PowerShell, files, microphone, remote access, and login startup
+are optional. Use **Sharing** to change permissions and the shared local folder.
+Changes remain a draft until **Apply changes**. Applying restarts enabled services;
+reconnect clients afterward. **Discard** restores the saved settings. Disabling
+all sharing services leaves the host stopped.
+
+Enable **Launch Nocturne at Windows login** to register the app for the current
+Windows account. Nocturne does not install a background system service. Closing
+the app stops its workspace, engine, shells, captures, transfers, and audio output.
+The Windows secure desktop, UAC prompts, and signing into another Windows session
+remain controlled by Windows; this app does not bypass them.
+
+Allow the applications through Windows Firewall on the private home network. The
+packaged `configure-windows-firewall.ps1` can add narrowly scoped rules from an
+elevated PowerShell. Rules exclude engine administration on TCP 47990 and are
+limited to the private profile/local subnet; use `-Remove` to undo them.
+
+## Pairing and remote access
+
+Choose **Pair a device**, select the PC's local address, then scan its QR code from
+**Add host → Scan QR code** on iPhone/iPad. Each code enrolls one device and expires
+after five minutes. Nearby streaming discovery is provided by the bundled engine.
+
+In **Remote access**, enable the feature and choose an HTTPS broker. After
+applying, wait for **Ready**, then scan a new pairing code to save remote routing
+information on the client. The default broker is `https://nocturne.alkal.de`.
+Existing local pairings continue to work. If the broker is unavailable, local
+workspace services remain available while remote startup retries.
+
+Remote access uses the same Rust/iroh implementation as the Mac host. It prefers
+direct peer-to-peer connections and falls back to an encrypted relay. Only the
+workspace TLS port is reachable until the host verifies a paired device's
+certificate proof. Engine administration is never forwarded. Device removal also
+revokes that identity's QUIC peers.
+
+## App windows
+
+Enable **Screen sharing and app windows**, reconnect, and open **Apps** on iPad.
+The catalog includes Start-menu apps, packaged Windows apps, and running desktop
+apps. Launch an app or choose an existing window. Each stream captures that window
+independently of the desktop and other overlapping windows.
+
+Windows Graphics Capture frames are converted and encoded as H.264 using Media
+Foundation. Video uses bounded fragments with one send in flight. Resizing changes
+the real PC window and its encoded size. Keyboard shortcuts, text, pointer buttons,
+dragging, and scrolling are forwarded to the selected window; Command shortcuts
+map to Control on Windows. Windows may prevent control of an elevated application.
+
+A window can be leased by one authenticated connection. Limits match the Mac host:
+eight windows per host, four per device, and a 20-second heartbeat timeout. Closing
+a scene, revoking access, disconnecting, or stopping Nocturne releases capture and
+any injected held input. The streamed application remains open on the PC.
+
+## Displays and headless mode
+
+**Displays** chooses a connected monitor or a compatible virtual monitor. A fixed
+client resolution works when that monitor supports the requested mode. **Match
+device** follows the client's pixel size and therefore normally needs a virtual
+monitor with matching modes.
+
+For headless streaming:
+
+1. Install a signed virtual display driver using the upstream
+   [Virtual Driver Control](https://github.com/VirtualDrivers/Virtual-Driver-Control/releases).
+   Use the driver for the PC's architecture; x64 kernel drivers do not work on ARM64.
+2. Choose **Enable automatic virtual sizes…** in Nocturne's Displays settings.
+   The packaged setup helper requests administrator approval, preserves the
+   previous driver configuration path, and creates a Nocturne-managed configuration
+   in `%PROGRAMDATA%\Nocturne\VirtualDisplay`. It grants the selected Windows user
+   permission to maintain that configuration. Restart the virtual driver or PC.
+3. Enable **Headless virtual monitor**, apply changes, and reconnect. Nocturne adds
+   bounded resolution entries as the client rotates or resizes, then asks the driver
+   to reload before preparing video. An existing manually configured virtual driver
+   can also be used without automatic configuration.
+
+**Turn off physical displays while streaming** requires headless mode. Nocturne
+saves the previous display topology before changing it and restores it on release,
+disconnect, timeout, or stop. Monitor identities are retained across virtual-driver
+reloads. A separate helper watches the application process and attempts recovery
+if it exits unexpectedly; startup also recovers any saved topology.
+
+**Stop and restore displays** stops sharing and performs local recovery. Recovery
+state is retained if Windows cannot restore it. Configuration helpers do not
+install an unsigned driver or disable Windows driver-signature enforcement.
+
+## Microphone
+
+Install a compatible virtual audio driver, then choose its **playback** endpoint
+under **Sharing → Virtual microphone playback endpoint**. Enable **Client
+microphone**, apply, and reconnect. On the PC, select the driver's corresponding
+**recording** endpoint in Discord or the target app. A normal speaker/headphone
+endpoint does not create a microphone input. ARM64 requires an ARM64-compatible
+virtual audio driver.
+
+Open the stream's microphone control to unmute. The client starts muted on every
+stream. Audio is 48 kHz, mono, signed 16-bit PCM in 20 ms frames; WASAPI converts it
+for the selected endpoint. Only one authenticated socket owns the microphone,
+replayed/out-of-order frames are rejected, and a two-second stall closes the output.
+Disconnect, permission revocation, and stop also reset audio so it cannot linger.
 
 ## Security and lifetime
 
-Workspace protocol 4 uses the same TLS 1.2
-`TLS_PSK_WITH_AES_128_GCM_SHA256` suite as the Swift client. Bouncy Castle retains
-the session exporter during `NotifyHandshakeComplete`, with Apple's empty-context
-semantics. Certificate-status extensions are omitted for this certificate-free
-PSK handshake. The client signs a fresh
-nonce bound to that exporter with its streaming RSA certificate. The host verifies
-the proof and requires either a saved device or a valid, single-use enrollment
-token. The QR key alone cannot enroll a device.
+Workspace protocol 4 uses TLS 1.2 `TLS_PSK_WITH_AES_128_GCM_SHA256`. An RSA certificate
+proof is bound to the handshake's TLS exporter and a fresh nonce. The host requires
+a saved device or a valid single-use enrollment token; the QR key alone cannot
+enroll another device. This protocol is verified against the real Swift client.
 
-Private state lives in `%LOCALAPPDATA%\Nocturne`. Directory ACLs grant access to
-the current user, Administrators, and SYSTEM. The transport secret is protected
-with Windows DPAPI for the current user. It is not passed as a process argument,
-advertised through discovery, or logged. Engine administration uses a random
-password on each start, a salted password hash on disk, an exactly pinned local
-certificate, and no redirects or proxy. The app uses the standard streaming ports
-and TCP 48555 for the workspace. Pairing uses the address in the QR code; nearby
-streaming discovery is provided by the bundled engine.
+Private state lives in `%LOCALAPPDATA%\Nocturne`, restricted to the user,
+Administrators, and SYSTEM. Workspace and remote identity keys are separate and
+protected with Windows DPAPI. Secrets are not command arguments or discovery data.
+Engine administration uses a random password, salted hash, pinned local certificate,
+no proxy, and no redirects. Native libraries load from the app or system directory.
 
-Windows Job Objects are assigned before the suspended engine/shell process is
-resumed. Closing the job kills its process tree, including when the GUI exits
-unexpectedly. Terminal input/output use separate ConPTY workers. Up to eight tabs
-are retained per device, with 512 KiB of scrollback per tab. Losing a workspace
-connection detaches its subscriptions; reconnecting replays output by byte offset
-without launching replacement shells. Stop, device removal, and terminal
-permission revocation close the affected shells.
+Windows Job Objects own the suspended engine/shell process before it resumes, so
+an unexpected GUI exit terminates their process trees. Up to eight PowerShell tabs
+per device retain 512 KiB of replayable history. Disconnect detaches tabs; reconnect
+replays output by offset. Stop, permission revocation, and device removal close them.
 
-Shared paths reject traversal, alternate data streams, DOS device names,
-symlinks, and junctions. Directory handles deny write/delete sharing while
-operations are in flight; each component is opened with
-`FILE_FLAG_OPEN_REPARSE_POINT` and checked through its handle. Reads never follow
-a replacement reparse point. Uploads are bounded, staged under a reserved
-hidden-from-client name, and moved atomically without replacement. Disconnect,
-permission revocation, and cancellation discard unfinished uploads. The folder
-must be on a local drive and its path must not traverse a junction.
+Shared paths reject traversal, alternate data streams, reserved names, symlinks,
+and junctions. In-flight directory guards prevent replacement races. Uploads are
+bounded, staged privately, and published atomically without overwriting files.
+Cancellation and disconnect discard unfinished uploads.
 
-Removing a device persists a block before closing its connections, terminals,
-and transfers. It then disables and removes every matching engine certificate.
-Interrupted removals remain blocked and are retried at the next server start.
-Other devices retain their connections and certificates.
+Removing a device blocks workspace access before closing its resources and revoking
+every matching engine certificate. Saved certificates can also be removed while
+stopped. Interrupted removals remain blocked and retry on the next start.
 
 ## Verification
 
 ```powershell
+pwsh -File scripts/build-windows.ps1 -Architecture x64
+pwsh -File scripts/build-windows.ps1 -Architecture arm64
+# Portable host checks and compile-only UI check:
 dotnet test Windows/Nocturne.Host.Tests -c Release -p:RestoreLockedMode=true
-dotnet test Windows/Nocturne.Server.Tests -c Release -p:RestoreLockedMode=true
-dotnet build Windows/Nocturne.Server -c Release -p:RestoreLockedMode=true
+dotnet build Windows/Nocturne.Server.Tests -c Release -p:RestoreLockedMode=true
 ```
 
-Portable tests exercise real TLS sockets, exporter-bound proof, wrong keys,
-single-use/expired invitations, reconnects, terminal ownership, retained replay,
-history limits, revocation isolation, bounded frames, and Windows path syntax.
-Five Windows-only tests exercise real ConPTY/PowerShell, filesystem transfers
-and junctions, and DPAPI. Those tests are explicitly skipped on Mac/Linux.
-Native x64 and ARM64 Windows CI also opens and renders the WPF main window on an
-STA thread using a temporary profile, checking the application's XAML and resources.
+Native CI encodes and decodes a synthetic image through the real Media Foundation
+pipeline, checks its H.264 output against the Swift packet format, and opens/renders
+the WPF window on an STA thread using an isolated profile. Portable tests cover
+TLS/authentication, permissions, connection-owned media leases, replay/timeouts,
+settings application, terminal persistence, and file-path constraints. Native
+ConPTY, filesystem/junction, and DPAPI tests run on both Windows architectures.
 
-On macOS, verify the actual Swift client against the .NET protocol listener:
+The fixture in `Windows/Nocturne.Interop` verifies Swift/.NET authentication and
+reconnects. It is excluded from the package. Native UI and codec tests do not prove
+physical GPU capture, a driver's headless modes, audio routing into Discord, secure
+desktop behavior, or visible iPhone-to-Windows playback; those require a Windows PC
+and physical client/device checks.
 
-```sh
-dotnet build Windows/Nocturne.Interop
-NOCTURNE_DOTNET="$(command -v dotnet)" \
-NOCTURNE_WINDOWS_TEST_HOST="$PWD/Windows/Nocturne.Interop/bin/Debug/net10.0/Nocturne.Interop.dll" \
-swift test --filter WindowsHostInteropTests
-```
-
-The fixture is test-only and excluded from the Windows package. It does not
-exercise Windows capture or native Windows APIs. Native UI, GPU capture/encoding,
-audio playback, physical input, firewall behavior, and a complete iPhone-to-Windows
-stream require a Windows PC and physical device. The Windows app can be
-cross-compiled and packaged on macOS with the .NET 10 SDK and PowerShell 7; that
-does not establish those runtime results.
-
-Sunshine's version and architecture-specific SHA-256 digests are pinned in
-`Windows/engine.lock.json`. NuGet dependencies are locked in each project's
-`packages.lock.json`. See `THIRD_PARTY_NOTICES.md` for source and distribution
-obligations.
+Sunshine versions and architecture-specific hashes are pinned in
+`Windows/engine.lock.json`; NuGet dependencies use lock files. See
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) for source and redistribution
+information. Virtual-device drivers are installed separately from their publisher.

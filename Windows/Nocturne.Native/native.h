@@ -12,6 +12,7 @@
 #define NC_EXPORT extern "C" __declspec(dllexport)
 namespace nocturne {
 inline thread_local std::wstring last_error;
+inline thread_local HRESULT last_hresult = S_OK;
 inline thread_local std::wstring result_text;
 inline void apartment() {
     struct Apartment {
@@ -23,9 +24,9 @@ inline void apartment() {
 }
 template<typename F> int checked(F action) noexcept {
     try { apartment(); action(); return 1; }
-    catch (winrt::hresult_error const& error) { last_error = error.message(); }
-    catch (std::exception const& error) { auto text = error.what(); last_error.assign(text, text + strlen(text)); }
-    catch (...) { last_error = L"The Windows media operation failed."; }
+    catch (winrt::hresult_error const& error) { last_error = error.message(); last_hresult = error.code(); }
+    catch (std::exception const& error) { auto text = error.what(); last_error.assign(text, text + strlen(text)); last_hresult = E_FAIL; }
+    catch (...) { last_error = L"The Windows media operation failed."; last_hresult = E_FAIL; }
     return -1;
 }
 inline void require(bool condition, wchar_t const* message) {

@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using Xunit;
@@ -144,6 +146,43 @@ public sealed class WindowsPlatformTests(ITestOutputHelper testOutput)
             Assert.Equal(secret, new HostStorage(root).LoadSecret());
             Assert.NotEqual(secret, File.ReadAllBytes(Path.Combine(root, "workspace.key")));
             Assert.Equal(32, secret.Length);
+            var endpoint = storage.LoadEndpointKey();
+            Assert.Equal(32, endpoint.Length);
+            Assert.NotEqual(secret, endpoint);
+            Assert.Equal(endpoint, new HostStorage(root).LoadEndpointKey());
+            Assert.NotEqual(endpoint, File.ReadAllBytes(Path.Combine(root, "remote.key")));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [WindowsFact]
+    public async Task OfflineStreamingRevocationRemovesEveryMatchingCertificateAndPreservesOtherState()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "nocturne-offline-removal-" + Guid.NewGuid());
+        try
+        {
+            Directory.CreateDirectory(root);
+            using var key = RSA.Create(2048);
+            using var first = new CertificateRequest("CN=First", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+                .CreateSelfSigned(DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddDays(1));
+            using var second = new CertificateRequest("CN=Second", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+                .CreateSelfSigned(DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddDays(1));
+            var path = Path.Combine(root, "state.json");
+            File.WriteAllText(path, JsonSerializer.Serialize(new
+            {
+                root = new { uniqueid = "host-id", named_devices = new[] {
+                    new { uuid = "first", name = "iPad", cert = first.ExportCertificatePem() },
+                    new { uuid = "duplicate", name = "iPad", cert = first.ExportCertificatePem() },
+                    new { uuid = "second", name = "iPhone", cert = second.ExportCertificatePem() } } },
+                other = "preserved"
+            }));
+            await using var engine = new StreamingEngine(root);
+            await engine.RemoveAsync(Wire.Fingerprint(first.RawData), CancellationToken.None);
+            await engine.RemoveAsync(Wire.Fingerprint(first.RawData), CancellationToken.None);
+            Assert.Equal(Wire.Fingerprint(second.RawData), Assert.Single(engine.SavedDevices()).Id);
+            using var state = JsonDocument.Parse(File.ReadAllBytes(path));
+            Assert.Equal("host-id", state.RootElement.GetProperty("root").GetProperty("uniqueid").GetString());
+            Assert.Equal("preserved", state.RootElement.GetProperty("other").GetString());
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }

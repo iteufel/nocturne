@@ -13,6 +13,8 @@
      <TextBlock Text="SERVER FOR WINDOWS" FontSize="10" Foreground="{StaticResource Muted}" Margin="0,6,0,32" />
      <Button Content="_Overview" HorizontalContentAlignment="Left" Click="Navigate" Tag="Overview" Margin="0,0,0,10" />
      <Button Content="_Sharing" Click="Navigate" Tag="Sharing" Margin="0,0,0,10" />
+     <Button Content="_Displays" Click="Navigate" Tag="DisplaysPanel" Margin="0,0,0,10" />
+     <Button Content="_Remote access" Click="Navigate" Tag="RemotePanel" Margin="0,0,0,10" />
      <Button Content="_Devices" Click="Navigate" Tag="Devices" />
     </StackPanel>
     <StackPanel DockPanel.Dock="Bottom" VerticalAlignment="Bottom">
@@ -34,40 +36,81 @@
     <Grid>
      <StackPanel x:Name="Overview">
       <TextBlock Text="Your PC,&#x0a;on your terms." FontFamily="Bahnschrift" FontSize="40" LineHeight="47" Margin="0,8,0,16" />
-      <TextBlock Text="Stream your desktop to iPhone and iPad. Bring a terminal and your files along, with one private connection." Style="{StaticResource Caption}" MaxWidth="490" HorizontalAlignment="Left" Margin="0,0,0,28" />
+      <TextBlock Text="Stream your desktop to iPhone and iPad, or open individual Windows app windows on iPad. Bring your terminal, files, and microphone along." Style="{StaticResource Caption}" MaxWidth="490" HorizontalAlignment="Left" Margin="0,0,0,28" />
       <Border Background="{StaticResource Surface}" CornerRadius="10" Padding="24" Margin="0,0,0,22">
        <StackPanel>
         <TextBlock Text="Desktop streaming" FontSize="18" FontWeight="SemiBold" />
-        <TextBlock Text="Uses your connected monitor and Windows audio. In the iOS app, choose a fixed resolution such as 1080p before opening Desktop." Style="{StaticResource Caption}" Margin="0,10,0,20" />
+        <TextBlock Text="{Binding ScreenStatus}" Style="{StaticResource Caption}" Margin="0,10,0,12" />
+        <TextBlock Text="Use a connected display or configure a headless virtual monitor in Displays. Open Apps on iPad to stream separate app windows." Style="{StaticResource Caption}" Margin="0,0,0,20" />
         <Button Content="{Binding StartLabel}" Style="{StaticResource Primary}" Click="ToggleServer" IsEnabled="{Binding CanAct}" HorizontalAlignment="Left" MinWidth="146" />
        </StackPanel>
       </Border>
-      <TextBlock Text="Connect on the same network" FontWeight="SemiBold" Margin="0,0,0,8" />
+      <TextBlock Text="Connect wherever you are" FontWeight="SemiBold" Margin="0,0,0,8" />
       <TextBlock Text="Start the server, allow access on private networks if Windows asks, then choose Pair a device and scan the code in Nocturne on your iPhone or iPad." Style="{StaticResource Caption}" />
+      <TextBlock Text="Enabled services start when Nocturne opens. Enable Remote access to connect from other networks." Style="{StaticResource Caption}" Margin="0,12,0,0" />
       <Button Content="Open server log" Click="OpenLog" HorizontalAlignment="Left" Margin="0,22,0,0" />
+      <Button Content="Open streaming engine log" Click="OpenLog" Tag="engine" HorizontalAlignment="Left" Margin="0,10,0,0" />
      </StackPanel>
      <StackPanel x:Name="Sharing" Visibility="Collapsed">
       <TextBlock Text="Share what&#x0a;you need." FontFamily="Bahnschrift" FontSize="36" Margin="0,8,0,20" />
-      <TextBlock Text="Stop the server to change these settings. Reconnect your device after saving." Style="{StaticResource Caption}" Margin="0,0,0,20" />
+      <TextBlock Text="Apply changes when you are ready. Nocturne restarts enabled services with the new permissions; reconnect your devices afterward." Style="{StaticResource Caption}" Margin="0,0,0,20" />
       <StackPanel IsEnabled="{Binding CanConfigure}">
        <Label Target="{Binding ElementName=ComputerName}" Foreground="{StaticResource Ink}" Content="Computer _name" />
        <TextBox x:Name="ComputerName" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MaxLength="64" Margin="0,0,0,18" />
+       <CheckBox Content="Allow _screen sharing and app windows" IsChecked="{Binding ScreenSharing}" />
+       <TextBlock Text="Paired devices can stream your desktop, launch installed apps, and control their windows as your Windows user." Style="{StaticResource Caption}" Margin="0,0,0,12" />
        <CheckBox Content="Allow _terminal access" IsChecked="{Binding Terminal}" />
        <TextBlock Text="Paired devices can run PowerShell commands as your Windows user. Tabs keep running while your device is disconnected." Style="{StaticResource Caption}" Margin="0,0,0,12" />
        <CheckBox Content="Allow _file sharing" IsChecked="{Binding Files}" />
        <TextBlock Text="Choose one local folder. Uploads cannot replace existing files; shortcuts and junctions are excluded." Style="{StaticResource Caption}" Margin="0,0,0,10" />
        <DockPanel Margin="0,0,0,18"><Button DockPanel.Dock="Right" Content="Choose folder…" Click="ChooseFolder" Margin="10,0,0,0" /><TextBox Text="{Binding SharedFolder}" IsReadOnly="True" AutomationProperties.Name="Shared folder" VerticalContentAlignment="Center" /></DockPanel>
-       <Button Content="Save settings" Click="SaveSettings" HorizontalAlignment="Left" Style="{StaticResource Primary}" />
+       <CheckBox Content="Allow client _microphone" IsChecked="{Binding Microphone}" />
+       <TextBlock Text="Send your iPhone or iPad microphone to a virtual microphone on this PC. Each stream begins muted; enable it from the stream controls." Style="{StaticResource Caption}" Margin="0,0,0,10" />
+       <Label Target="{Binding ElementName=MicrophoneEndpoint}" Content="Virtual microphone playback endpoint" Foreground="{StaticResource Ink}" />
+       <ComboBox x:Name="MicrophoneEndpoint" ItemsSource="{Binding AudioEndpoints}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding MicrophoneDevice}" Padding="8" Foreground="Black" Margin="0,0,0,10" />
+       <TextBlock Text="Choose the playback endpoint of your virtual audio driver, then select its recording endpoint in Discord or your game. Speakers and headphones do not create a microphone input." Style="{StaticResource Caption}" Margin="0,0,0,12" />
+       <StackPanel Orientation="Horizontal" Margin="0,0,0,20"><Button Content="Refresh devices" Click="RefreshHardware" /><Button Content="Virtual device setup…" Click="DriverSetup" Margin="10,0,0,0" /></StackPanel>
+       <CheckBox Content="Launch Nocturne at Windows _login" IsChecked="{Binding LaunchAtLogin}" />
+       <TextBlock Text="Enabled sharing services start automatically when Nocturne opens. Login registration applies only to your Windows account." Style="{StaticResource Caption}" />
       </StackPanel>
-      <TextBlock Text="Headless displays and client microphone forwarding are currently available on the Mac host. Windows streams an active desktop monitor." Style="{StaticResource Caption}" Margin="0,26,0,0" />
+     </StackPanel>
+     <StackPanel x:Name="DisplaysPanel" Visibility="Collapsed">
+      <TextBlock Text="Room for&#x0a;your workspace." FontFamily="Bahnschrift" FontSize="36" Margin="0,8,0,20" />
+      <StackPanel IsEnabled="{Binding CanConfigure}">
+       <CheckBox Content="Headless virtual monitor" IsChecked="{Binding HeadlessDisplay}" />
+       <TextBlock Text="Stream without a physical monitor. Install the virtual display driver, then enable automatic sizes below so Match device follows your display, rotation, and window size." Style="{StaticResource Caption}" Margin="0,0,0,18" />
+       <Label Target="{Binding ElementName=CaptureDisplay}" Content="Streaming display" Foreground="{StaticResource Ink}" />
+       <ComboBox x:Name="CaptureDisplay" ItemsSource="{Binding Displays}" DisplayMemberPath="Label" SelectedValuePath="Id" SelectedValue="{Binding PhysicalDisplay}" Foreground="Black" Padding="8" Margin="0,0,0,16" />
+       <CheckBox Content="Turn off physical displays while streaming" IsChecked="{Binding DisablePhysicalDisplays}" />
+       <TextBlock Text="Requires a virtual monitor. Nocturne restores your previous display layout on release, disconnect, or timeout. A recovery helper also watches for an unexpected app exit." Style="{StaticResource Caption}" Margin="0,0,0,20" />
+       <StackPanel Orientation="Horizontal"><Button Content="Refresh displays" Click="RefreshHardware" /><Button Content="Virtual device setup…" Click="DriverSetup" Margin="10,0,0,0" /></StackPanel>
+       <Button Content="Enable automatic virtual sizes…" Click="ConfigureDisplayDriver" HorizontalAlignment="Left" Margin="0,12,0,0" />
+       <TextBlock Text="Stops sharing while configuring automatic sizes. Windows administrator approval creates a Nocturne-managed copy of the driver configuration; the previous settings are kept for recovery." Style="{StaticResource Caption}" Margin="0,8,0,0" />
+      </StackPanel>
+      <Border Background="{StaticResource Surface}" CornerRadius="8" Padding="20" Margin="0,24,0,0"><StackPanel>
+       <TextBlock Text="Recover your screens" FontSize="17" FontWeight="SemiBold" />
+       <TextBlock Text="Stop sharing and restore your saved physical display layout if you need to recover the PC locally." Style="{StaticResource Caption}" Margin="0,8,0,14" />
+       <Button Content="Stop and restore displays" Click="RestoreDisplays" IsEnabled="{Binding CanAct}" HorizontalAlignment="Left" />
+      </StackPanel></Border>
+     </StackPanel>
+     <StackPanel x:Name="RemotePanel" Visibility="Collapsed">
+      <TextBlock Text="Your PC,&#x0a;beyond home." FontFamily="Bahnschrift" FontSize="36" Margin="0,8,0,20" />
+      <TextBlock Text="Nocturne tries a direct connection first and uses an encrypted relay when needed. Device authentication remains required on every connection." Style="{StaticResource Caption}" Margin="0,0,0,20" />
+      <StackPanel IsEnabled="{Binding CanConfigure}">
+       <CheckBox Content="Enable remote access" IsChecked="{Binding RemoteAccess}" />
+       <Label Target="{Binding ElementName=BrokerAddress}" Content="Broker HTTPS address" Foreground="{StaticResource Ink}" />
+       <TextBox x:Name="BrokerAddress" Text="{Binding BrokerURL, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16" />
+       <TextBlock Text="After applying changes, wait until remote access is ready, then pair your device again to save the broker and endpoint. Existing local pairings continue to work." Style="{StaticResource Caption}" Margin="0,0,0,20" />
+      </StackPanel>
+      <TextBlock Text="{Binding RemoteStatus}" Style="{StaticResource Caption}" AutomationProperties.LiveSetting="Polite" />
      </StackPanel>
      <StackPanel x:Name="Devices" Visibility="Collapsed">
       <TextBlock Text="Your devices." FontFamily="Bahnschrift" FontSize="36" Margin="0,8,0,14" />
-      <TextBlock Text="Removing a device disconnects its workspace, closes its terminals, and revokes its streaming access. Start the server to finish removal." Style="{StaticResource Caption}" Margin="0,0,0,24" />
+      <TextBlock Text="Removing a device closes its streams, terminals, and transfers and revokes its remote access. You can also remove saved devices while the server is stopped." Style="{StaticResource Caption}" Margin="0,0,0,24" />
       <ItemsControl ItemsSource="{Binding Devices}">
        <ItemsControl.ItemTemplate><DataTemplate>
         <Border Background="{StaticResource Surface}" CornerRadius="8" Padding="18" Margin="0,0,0,10">
-         <DockPanel><Button DockPanel.Dock="Right" Content="Remove…" Click="RemoveDevice" Tag="{Binding}" IsEnabled="{Binding DataContext.CanPair, RelativeSource={RelativeSource AncestorType=Window}}" Margin="16,0,0,0" />
+         <DockPanel><Button DockPanel.Dock="Right" Content="Remove…" Click="RemoveDevice" Tag="{Binding}" IsEnabled="{Binding DataContext.CanAct, RelativeSource={RelativeSource AncestorType=Window}}" Margin="16,0,0,0" />
           <StackPanel><TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="{Binding Status}" Style="{StaticResource Caption}" Margin="0,5,0,0" /></StackPanel>
          </DockPanel>
         </Border>
@@ -77,7 +120,13 @@
      </StackPanel>
     </Grid>
    </ScrollViewer>
-   <TextBlock Grid.Row="3" Text="Closing Nocturne stops streaming, terminals, and file transfers." Foreground="{StaticResource Muted}" FontSize="11" Margin="0,22,0,0" />
+   <StackPanel Grid.Row="3" Margin="0,22,0,0">
+    <DockPanel Visibility="{Binding HasSettingsChanges, Converter={StaticResource Visible}}" Margin="0,0,0,14">
+     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><Button Content="Discard" Click="DiscardSettings" IsEnabled="{Binding CanAct}" Margin="0,0,10,0" /><Button Content="Apply changes" Click="SaveSettings" Style="{StaticResource Primary}" IsEnabled="{Binding CanApply}" /></StackPanel>
+     <TextBlock Text="You have unapplied changes." Style="{StaticResource Caption}" VerticalAlignment="Center" />
+    </DockPanel>
+    <TextBlock Text="Closing Nocturne stops streaming, terminals, and file transfers." Foreground="{StaticResource Muted}" FontSize="11" />
+   </StackPanel>
   </Grid>
  </Grid>
 </Window>

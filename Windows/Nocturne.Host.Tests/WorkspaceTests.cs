@@ -96,6 +96,55 @@ public sealed class WorkspaceTests : IAsyncLifetime
         Assert.Contains("fixed video resolution", client.Request(new("displayPrepare")).Error);
     }
 
+    [Fact]
+    public async Task AuthenticatedMediaNegotiatesCapabilitiesAndRevocationCleansUpWithoutDisconnectingOtherDevices()
+    {
+        var microphone = new TestMicrophone(); var display = new TestDisplay(); var remote = new TestRemote();
+        await using var media = new WorkspaceServer("Media PC", secret, store, new(Microphone: true), null,
+            (_, _) => new TestShell(), new TestEngine(), new(microphone), new(display), remote: remote);
+        media.Start(0, IPAddress.Loopback);
+        using var identity = new Identity(); using var a = new Client(media.Port, secret);
+        var welcome = a.Authenticate(identity, store.CreateInvitation());
+        Assert.Equal(new[] { "streaming", "display", "microphone-pcm-v1" }, welcome.Capabilities);
+        Assert.Equal(identity.Fingerprint, remote.Authorized);
+        using var b = new Client(media.Port, secret); Assert.Null(b.Authenticate(identity, null).Error);
+        var started = a.Request(new("microphoneStart")); Assert.NotNull(started.SessionID); Assert.True(microphone.Running);
+        Assert.NotNull(b.Request(new("microphoneAudio") { SessionID = started.SessionID, Data = new byte[1920], Offset = 0 }).Error);
+        Assert.Null(a.Request(new("microphoneAudio") { SessionID = started.SessionID, Data = new byte[1920], Offset = 0 }).Error);
+        var request = new Packet("displayPrepare") { SessionID = Guid.NewGuid().ToString(), Display = new(1920, 1080, 60) };
+        Assert.Equal(request.Display, a.Request(request).Display);
+        Assert.NotNull(b.Request(new("displayHeartbeat") { SessionID = request.SessionID }).Error);
+        media.UpdatePermissions(new(ScreenSharing: false));
+        Assert.False(microphone.Running); Assert.True(display.Restored);
+        Assert.NotNull(a.Request(new("microphoneStart")).Error); Assert.NotNull(a.Request(request).Error);
+        Assert.Null(b.Request(new("ping")).Error);
+        await media.RemoveDeviceAsync(identity.Fingerprint, "iPad"); Assert.Equal(identity.Fingerprint, remote.Revoked);
+    }
+
+    private sealed class TestMicrophone : IMicrophoneOutput
+    {
+        public bool Running;
+        public void Start() => Running = true;
+        public void Write(byte[] pcm) { }
+        public void Stop() => Running = false;
+        public void Dispose() => Stop();
+    }
+    private sealed class TestDisplay : IDisplayControl
+    {
+        public bool Restored;
+        public DisplaySize Prepare(DisplaySize size) { Restored = false; return size; }
+        public void Restore() => Restored = true;
+        public void Dispose() { }
+    }
+    private sealed class TestRemote : IRemoteHost
+    {
+        public string? Authorized, Revoked;
+        public string EndpointID => new('a', 64);
+        public void Authorize(ushort sourcePort, string device) => Authorized = device;
+        public void Revoke(string device) => Revoked = device;
+        public void Dispose() { }
+    }
+
     private sealed class TestEngine : IStreamingEngine
     {
         public Task PairAsync(string pin, string name, string address, CancellationToken cancellation) => Task.CompletedTask;

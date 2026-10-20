@@ -113,6 +113,15 @@ public sealed class AppWindowSessions(IAppWindowHost host, TimeProvider? clock =
             foreach (var pair in leases.Where(pair => clock.GetElapsedTime(pair.Value.Touched).TotalSeconds >= 20).ToArray())
                 End(pair.Key, pair.Value.Id, new IOException("The app window connection expired. Reconnect to continue."));
     }
-    public void Stop() { lock (gate) { foreach (var connection in leases.Keys.ToArray()) Release(connection); } }
+    public void Stop()
+    {
+        lock (gate)
+        {
+            List<Exception> failures = [];
+            foreach (var connection in leases.Keys.ToArray())
+                try { Release(connection); } catch (Exception error) { failures.Add(error); }
+            if (failures.Count != 0) throw new AggregateException("App window cleanup did not complete.", failures);
+        }
+    }
     public void Dispose() { Stop(); host.Dispose(); }
 }

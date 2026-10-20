@@ -7,7 +7,10 @@ using Nocturne.Host;
 
 namespace Nocturne.Server;
 
-public sealed record DisplayOption(string Id, string Name, bool IsVirtual);
+public sealed record DisplayOption(string Id, string Name, bool IsVirtual, bool IsPrimary = false)
+{
+    public string Label => Id.Length == 0 ? Name : Name + " · " + Id.Replace(@"\\.\", "") + (IsVirtual ? " · Virtual" : "") + (IsPrimary ? " · Main" : "");
+}
 public sealed record AudioEndpoint(string Id, string Name);
 
 internal static class WindowsMedia
@@ -62,7 +65,7 @@ internal sealed class WindowsMicrophoneOutput(string device) : IMicrophoneOutput
     public void Dispose() => Stop();
 }
 
-internal sealed class WindowsDisplayControl(HostSettings settings, string directory) : IDisplayControl
+internal sealed class WindowsDisplayControl(HostSettings settings, string directory, CancellationToken cancellation = default) : IDisplayControl
 {
     private readonly string recovery = Path.Combine(directory, "display-recovery.bin");
     private bool saved;
@@ -75,20 +78,32 @@ internal sealed class WindowsDisplayControl(HostSettings settings, string direct
     }
     public DisplaySize Prepare(DisplaySize size)
     {
-        var displays = WindowsMedia.Displays();
-        var selected = settings.HeadlessDisplay ? displays.FirstOrDefault(display => display.IsVirtual &&
-            (settings.PhysicalDisplay.Length == 0 || display.Id == settings.PhysicalDisplay)) :
-            displays.FirstOrDefault(display => settings.PhysicalDisplay.Length == 0 || display.Id == settings.PhysicalDisplay);
-        if (selected == null) throw new IOException(settings.HeadlessDisplay
-            ? "Install and enable a virtual display driver, then refresh Displays in Nocturne Server."
-            : "The selected display is unavailable. Refresh Displays in Nocturne Server.");
         if (!saved)
         {
+            Recover(directory);
             WindowsMedia.Check(WindowsMedia.Native.DisplaySave(recovery)); saved = true;
             StartWatchdog();
         }
-        WindowsMedia.Check(WindowsMedia.Native.DisplayPrepare(selected.Id, size.Width, size.Height, size.FrameRate, settings.DisablePhysicalDisplays ? 1 : 0));
-        return size;
+        var reload = settings.HeadlessDisplay && VirtualDisplayModes.Ensure(size);
+        var deadline = DateTime.UtcNow.AddSeconds(reload ? 45 : 0);
+        while (true)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            try
+            {
+                var displays = WindowsMedia.Displays();
+                var selected = settings.HeadlessDisplay ? displays.FirstOrDefault(display => display.IsVirtual && display.Id == settings.PhysicalDisplay)
+                    ?? displays.FirstOrDefault(display => display.IsVirtual) :
+                    settings.PhysicalDisplay.Length == 0 ? displays.FirstOrDefault(display => display.IsPrimary) ?? displays.FirstOrDefault() :
+                    displays.FirstOrDefault(display => display.Id == settings.PhysicalDisplay);
+                if (selected == null) throw new IOException(settings.HeadlessDisplay
+                    ? "Install and enable a virtual display driver, then refresh Displays in Nocturne Server."
+                    : "The selected display is unavailable. Refresh Displays in Nocturne Server.");
+                WindowsMedia.Check(WindowsMedia.Native.DisplayPrepare(selected.Id, size.Width, size.Height, size.FrameRate, settings.DisablePhysicalDisplays ? 1 : 0));
+                return size;
+            }
+            catch (IOException) when (DateTime.UtcNow < deadline) { Thread.Sleep(250); }
+        }
     }
     private static void StartWatchdog()
     {

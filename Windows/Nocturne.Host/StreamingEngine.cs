@@ -41,10 +41,18 @@ public sealed class StreamingEngine(string directory) : IStreamingEngine, IAsync
     private WindowsJob? job;
     private HttpClient? api;
     private bool stopping;
+    private Task? monitor;
+    private readonly SemaphoreSlim stateChanges = new(1);
     public event Action<string>? UnexpectedExit;
     public string LogPath => Path.Combine(directory, "engine.log");
 
     public async Task StartAsync(string executable, string name, CancellationToken cancellation)
+    {
+        await stateChanges.WaitAsync(cancellation);
+        try { await StartCoreAsync(executable, name, cancellation); }
+        finally { stateChanges.Release(); }
+    }
+    private async Task StartCoreAsync(string executable, string name, CancellationToken cancellation)
     {
         if (process != null) throw new InvalidOperationException("The engine is already running.");
         if (!File.Exists(executable)) throw new IOException("The bundled streaming engine is missing. Build with scripts/build-windows.ps1.");
@@ -66,7 +74,7 @@ public sealed class StreamingEngine(string directory) : IStreamingEngine, IAsync
         {
             process = WindowsProcess.Launch(executable, '"' + config + '"', Path.GetDirectoryName(executable)!, job);
             var child = process;
-            _ = MonitorAsync(child);
+            monitor = MonitorAsync(child);
             var deadline = DateTime.UtcNow.AddSeconds(25);
             while (DateTime.UtcNow < deadline)
             {
@@ -102,7 +110,7 @@ public sealed class StreamingEngine(string directory) : IStreamingEngine, IAsync
             }
             throw new IOException("The streaming engine did not become ready. Review the log and check that its ports are free.");
         }
-        catch { await DisposeAsync(); throw; }
+        catch { await DisposeCoreAsync(); throw; }
     }
 
     private async Task MonitorAsync(Process child)
@@ -163,9 +171,16 @@ public sealed class StreamingEngine(string directory) : IStreamingEngine, IAsync
 
     public async Task RemoveAsync(string fingerprint, CancellationToken cancellation)
     {
+        await stateChanges.WaitAsync(cancellation);
+        try { await RemoveCoreAsync(fingerprint, cancellation); }
+        finally { stateChanges.Release(); }
+    }
+    private async Task RemoveCoreAsync(string fingerprint, CancellationToken cancellation)
+    {
         var path = Path.Combine(directory, "state.json");
         if (!File.Exists(path)) return;
-        var value = JsonNode.Parse(await File.ReadAllBytesAsync(path, cancellation))?["root"]?["named_devices"];
+        var state = JsonNode.Parse(await File.ReadAllBytesAsync(path, cancellation));
+        var value = state?["root"]?["named_devices"];
         if (value == null || value is JsonValue text && text.ToString() == "") return;
         // Load IDs before any mutation; a certificate can have multiple upstream records.
         var ids = value.AsArray().OfType<JsonObject>().Where(d =>
@@ -173,6 +188,13 @@ public sealed class StreamingEngine(string directory) : IStreamingEngine, IAsync
             using var cert = X509Certificate2.CreateFromPem(d["cert"]!.GetValue<string>());
             return Wire.Fingerprint(cert.RawData) == fingerprint;
         }).Select(d => d["uuid"]!.GetValue<string>()).ToArray();
+        if (process == null)
+        {
+            var remaining = value.AsArray().OfType<JsonObject>().Where(d => !ids.Contains(d["uuid"]!.GetValue<string>())).Select(d => d.DeepClone()).ToArray();
+            state!["root"]!["named_devices"] = new JsonArray(remaining);
+            var temporary = path + ".tmp";
+            await File.WriteAllTextAsync(temporary, state.ToJsonString(), cancellation); File.Move(temporary, path, true); return;
+        }
         foreach (var id in ids)
         {
             var disabled = await RequestAsync("/api/clients/update", new() { ["uuid"] = id, ["enabled"] = false }, cancellation);
@@ -187,6 +209,12 @@ public sealed class StreamingEngine(string directory) : IStreamingEngine, IAsync
 
     public async ValueTask DisposeAsync()
     {
+        await stateChanges.WaitAsync();
+        try { await DisposeCoreAsync(); }
+        finally { stateChanges.Release(); }
+    }
+    private async ValueTask DisposeCoreAsync()
+    {
         stopping = true;
         api?.Dispose(); api = null;
         job?.Dispose(); job = null;
@@ -196,5 +224,6 @@ public sealed class StreamingEngine(string directory) : IStreamingEngine, IAsync
             try { await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
             finally { child.Dispose(); }
         }
+        if (monitor != null) { await monitor; monitor = null; }
     }
 }
