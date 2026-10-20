@@ -158,6 +158,8 @@ jobs:
         run: bash scripts/test-microphone-driver.sh
       - name: Build the unified macOS server
         run: scripts/build.sh mac
+      - name: Test locked-screen capture with sanitizers
+        run: bash scripts/test-stream-lock-screen.sh
 
   testflight:
     name: Release iOS to TestFlight

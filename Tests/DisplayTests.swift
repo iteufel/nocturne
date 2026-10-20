@@ -28,8 +28,9 @@ private final class RecordingDisplayDriver: StreamingDisplayDriver {
 private final class FakeVirtualDisplay: StreamingVirtualDisplay {
     let displayID: UInt32
     var selected = false
+    var onSelect: (() -> Void)?
     init(_ id: UInt32) { displayID = id }
-    func selectRequestedMode() throws { selected = true }
+    func selectRequestedMode() throws { selected = true; onSelect?() }
 }
 
 @MainActor
@@ -51,13 +52,23 @@ private final class FakeDisplayLayout: StreamingDisplayLayout {
 private final class FakeDisplayEnvironment {
     var sizes: [StreamDisplaySize] = []
     var exclusions: [UInt32] = []
-    var unlocked = true
+    var onConsole = true
+    var loginDone = true
+    var locked = false
+    var onSelect: (() -> Void)?
     weak var lastDisplay: FakeVirtualDisplay?
     let layout = FakeDisplayLayout()
     var environment: StreamingDisplayEnvironment {
-        .init(isSessionAvailable: { self.unlocked }, create: {
+        .init(isSessionAvailable: {
+            NDDisplayLayout.isSessionAvailable(forSession: [
+                kCGSessionOnConsoleKey as String: self.onConsole,
+                kCGSessionLoginDoneKey as String: self.loginDone,
+                "CGSSessionScreenIsLocked": self.locked
+            ])
+        }, isScreenLocked: { self.locked }, create: {
             self.sizes.append($0)
             let display = FakeVirtualDisplay(UInt32(100 + self.sizes.count))
+            display.onSelect = self.onSelect
             self.lastDisplay = display; return display
         }, captureLayout: { self.exclusions.append($0); return self.layout })
     }
@@ -72,6 +83,77 @@ final class DisplayTests: XCTestCase {
     private let landscape = StreamDisplaySize(width: 2868, height: 1320, frameRate: 60)
     private func request(_ operation: NocturneKit.Operation = .displayPrepare, id: String, size: StreamDisplaySize? = nil) -> Packet {
         var packet = Packet(operation); packet.sessionID = id; packet.display = size; return packet
+    }
+    func testLockedConsoleSessionCanPrepareResizeAndReleaseDisplay() async throws {
+        let environment = FakeDisplayEnvironment()
+        environment.locked = true
+        let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+        var captureTargets: [UInt32] = []
+        let manager = DisplaySessionManager(driver: driver, timeout: 20) { captureTargets.append($0) }
+        defer { manager.stop() }
+        _ = try await manager.start()
+        manager.restore()
+        let connection = UUID(), id = UUID().uuidString
+        let reply = try await manager.handle(request(id: id, size: portrait), connection: connection, name: "iPad")
+        XCTAssertEqual(reply.display, portrait)
+        XCTAssertEqual(captureTargets, [environment.lastDisplay?.displayID].compactMap { $0 })
+        XCTAssertTrue(manager.isActive)
+        environment.locked = false
+        _ = try await manager.handle(request(.displayHeartbeat, id: id), connection: connection, name: "iPad")
+        _ = try await manager.handle(request(id: id, size: landscape), connection: connection, name: "iPad")
+        XCTAssertEqual(manager.size, landscape)
+        environment.locked = true
+        manager.disconnected(connection)
+        XCTAssertFalse(manager.isActive)
+        XCTAssertNil(environment.lastDisplay)
+        XCTAssertTrue(environment.exclusions.isEmpty, "Lock-screen access must preserve the physical display layout")
+    }
+    func testDisplayAccessStillRequiresLoggedInConsoleSession() async throws {
+        XCTAssertFalse(NDDisplayLayout.isSessionAvailable(forSession: nil))
+        XCTAssertFalse(NDDisplayLayout.isSessionAvailable(forSession: [:]))
+        for state in [(false, true), (true, false), (false, false)] {
+            let environment = FakeDisplayEnvironment()
+            environment.onConsole = state.0
+            environment.loginDone = state.1
+            environment.locked = true
+            let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+            do {
+                _ = try await driver.start()
+                XCTFail("An inactive or logged-out session must not configure displays")
+            } catch {}
+            XCTAssertTrue(environment.sizes.isEmpty)
+        }
+    }
+    func testLockedLoginDefersPhysicalLayoutChangesUntilUnlockedPreparation() async throws {
+        let environment = FakeDisplayEnvironment()
+        environment.locked = true
+        let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+        let manager = DisplaySessionManager(driver: driver, timeout: 20)
+        manager.disablePhysicalDisplays = true
+        defer { manager.stop() }
+        let connection = UUID(), id = UUID().uuidString
+        _ = try await manager.handle(request(id: id, size: portrait), connection: connection, name: "iPad")
+        XCTAssertTrue(manager.isActive)
+        XCTAssertTrue(environment.exclusions.isEmpty)
+        XCTAssertTrue(environment.layout.primaryChanges.isEmpty)
+        let display = try XCTUnwrap(environment.lastDisplay?.displayID)
+        environment.locked = false
+        _ = try await manager.handle(request(id: id, size: portrait), connection: connection, name: "iPad")
+        XCTAssertEqual(environment.exclusions, [display])
+        XCTAssertEqual(environment.layout.primaryChanges, [display])
+        manager.disconnected(connection)
+        XCTAssertEqual(environment.layout.restorations, 1)
+        XCTAssertNil(environment.lastDisplay)
+    }
+    func testLockDuringModePublicationSkipsPhysicalLayoutChange() async throws {
+        let environment = FakeDisplayEnvironment()
+        environment.onSelect = { [weak environment] in environment?.locked = true }
+        let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+        defer { try? driver.stop() }
+        let display = try await driver.apply(portrait, disablePhysicalDisplays: true)
+        XCTAssertNotEqual(display, 0)
+        XCTAssertTrue(environment.locked)
+        XCTAssertTrue(environment.layout.primaryChanges.isEmpty)
     }
     func testMatchDeviceDoesNotSilentlySkipDesktopPreparation() throws {
         let id = UUID().uuidString
@@ -408,7 +490,7 @@ final class DisplayTests: XCTestCase {
     }
     func testNativeDisplayLeaseDisablesAndRestoresOriginalScreens() async throws {
         guard ProcessInfo.processInfo.environment["NOCTURNE_TEST_DISPLAY_SWITCH"] == "1" else { throw XCTSkip("Opt in to switching physical displays") }
-        guard NDDisplayLayout.isSessionAvailable() else { throw XCTSkip("Unlock the Mac before running native display tests") }
+        guard NDDisplayLayout.isSessionAvailable(), !NDDisplayLayout.isScreenLocked() else { throw XCTSkip("Unlock the Mac before switching physical displays") }
         _ = NSApplication.shared
         var ids = [CGDirectDisplayID](repeating: 0, count: 64), count: UInt32 = 0
         XCTAssertEqual(CGGetActiveDisplayList(64, &ids, &count), .success)
@@ -445,7 +527,7 @@ final class DisplayTests: XCTestCase {
     }
     func testNativeRestorationIgnoresReplacedStartupDisplay() async throws {
         guard ProcessInfo.processInfo.environment["NOCTURNE_TEST_DISPLAY_SWITCH"] == "1" else { throw XCTSkip("Opt in to switching physical displays") }
-        guard NDDisplayLayout.isSessionAvailable() else { throw XCTSkip("Unlock the Mac before running native display tests") }
+        guard NDDisplayLayout.isSessionAvailable(), !NDDisplayLayout.isScreenLocked() else { throw XCTSkip("Unlock the Mac before switching physical displays") }
         _ = NSApplication.shared
         let originalMain = CGMainDisplayID()
         let events = Task { @MainActor in

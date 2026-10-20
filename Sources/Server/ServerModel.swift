@@ -93,7 +93,7 @@ final class ServerModel: ObservableObject {
     }
     func start() {
         guard !active else { return }
-        guard DisplaySessionManager.isSessionAvailable else { error = "Unlock this Mac before starting the server."; return }
+        guard DisplaySessionManager.isSessionAvailable else { error = "Sign in to this Mac before starting the server."; return }
         starting = true; status = "Starting"; error = nil
         let epoch = UUID(); generation = epoch
         startTask = Task { [self] in

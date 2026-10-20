@@ -47,9 +47,19 @@ On iOS, choose **Settings → Resolution → Match device** (the default for new
 
 Enable **Turn off connected Mac displays** before starting the server to move the Mac's windows onto the streamed desktop. The virtual display becomes the only active monitor. Disconnecting, backgrounding the client, removing its device, or stopping the server restores the saved display modes and arrangement. A missing client heartbeat releases the display after 20 seconds. **Restore Mac displays** is also available in the Mac menu bar. An internal recovery process restores monitors if the main server app exits unexpectedly.
 
-The same virtual display supports a headless Mac without an HDMI dummy plug or separate display app. It is removed when the stream disconnects and recreated when the next stream connects. The temporary display used to start the video engine is also removed once the server is ready. Physical screens keep their layout unless the separate monitor-off option is enabled; when enabled, Nocturne restores them before removing its virtual display. The Mac must be awake with a logged-in desktop; Nocturne does not unlock FileVault or bypass the login screen. Turn off **Headless virtual monitor** to select a physical monitor instead; choose a fixed resolution on iOS in that mode. Existing physical-monitor selections remain unchanged after upgrading. Automatic Mac display control requires the authenticated Nocturne workspace connection, and only one stream can own it at a time.
+The same virtual display supports a headless Mac without an HDMI dummy plug or separate display app. It is removed when the stream disconnects and recreated when the next stream connects. The temporary display used to start the video engine is also removed once the server is ready. Physical screens keep their layout unless the separate monitor-off option is enabled; when enabled, Nocturne restores them before removing its virtual display. The Mac must be awake with a signed-in user session; that session can be locked. Turn off **Headless virtual monitor** to select a physical monitor instead; choose a fixed resolution on iOS in that mode. Existing physical-monitor selections remain unchanged after upgrading. Automatic Mac display control requires the authenticated Nocturne workspace connection, and only one stream can own it at a time.
 
 Virtual display creation and monitor disabling use runtime-checked private macOS interfaces. These features are intended for the directly distributed Mac app, not a Mac App Store build. If unavailable on a macOS release, the app reports the failure and a connected display can be selected instead.
+
+## Unlock a locked Mac
+
+Leave **Nocturne Server** running, then open **Desktop** from an already paired iPhone or iPad. The stream shows the Mac's lock screen. Open **Keyboard** from the stream controls, or use a connected keyboard, to enter your normal Mac password.
+
+While locked, video follows the Mac's main display, where macOS shows the password field. After you unlock, it returns to the selected physical or virtual display automatically. The lock screen may have a different aspect ratio from your virtual desktop. Pairing, Screen Recording and Accessibility permissions must already be set up.
+
+When connecting to a locked Mac, connected monitors stay on for login. If **Turn off connected Mac displays** is enabled, reconnect after unlocking to apply it. Nocturne avoids changing the physical monitor layout while macOS is locked.
+
+This works for locking an existing user session. Logging out or restarting ends the server; sign in locally and start it again before connecting. FileVault's startup unlock screen is not accessible through Nocturne.
 
 ## Devices and input
 
