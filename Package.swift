@@ -21,7 +21,7 @@ let package = Package(
         .target(name: "NocturneHostKit", dependencies: ["NocturneKit", "PTYBridge", "DisplayBridge", "MicrophoneBridge"], path: "Sources/HostKit"),
         // Compile the app model for host lifecycle integration tests without launching the UI.
         .target(name: "NocturneServerModel", dependencies: ["NocturneKit", "NocturneHostKit"], path: "Sources/Server",
-            exclude: ["NocturneServerApp.swift", "ServerView.swift"]),
+            exclude: ["NocturneServerApp.swift", "ServerView.swift", "ServerOnboardingView.swift"]),
         .testTarget(name: "NocturneKitTests", dependencies: ["NocturneKit", "NocturneHostKit", "NocturneFiles", "NocturneServerModel"], path: "Tests", exclude: ["Client"])
     ]
 )

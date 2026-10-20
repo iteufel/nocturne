@@ -91,7 +91,13 @@ enum AppWindowScenes {
         let options = UIWindowSceneDestructionRequestOptions(); options.windowDismissalAnimation = .standard
         UIApplication.shared.requestSceneSessionDestruction(session, options: options, errorHandler: failed)
     }
-    static func libraryActive(_ id: String) { activeLibraries.insert(id); ClientModel.shared.start() }
+    static func libraryActive(_ id: String) {
+        activeLibraries.insert(id)
+        // Discovery can ask for local network access. Introduce the app before that prompt.
+        if UserDefaults.standard.bool(forKey: "nocturne.client.onboardingComplete") || ClientModel.shared.savedServerName != nil {
+            ClientModel.shared.start()
+        }
+    }
     static func libraryInactive(_ id: String) {
         guard activeLibraries.remove(id) != nil, activeLibraries.isEmpty else { return }
         ClientModel.shared.suspend()

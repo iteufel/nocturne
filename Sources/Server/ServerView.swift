@@ -8,7 +8,25 @@ struct ServerView: View {
     @State private var reset = false
     @State private var deviceToRemove: ServerDevice?
     @State private var selected: String? = "Overview"
+    @AppStorage("nocturne.server.onboardingComplete") private var onboardingComplete = false
+    private var needsOnboarding: Bool {
+        model.showOnboarding || (!onboardingComplete && model.devices.isEmpty)
+    }
     var body: some View {
+        Group {
+            if needsOnboarding {
+                ServerOnboardingView(model: model) { pair in
+                    onboardingComplete = true
+                    model.showOnboarding = false
+                    if pair { model.pair() }
+                }
+            } else { workspace }
+        }
+        .sheet(isPresented: $model.showPairing) { if let invitation = model.invitation { ServerPairingView(invitation: invitation) } }
+        .alert("Nocturne Server", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
+        .task(id: needsOnboarding) { if !needsOnboarding { onboardingComplete = true } }
+    }
+    private var workspace: some View {
         NavigationSplitView {
             List(selection: $selected) {
                 Section("This Mac") {
@@ -44,8 +62,6 @@ struct ServerView: View {
                 }
             }
         }.navigationSplitViewStyle(.balanced).foregroundStyle(MoonStyle.silver)
-            .sheet(isPresented: $model.showPairing) { if let invitation = model.invitation { ServerPairingView(invitation: invitation) } }
-            .alert("Nocturne Server", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
             .confirmationDialog("Reset all device pairing?", isPresented: $reset, titleVisibility: .visible) {
                 Button("Reset pairing", role: .destructive) { model.resetPairing() }
             } message: { Text("Every connected device will be disconnected. Old QR codes will stop working. Pair your devices again by scanning a new QR code.") }

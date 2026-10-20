@@ -43,6 +43,10 @@ struct ServerMenu: View {
     var body: some View {
         Text(model.running ? "\(model.connections) connected devices" : "Sharing off")
         Button("Open Nocturne Server") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
+        Button("Welcome to Nocturne…") {
+            model.showOnboarding = true
+            openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
+        }
         Button("Pair a device") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true); model.pair() }
         Button("Restore Mac displays") { model.displays.restore() }.disabled(!model.displayActive && model.displays.lastError == nil)
         Divider()
@@ -54,6 +58,7 @@ struct ServerMenu: View {
 
 struct ServerSettingsView: View {
     @ObservedObject var model: ServerModel
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("nocturne.appearance") private var appearance = NocturneAppearance.system
     var body: some View {
@@ -113,6 +118,12 @@ struct ServerSettingsView: View {
                 Label("Appearance", systemImage: "circle.lefthalf.filled")
             } footer: {
                 Text("System follows your Mac’s Light or Dark appearance.")
+            }
+            Section("Getting started") {
+                Button("Welcome to Nocturne…") {
+                    model.showOnboarding = true
+                    openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
+                }
             }
         }.formStyle(.grouped).scrollContentBackground(.hidden)
             .safeAreaInset(edge: .bottom) { ServerApplySettingsView(model: model) }
