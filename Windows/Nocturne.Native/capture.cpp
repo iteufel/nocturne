@@ -171,10 +171,10 @@ struct Capture {
         arrived = pool.FrameArrived([signal = signal](auto const&, auto const&) { SetEvent(signal->event); });
         session = pool.CreateCaptureSession(item); session.IsCursorCaptureEnabled(true); session.StartCapture();
     }
-    ~Capture() {
-        if (pool) pool.FrameArrived(arrived);
-        if (session) session.Close();
-        if (pool) pool.Close();
+    ~Capture() noexcept {
+        try { if (pool) pool.FrameArrived(arrived); } catch (...) { }
+        try { if (session) session.Close(); } catch (...) { }
+        try { if (pool) pool.Close(); } catch (...) { }
     }
     EncodedFrame read() {
         require(IsWindow(window), L"This app window closed. Choose another window in Apps.");

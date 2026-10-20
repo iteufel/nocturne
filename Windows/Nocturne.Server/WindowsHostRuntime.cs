@@ -29,7 +29,7 @@ internal sealed class WindowsHostRuntime : IRunningHost
         try
         {
             if (settings.Files) folder = new WindowsSharedFolder(settings.SharedFolder);
-            if (settings.Microphone) microphone = new(new WindowsMicrophoneOutput(settings.MicrophoneDevice));
+            if (settings.Microphone) microphone = new(new ThreadBoundMicrophoneOutput(() => new WindowsMicrophoneOutput(settings.MicrophoneDevice)));
             if (settings.ScreenSharing) { display = new(new WindowsDisplayControl(settings, storage.DirectoryPath, lifetime.Token)); apps = new(new WindowsApplications()); }
             workspace = new(settings.Name, secret, devices, new(settings.Terminal, settings.Files, settings.Microphone, settings.ScreenSharing), folder,
                 (columns, rows) => new ConPtyTerminal(columns, rows), engine, microphone, display, apps, remote);
