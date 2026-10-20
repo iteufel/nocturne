@@ -14,7 +14,7 @@ Requires iOS/iPadOS 17+ and either an Apple Silicon Mac running macOS 14+ or a s
 
 1. Download the signed and notarized **Nocturne Server** from [GitHub Releases](https://github.com/iteufel/nocturne/releases), unzip it, and move it to Applications. Quit any older server first.
 2. Open the Mac app, select **Start server**, and allow screen/audio capture and Accessibility when prompted.
-3. In Nocturne on iPhone or iPad, choose **Add computer → Scan QR code** and scan the code shown by **Pair a device** on the Mac.
+3. In Nocturne on iPhone or iPad, choose **Add host → Scan QR code** and scan the code shown by **Pair a device** on the Mac.
 4. Choose **Desktop** to stream, or **Apps** to open a Mac app window. Enable optional terminal and file access in the Mac app’s **Sharing** settings.
 
 For the Windows host, follow the [Windows build and setup guide](docs/WINDOWS.md) for x64/ARM64 packages, QR pairing, PowerShell tabs, and file sharing. Choose a fixed resolution in the client. App windows, remote access, headless displays, and client microphone forwarding require the Mac host.

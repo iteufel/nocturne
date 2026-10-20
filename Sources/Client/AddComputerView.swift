@@ -15,8 +15,8 @@ struct AddComputerView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
-                    Text("Welcome to\nyour workspace.").font(.system(size: 34, weight: .semibold, design: .rounded)).tracking(-1)
-                    Text("Open Nocturne Server on your computer, start the server, and choose “Pair a device.” One connection brings everything together.")
+                    Text("Add a host").font(.system(size: 34, weight: .semibold, design: .rounded)).tracking(-1)
+                    Text("Open Nocturne Server on your computer, start the server, and choose “Pair a device.” The QR code sets up your workspace and screen sharing.")
                         .font(.subheadline).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
                     MoonPanel {
                         HStack(spacing: 16) {
@@ -44,18 +44,14 @@ struct AddComputerView: View {
                                 if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                             }
                         }
-                        if let name = model.savedServerName {
-                            Button("Reconnect to \(name)") { Task { await model.reconnectServer(); if connection.state == .connected { dismiss() } } }
-                                .disabled(connection.state == .connecting)
-                        }
                         if let error = model.error ?? connection.lastError { Text(error).font(.caption).foregroundStyle(.orange) }
                     }
                     if !model.pairedServers.servers.isEmpty {
-                        Text("Pairing another computer keeps the ones you already paired. Switch between them from Your workspace or Settings.").font(.caption).foregroundStyle(MoonStyle.secondary)
+                        Text("Your other hosts stay paired. Manage them in Settings → Paired hosts.").font(.caption).foregroundStyle(MoonStyle.secondary)
                     }
                     Text("Only scan the QR code shown by your computer. It pairs one device and expires after five minutes. Terminal and file access are controlled on your computer.").font(.caption).foregroundStyle(MoonStyle.secondary)
                 }.padding(24)
-            }.background { NocturneBackdrop() }.navigationTitle("Add computer").navigationBarTitleDisplayMode(.inline)
+            }.background { NocturneBackdrop() }.navigationTitle("Add host").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         }.tint(MoonStyle.accent)
             .sheet(isPresented: $scanner, onDismiss: pairScannedInvitation) { QRScanner { result in

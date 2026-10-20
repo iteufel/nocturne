@@ -37,7 +37,10 @@ public final class WorkspaceConnection: ObservableObject {
     private let discovery = WorkspaceDiscovery()
     private let identity: WorkspaceIdentity
     private let remoteStreaming: Bool
-    public init(identity: WorkspaceIdentity, remoteStreaming: Bool = true) { self.identity = identity; self.remoteStreaming = remoteStreaming }
+    private let requiresIPv4: Bool
+    public init(identity: WorkspaceIdentity, remoteStreaming: Bool = true, requiresIPv4: Bool = false) {
+        self.identity = identity; self.remoteStreaming = remoteStreaming; self.requiresIPv4 = requiresIPv4
+    }
     /// A separately authenticated socket keeps live media independent of file/terminal traffic.
     public func mediaConnection() -> WorkspaceConnection {
         let media = WorkspaceConnection(identity: identity, remoteStreaming: false); media.mediaParent = self; return media
@@ -90,7 +93,14 @@ public final class WorkspaceConnection: ObservableObject {
     }
     private func establish(_ invitation: PairingInvitation, endpoint: NWEndpoint, restoreTerminalSessions: Bool, epoch: UUID) async throws {
         state = .connecting
-        let connection = NWConnection(to: endpoint, using: SecureTransport.parameters(secret: invitation.secret))
+        let parameters = SecureTransport.parameters(secret: invitation.secret)
+        // The bundled streaming engine listens on IPv4. Bonjour otherwise often
+        // chooses a link-local IPv6 workspace address that cannot reach video.
+        // Independent workspace/media connections retain their dual-stack support.
+        if requiresIPv4, let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
+            ip.version = .v4
+        }
+        let connection = NWConnection(to: endpoint, using: parameters)
         let channel = SecureChannel(connection: connection); self.channel = channel
         channel.onReady = { [weak self, weak channel] in Task { @MainActor in
             guard let self, let channel, self.channel === channel, self.generation == epoch else { return }
@@ -127,10 +137,16 @@ public final class WorkspaceConnection: ObservableObject {
             // Persist the real LAN address and broker identity, never the temporary proxy port.
             connectedInvitation = invitation
         } else if case .hostPort(let host, let port) = connection.currentPath?.remoteEndpoint {
-            connectedInvitation = try invitation.replacingAddress(host: "\(host)", port: port.rawValue)
+            connectedInvitation = try invitation.replacingAddress(host: Self.reusableAddress(host), port: port.rawValue)
         } else { connectedInvitation = invitation }
         lastError = nil
         state = .connected
+    }
+    static func reusableAddress(_ host: NWEndpoint.Host) -> String {
+        // NWEndpoint's description includes an interface suffix even for IPv4
+        // (e.g. 192.168.0.123%en0), which HTTP/DNS cannot use.
+        if case .ipv4(let ip) = host { return ip.rawValue.map(String.init).joined(separator: ".") }
+        return "\(host)"
     }
     public func disconnect() {
         generation = UUID(); discovery.cancel(); closeTransport()

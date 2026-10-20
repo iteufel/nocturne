@@ -1,3 +1,10 @@
+- (BOOL)nocturneFillEntireScreen {
+    return [objc_getAssociatedObject(self, @selector(nocturneFillEntireScreen)) boolValue];
+}
+- (void)setNocturneFillEntireScreen:(BOOL)fill {
+    objc_setAssociatedObject(self, @selector(nocturneFillEntireScreen), @(fill), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
 - (void)nocturneSendMouseButton:(int)action button:(int)button {
     LiSendMouseButtonEvent(action, button);
 }
@@ -65,6 +72,7 @@
 }
 
 - (void)nocturneCancelInput {
+    [self nocturneReleaseKeyboard];
     NSSet *touches = [nocturneActiveTouches copy] ?: NSSet.set;
     if (!nocturneIgnoredTouches) nocturneIgnoredTouches = [NSHashTable weakObjectsHashTable];
     for (UITouch *touch in touches) [nocturneIgnoredTouches addObject:touch];

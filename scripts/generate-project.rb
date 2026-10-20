@@ -67,6 +67,10 @@ def input_methods(source, filename)
   "#import \"NocturneStreamInput.h\"\n" + source.sub(/\n@end\s*\z/, "\n" + File.read("Sources/Client/Bridge/#{filename}") + "\n@end\n")
 end
 overlay(target, group, 'Stream/Connection.m') do |source|
+  source = replace_once(source, 'static SDL_AudioDeviceID audioDevice;', "static SDL_AudioDeviceID audioDevice;\n#define NOCTURNE_ADAPTIVE_AUDIO 1\nstatic struct { uint64_t lastPacketMs; unsigned targetMs; bool hasPacket; } audioTiming;")
+  source = replace_once(source, '    SDL_AudioSpec want, have;', "    SDL_AudioSpec want, have;\n    memset(&audioTiming, 0, sizeof(audioTiming));")
+  source = replace_section(source, 'void ArDecodeAndPlaySample(', 'void ClStageStarting(', File.read('Sources/Client/Bridge/StreamAudioPlayback.inc'))
+  source = replace_once(source, "    // Start playback\n    SDL_PauseAudioDevice(audioDevice, 0);", "    // Playback starts after StreamAudioPlayback primes the jitter cushion.")
   # Loopback is the remote QUIC proxy: retain WAN packet sizing and stream behavior.
   source = replace_once(source, 'if ([Utils isActiveNetworkVPN]) {', 'if ([Utils isActiveNetworkVPN] || [config.host isEqualToString:@"127.0.0.1"]) {')
   source = replace_once(source, "-(void) terminate\n{", "-(void) terminate { [self nocturneTerminateWithCompletion:nil]; }\n\n-(void)nocturneTerminateWithCompletion:(void (^)(void))completion\n{")
@@ -86,7 +90,12 @@ overlay(target, group, 'ViewControllers/StreamFrameViewController.m') do |source
 end
 # Keep all input changes in reviewed overlays, leaving the pinned dependency intact.
 overlay(target, group, 'Input/StreamView.m') do |source|
+  source = "#import <objc/runtime.h>\n" + source
+  source = replace_section(source, '- (CGSize) getVideoAreaSize {', '- (CGPoint) adjustCoordinatesForVideoArea:', "- (CGSize) getVideoAreaSize {\n    return NocturneVideoAreaSize(self.bounds.size, streamAspectRatio, self.nocturneFillEntireScreen);\n}\n\n")
+  source = replace_section(source, '    CGSize videoSize;', '    videoOrigin = CGPointMake', "    CGSize videoSize = [self getVideoAreaSize];\n    CGPoint videoOrigin;\n")
   source = replace_once(source, '    NSInteger lastMouseButtonMask;', "    NSInteger lastMouseButtonMask;\n    NSMapTable<UITouch *, NSNumber *> *nocturneMouseTouches;\n    NSMutableSet<UITouch *> *nocturneActiveTouches;\n    NSHashTable<UITouch *> *nocturneIgnoredTouches;")
+  source = replace_once(source, '    NSMutableSet* keysDown;', "    NSMutableSet* keysDown;\n    NSMutableDictionary<NSNumber *, UIPress *> *nocturnePressedKeys;\n    BOOL nocturneControlsKeyDown;")
+  source = replace_section(source, '- (void)pressesBegan:', '- (void)touchesEnded:', File.read('Sources/Client/Bridge/StreamKeyboardInput.inc'))
   source = replace_section(source, '- (BOOL)handleMouseButtonEvent:', '- (void)touchesMoved:', '')
   raise 'Upstream mouse routing changed; review the overlay.' unless source.scan('if ([GCMouse current] != nil)').length == 2
   source = source.gsub('if ([GCMouse current] != nil)', 'if (NocturneUsesRelativeMouse(self))')
@@ -97,9 +106,20 @@ overlay(target, group, 'Input/StreamView.m') do |source|
   source = source.gsub(/LiSendMouseButtonEvent\((BUTTON_ACTION_(?:PRESS|RELEASE)), (\[self buttonFromX1ButtonCode:button\])\);/, '[self nocturneSendMouseButton:\1 button:\2];')
   input_methods(source, 'StreamViewInput.inc')
 end
+overlay(target, group, 'Stream/VideoDecoderRenderer.m') do |source|
+  # UIKit switches run-loop modes during touch tracking. Default-only delivery
+  # freezes decoding until the gesture ends, then drains a burst of old frames.
+  source = replace_once(source, 'forMode:NSDefaultRunLoopMode];', 'forMode:NSRunLoopCommonModes];')
+  source = replace_once(source, '    CADisplayLink* _displayLink;', "    CADisplayLink* _displayLink;\n    NocturneVideoPacer nocturnePacer;")
+  source = replace_once(source, '    self->frameRate = frameRate;', "    self->frameRate = frameRate;\n    NocturneVideoPacerReset(&nocturnePacer, frameRate, framePacing);")
+  source = replace_section(source, '- (void)displayLinkCallback:', '- (void)stop', File.read('Sources/Client/Bridge/StreamVideoPlayback.inc'))
+  source = replace_section(source, '    CGSize videoSize;', '    displayLayer.position =', "    CGSize videoSize = [_view getVideoAreaSize];\n")
+  "#import \"NocturneStreamInput.h\"\n#import \"StreamVideoPacing.h\"\n" + source
+end
 overlay(target, group, 'Input/ControllerSupport.m') do |source|
   source = replace_once(source, '@implementation ControllerSupport {', "@implementation ControllerSupport {\n    NSUInteger nocturneMouseButtons;")
   source = replace_once(source, '        self->accumulatedDeltaX += deltaX / MOUSE_SPEED_DIVISOR;', "        if (![self nocturneUsesRelativeMouse]) return;\n        self->accumulatedDeltaX += deltaX / MOUSE_SPEED_DIVISOR;")
+  source = replace_once(source, '            LiSendMouseMoveEvent(truncatedDeltaX, truncatedDeltaY);', '            [self nocturneSendMouseMoveX:truncatedDeltaX y:truncatedDeltaY];')
   raise 'Upstream mouse buttons changed; review the overlay.' unless source.scan('LiSendMouseButtonEvent(pressed ? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE,').length == 5
   source = source.gsub(/LiSendMouseButtonEvent\(pressed \? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE, (BUTTON_\w+)\);/, '[self nocturneHandleMouseButton:pressed ? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE button:\1];')
   source = replace_once(source, "-(void) unregisterMouseCallbacks:(GCMouse*)mouse API_AVAILABLE(ios(14.0)) {", "-(void) unregisterMouseCallbacks:(GCMouse*)mouse API_AVAILABLE(ios(14.0)) {\n    [self nocturneReleaseMouseButtons];")
@@ -229,7 +249,8 @@ Dir.glob('{Sources/Server,Sources/Design}/**/*.swift').sort.each do |path|
   host.source_build_phase.add_file_reference(group.new_file(path))
 end
 host.resources_build_phase.add_file_reference(group.new_file('Resources/Server.xcassets'))
-raise 'Run scripts/bootstrap.sh to fetch the server runtime.' unless File.executable?('Vendor/StreamingRuntime/Contents/Helpers/nocturne-stream-host')
+# Client-only bootstrap does not need the Mac runtime. Packaging validates it
+# when the server is actually built.
 phase = host.new_shell_script_build_phase('Package streaming server runtime')
 phase.shell_path = '/bin/bash'
 phase.shell_script = '"${SRCROOT}/scripts/package-streaming-server.sh"'

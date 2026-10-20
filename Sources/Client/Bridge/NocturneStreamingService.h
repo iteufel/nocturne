@@ -1,6 +1,8 @@
 #import <UIKit/UIKit.h>
 NS_ASSUME_NONNULL_BEGIN
 
+FOUNDATION_EXPORT NSNotificationName const NocturneStreamControlsRequestedNotification;
+
 @interface NocturneStreamingService : NSObject
 @property (nonatomic, copy, nullable) void (^hostsChanged)(NSArray<NSDictionary *> *hosts);
 @property (nonatomic, copy, nullable) void (^appsChanged)(NSString *hostID, NSArray<NSDictionary *> *apps);
@@ -13,6 +15,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy, nullable) void (^pairingFinished)(void);
 @property (nonatomic, copy, nullable) void (^failed)(NSString *message);
 @property (nonatomic, copy, nullable) void (^streamStarted)(UIViewController *controller);
+@property (nonatomic, copy, nullable) void (^streamFailed)(UIViewController *controller, NSString *message);
 - (NSData *)workspaceCertificate;
 - (nullable NSData *)workspacePrivateKey;
 - (NSData *)signWorkspaceChallenge:(NSData *)challenge;
@@ -26,6 +29,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)forgetHost:(NSString *)hostID;
 - (nullable UIViewController *)streamHost:(NSString *)hostID app:(NSString *)appID settings:(NSDictionary *)settings onExit:(void (^)(void))onExit;
 - (void)setTouchMode:(BOOL)absolute controller:(UIViewController *)controller NS_SWIFT_NAME(setTouchMode(_:controller:));
+- (void)setFillEntireScreen:(BOOL)fill controller:(UIViewController *)controller NS_SWIFT_NAME(setFillEntireScreen(_:controller:));
+- (void)setPointerCapture:(BOOL)enabled controller:(UIViewController *)controller NS_SWIFT_NAME(setPointerCapture(_:controller:));
 - (void)stopController:(UIViewController *)controller NS_SWIFT_NAME(stopController(_:));
 - (void)stopController:(UIViewController *)controller completion:(void (^)(void))completion NS_SWIFT_NAME(stopController(_:completion:));
 @end

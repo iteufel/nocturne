@@ -78,13 +78,28 @@ jobs:
         with:
           toolchain: 1.99.1
           components: rustfmt, clippy
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: remote
+      - name: Test build orchestration
+        run: python3 scripts/tests/test-build-orchestration.py
       - name: Check and test Rust services
         run: |
           cargo fmt --manifest-path remote/Cargo.toml --all --check
           cargo clippy --manifest-path remote/Cargo.toml --locked --workspace --all-targets -- -D warnings
           cargo test --manifest-path remote/Cargo.toml --locked --workspace
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build the broker image
-        run: docker build -f remote/Dockerfile -t nocturne-broker .
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: remote/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: nocturne-broker
+          cache-from: type=gha,scope=broker
+          cache-to: type=gha,mode=max,scope=broker
 
   broker_publish:
     name: Publish broker to Docker Hub
@@ -141,12 +156,21 @@ jobs:
         with:
           toolchain: 1.99.1
           components: rustfmt, clippy
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: remote
+          key: ios-simulator-xcode-27
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
           xcodebuild -downloadComponent MetalToolchain
           gem install --user-install xcodeproj -v 1.27.0 --no-document
-          scripts/bootstrap.sh
+          scripts/bootstrap.sh ios-simulator
+      - name: Test stream jitter and recovery
+        run: |
+          bash scripts/test-stream-audio.sh
+          bash scripts/test-stream-video.sh
       - name: Test the iPhone and iPad client
         run: scripts/test-ios-ci.sh
       - name: Save client test results
@@ -170,11 +194,17 @@ jobs:
         with:
           toolchain: 1.99.1
           components: rustfmt, clippy
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: remote
+          key: mac-xcode-27
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
+          brew install cmake pkgconf miniupnpc openssl@3
           gem install --user-install xcodeproj -v 1.27.0 --no-document
-          scripts/bootstrap.sh
+          scripts/bootstrap.sh mac
       - name: Test the broker and remote transport
         run: |
           cargo test --manifest-path remote/Cargo.toml --locked --workspace
@@ -194,6 +224,8 @@ jobs:
         run: bash scripts/test-microphone-driver.sh
       - name: Build the unified macOS server
         run: scripts/build.sh mac
+      - name: Test locked-screen capture with sanitizers
+        run: bash scripts/test-stream-lock-screen.sh
 
   testflight:
     name: Release iOS to TestFlight
@@ -216,12 +248,17 @@ jobs:
         with:
           toolchain: 1.99.1
           components: rustfmt, clippy
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: remote
+          key: ios-device-xcode-27
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
           xcodebuild -downloadComponent MetalToolchain
           gem install --user-install xcodeproj -v 1.27.0 --no-document
-          scripts/bootstrap.sh
+          scripts/bootstrap.sh ios-device
       - name: Import the distribution identity
         uses: Apple-Actions/import-codesign-certs@fe74d46e82474f87e1ba79832ad28a4013d0e33a # v6
         with:
@@ -292,11 +329,17 @@ jobs:
         with:
           toolchain: 1.99.1
           components: rustfmt, clippy
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: remote
+          key: mac-xcode-27
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
+          brew install cmake pkgconf miniupnpc openssl@3
           gem install --user-install xcodeproj -v 1.27.0 --no-document
-          scripts/bootstrap.sh
+          scripts/bootstrap.sh mac
       - name: Import the Developer ID identity
         uses: Apple-Actions/import-codesign-certs@fe74d46e82474f87e1ba79832ad28a4013d0e33a # v6
         with:
