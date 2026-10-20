@@ -1,4 +1,5 @@
 #import "DisplayBridge.h"
+#import "NocturneSession.h"
 #import <dlfcn.h>
 
 // Private CoreGraphics interfaces are isolated here and resolved at runtime.
@@ -73,7 +74,7 @@ static CGDirectDisplayID NDDisplayForUUID(CFUUIDRef uuid, CGDirectDisplayID fall
 }
 - (instancetype)initWithWidth:(NSUInteger)width height:(NSUInteger)height refreshRate:(NSUInteger)rate error:(NSError **)error {
     if (!(self = [super init])) return nil;
-    if (![NDDisplayLayout isSessionAvailable]) { NDFail(error, @"Unlock this Mac before configuring its streaming display.", 12); return nil; }
+    if (![NDDisplayLayout isSessionAvailable]) { NDFail(error, @"Sign in to this Mac before configuring its streaming display.", 12); return nil; }
     if (![NDVirtualDisplay isSupported]) { NDFail(error, @"Virtual displays are unavailable on this version of macOS. Select a connected display in Settings.", 1); return nil; }
     CGVirtualDisplayDescriptor *descriptor = [[NSClassFromString(@"CGVirtualDisplayDescriptor") alloc] init];
     descriptor.name = @"Nocturne Display"; descriptor.queue = dispatch_get_main_queue();
@@ -108,7 +109,7 @@ static CGDirectDisplayID NDDisplayForUUID(CFUUIDRef uuid, CGDirectDisplayID fall
     return YES;
 }
 - (BOOL)selectRequestedModeWithError:(NSError **)error {
-    if (![NDDisplayLayout isSessionAvailable]) return NDFail(error, @"Unlock this Mac before configuring its streaming display.", 12);
+    if (![NDDisplayLayout isSessionAvailable]) return NDFail(error, @"Sign in to this Mac before configuring its streaming display.", 12);
     NSUInteger width = _width, height = _height;
     // Select the Retina mode explicitly; never accept a silently scaled desktop.
     NSArray *modes = CFBridgingRelease(CGDisplayCopyAllDisplayModes(self.displayID,
@@ -141,8 +142,16 @@ static CGDirectDisplayID NDDisplayForUUID(CFUUIDRef uuid, CGDirectDisplayID fall
 }
 + (BOOL)isSessionAvailable {
     NSDictionary *session = CFBridgingRelease(CGSessionCopyCurrentDictionary());
-    return session && [session[(__bridge NSString *)kCGSessionOnConsoleKey] boolValue] &&
-        [session[(__bridge NSString *)kCGSessionLoginDoneKey] boolValue] && ![session[@"CGSSessionScreenIsLocked"] boolValue];
+    return [self isSessionAvailableForSession:session];
+}
++ (BOOL)isSessionAvailableForSession:(NSDictionary *)session {
+    return NocturneSessionIsAvailable((__bridge CFDictionaryRef)session);
+}
++ (BOOL)isScreenLocked {
+    CFDictionaryRef session = CGSessionCopyCurrentDictionary();
+    BOOL locked = NocturneSessionIsLocked(session);
+    if (session) CFRelease(session);
+    return locked;
 }
 + (BOOL)canDisableDisplays { return NDEnableFunction() != NULL; }
 + (BOOL)hasActiveDisplayOtherThan:(CGDirectDisplayID)excluded {
@@ -178,7 +187,10 @@ static CGDirectDisplayID NDDisplayForUUID(CFUUIDRef uuid, CGDirectDisplayID fall
     return self;
 }
 - (BOOL)makePrimary:(CGDirectDisplayID)display disableOthers:(BOOL)disableOthers error:(NSError **)error {
-    if (![NDDisplayLayout isSessionAvailable]) return NDFail(error, @"Unlock this Mac before configuring its streaming display.", 12);
+    if (![NDDisplayLayout isSessionAvailable]) return NDFail(error, @"Sign in to this Mac before configuring its streaming display.", 12);
+    // Physical-layout transactions can stall under loginwindow. Login capture
+    // uses the existing main display instead of moving or disabling monitors.
+    if ([NDDisplayLayout isScreenLocked]) return NDFail(error, @"Unlock this Mac before changing its connected display layout.", 12);
     if (!CGDisplayIsActive(display)) return NDFail(error, @"Nocturne Display is not ready for capture.", 6);
     NDSetEnabled enable = NDEnableFunction();
     if (disableOthers && !enable) return NDFail(error, @"Turning off connected displays is unavailable on this version of macOS.", 7);
