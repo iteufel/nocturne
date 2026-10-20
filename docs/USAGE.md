@@ -4,8 +4,8 @@ Setup and feature instructions for the iPhone/iPad client and Mac server. For do
 
 ## Connect
 
-1. Open **Nocturne Server** and select **Start server**. Allow screen/system audio capture and Accessibility for input when macOS asks. These permissions belong to Nocturne Server.
-2. In **Sharing**, enable terminal/file access if wanted and choose the shared folder. Both features start disabled. Configure displays in **Nocturne Server → Settings…** while the server is stopped.
+1. Open **Nocturne Server**. The saved Sharing toggles determine which services start. Allow screen/system audio capture and Accessibility for input when macOS asks. These permissions belong to Nocturne Server.
+2. In **Sharing**, enable terminal/file access if wanted and choose the shared folder, then select **Apply & restart**. Both features start disabled. Screen sharing starts enabled and can be turned off independently. Configure displays in **Nocturne Server → Settings…**; settings stay editable while the server runs and take effect when you apply them.
 3. Choose **Pair a device**. On iPhone/iPad, choose **Add host → Scan QR code** and scan the Mac's screen. Pairing completes automatically, including video, through the authenticated connection. Each QR code enrolls one device and expires after five minutes.
 4. Tap a saved host in **Computers → Paired hosts** to open its desktop. After first-time pairing, choose **Desktop** from its library. Swipe inward from the right edge of the stream to open its controls. The menu opens terminal/files alongside the video. On large windows they appear to the side; smaller windows use a bottom panel.
 
@@ -14,6 +14,14 @@ Nearby hosts are discovered automatically. Select **Pair a device** on the Mac a
 Paired Macs are rediscovered when their IP address changes, including after moving both devices to another local network. Update both apps for workspace discovery by a stable pairing identity; existing QR pairings continue to work without scanning again. The client retries workspace connections while foregrounded and saves the authenticated address for video, terminal, files, and microphone access. Remote access is disabled by default, with `https://nocturne.alkal.de` preconfigured as the broker. For access from other networks, enable **Remote access** in the Mac server settings, keep the default broker or enter your own, and scan a new QR code. Nocturne tries local connections first, then uses an encrypted Rust transport that attempts peer-to-peer NAT traversal with relay fallback. See [online broker setup](REMOTE_ACCESS.md). An interrupted video stream or file transfer must be started again.
 
 Selecting a discovered computer requires explicit pairing approval before its library or desktop can open. Cached streaming certificates alone cannot grant access. A new video pairing is saved only after both QR workspace authorization and the streaming handshake succeed. **Forget host** in a host’s details removes its workspace pairing and linked video approval.
+
+### Automatic startup and settings
+
+In **Nocturne Server → Settings… → Startup**, enable **Open Nocturne at login** to launch the host app when you sign in. Select **Apply** to save. The saved toggles in **Sharing** start the enabled services whenever Nocturne opens. If macOS requires approval, use **Open Login Items…** to allow Nocturne. Closing the window leaves enabled services running in the menu bar. To stop them, turn their Sharing toggles off and apply, or choose **Quit Nocturne Server**.
+
+Changes in Sharing and Settings remain pending until **Apply**. Applying while the server is running restarts it and disconnects current sessions, including background shells and file transfers. **Apply & start** starts the enabled services when sharing is off; **Apply & stop** stops the server when every Sharing toggle is off. **Discard** restores the last applied settings. Appearance changes take effect immediately.
+
+When **Screen sharing** is enabled, its engine starts and stays ready while Nocturne is open and restarts automatically after a failure. Files and terminal remain available during screen-sharing startup or recovery, and also work with screen sharing turned off. Disabling screen sharing also disables individual app-window sharing. A temporary headless startup display is still removed when the engine is ready.
 
 ### Paired hosts
 
@@ -39,13 +47,13 @@ Both apps must support app windows. The Mac server needs **Screen Recording** an
 
 **Devices → Your devices** lists paired streaming devices and connected workspaces by name, with a separate **Remove…** action for each. Removing one device closes its terminal/file sessions, disables its active stream, and revokes its pairing without disconnecting the others. Saved devices remain visible while the server is stopped. “Connected” indicates an open workspace connection; streaming-only clients are shown as “Paired”.
 
-One **Stop server** stops capture, streaming, terminal sessions, and transfers. Quitting the Mac app stops its child engine. **Reset all pairing** revokes video certificates and rotates the workspace key together.
+Turn off all features in **Sharing** and apply to stop capture, streaming, terminal sessions, and transfers. Quitting the Mac app stops its child engine. **Reset all pairing** revokes video certificates and rotates the workspace key together.
 
 ## Adaptive and headless displays
 
-On iOS, choose **Settings → Resolution → Match device** (the default for new installations). With the Mac server stopped, enable **Nocturne Server → Settings → Displays → Headless virtual monitor**, then start the server and pair using its QR code. Nocturne creates a Retina virtual display with the same pixel dimensions as the client's video area. Rotation, iPad window resizing, and opening the stream's tools panel update that size automatically. Video briefly reconnects to negotiate the new resolution; terminal tabs stay running. Dimensions are even and capped at 4096 pixels per side while preserving aspect ratio. Fixed resolution choices remain available. Match device reports missing display control instead of silently scaling video over an unchanged desktop.
+On iOS, choose **Settings → Resolution → Match device** (the default for new installations). Enable **Nocturne Server → Settings → Displays → Headless virtual monitor**, apply your changes, then pair using its QR code. Nocturne creates a Retina virtual display with the same pixel dimensions as the client's video area. Rotation, iPad window resizing, and opening the stream's tools panel update that size automatically. Video briefly reconnects to negotiate the new resolution; terminal tabs stay running. Dimensions are even and capped at 4096 pixels per side while preserving aspect ratio. Fixed resolution choices remain available. Match device reports missing display control instead of silently scaling video over an unchanged desktop.
 
-Enable **Turn off connected Mac displays** before starting the server to move the Mac's windows onto the streamed desktop. The virtual display becomes the only active monitor. Disconnecting, backgrounding the client, removing its device, or stopping the server restores the saved display modes and arrangement. A missing client heartbeat releases the display after 20 seconds. **Restore Mac displays** is also available in the Mac menu bar. An internal recovery process restores monitors if the main server app exits unexpectedly.
+Enable **Turn off connected Mac displays** and apply your changes to move the Mac's windows onto the streamed desktop. The virtual display becomes the only active monitor. Disconnecting, backgrounding the client, removing its device, or stopping the server restores the saved display modes and arrangement. A missing client heartbeat releases the display after 20 seconds. **Restore Mac displays** is also available in the Mac menu bar. An internal recovery process restores monitors if the main server app exits unexpectedly.
 
 The same virtual display supports a headless Mac without an HDMI dummy plug or separate display app. It is removed when the stream disconnects and recreated when the next stream connects. The temporary display used to start the video engine is also removed once the server is ready. Physical screens keep their layout unless the separate monitor-off option is enabled; when enabled, Nocturne restores them before removing its virtual display. The Mac must be awake with a signed-in user session; that session can be locked. Turn off **Headless virtual monitor** to select a physical monitor instead; choose a fixed resolution on iOS in that mode. Existing physical-monitor selections remain unchanged after upgrading. Automatic Mac display control requires the authenticated Nocturne workspace connection, and only one stream can own it at a time.
 
@@ -59,7 +67,7 @@ While locked, video follows the Mac's main display, where macOS shows the passwo
 
 When connecting to a locked Mac, connected monitors stay on for login. If **Turn off connected Mac displays** is enabled, reconnect after unlocking to apply it. Nocturne avoids changing the physical monitor layout while macOS is locked.
 
-This works for locking an existing user session. Logging out or restarting ends the server; sign in locally and start it again before connecting. FileVault's startup unlock screen is not accessible through Nocturne.
+This works for locking an existing user session. Logging out or restarting ends the server; sign in locally before connecting. Enable **Open Nocturne at login** and leave the desired Sharing toggles enabled to make Nocturne available after signing in. FileVault's startup unlock screen is not accessible through Nocturne.
 
 ## Devices and input
 

@@ -23,6 +23,7 @@ public final class EmbeddedStreamingEngine {
     public var onUnexpectedExit: ((String) -> Void)?
     public let directory: URL
     public var isRunning: Bool { process?.isRunning == true }
+    public var isReady: Bool { isRunning && launch != nil }
     public var logURL: URL { directory.appendingPathComponent("engine.log") }
     private var process: Process?
     private var api: EngineAPI?
@@ -54,7 +55,7 @@ public final class EmbeddedStreamingEngine {
         child.terminationHandler = { [weak self] child in
             Task { @MainActor in
                 guard let self, self.generation == epoch else { return }
-                self.onUnexpectedExit?("The streaming engine stopped (code \(child.terminationStatus)). Review the server log, then start again.")
+                self.onUnexpectedExit?("The streaming engine stopped (code \(child.terminationStatus)). Review the server log.")
             }
         }
         process = child
@@ -145,6 +146,30 @@ public final class EmbeddedStreamingEngine {
         guard let api else { throw NocturneError.disconnected }
         let result = try await api.request("/api/clients/unpair-all", body: [:])
         guard result["status"] as? Bool == true else { throw NocturneError.remote("The streaming pairings could not be reset.") }
+    }
+
+    /// Revocation must remain available when screen sharing is disabled. Never
+    /// edit the engine's state while a child process can write it concurrently.
+    public func resetSavedPairing() throws {
+        try updateSavedPairings { _ in [] }
+    }
+
+    public func removeSavedDevice(_ id: String) throws {
+        try updateSavedPairings { $0.filter { $0["uuid"] as? String != id } }
+    }
+
+    private func updateSavedPairings(_ update: ([[String: Any]]) -> [[String: Any]]) throws {
+        guard process == nil else { throw NocturneError.remote("Wait for screen sharing to finish starting, then try again.") }
+        let url = directory.appendingPathComponent("state.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        guard var object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any],
+              var root = object["root"] as? [String: Any] else { throw NocturneError.invalidFrame }
+        let devices: [[String: Any]]
+        if root["named_devices"] == nil || root["named_devices"] as? String == "" { devices = [] }
+        else if let saved = root["named_devices"] as? [[String: Any]] { devices = saved }
+        else { throw NocturneError.invalidFrame }
+        root["named_devices"] = update(devices); object["root"] = root
+        try Self.writePrivate(try JSONSerialization.data(withJSONObject: object), to: url)
     }
 
     public func pairedDevices() async throws -> [StreamDevice] {
