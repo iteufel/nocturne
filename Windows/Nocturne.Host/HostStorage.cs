@@ -9,14 +9,6 @@ using System.Text.Json;
 
 namespace Nocturne.Host;
 
-public sealed record HostSettings
-{
-    public string Name { get; init; } = Environment.MachineName;
-    public string SharedFolder { get; init; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Nocturne Shared");
-    public bool Terminal { get; init; }
-    public bool Files { get; init; }
-}
-
 [SupportedOSPlatform("windows")]
 public sealed class HostStorage
 {
@@ -38,9 +30,11 @@ public sealed class HostStorage
         ? JsonSerializer.Deserialize<HostSettings>(File.ReadAllBytes(Path.Combine(DirectoryPath, "settings.json")), Wire.Json)
             ?? throw new IOException("Settings could not be read.") : new();
     public void SaveSettings(HostSettings settings) => AtomicWrite("settings.json", JsonSerializer.SerializeToUtf8Bytes(settings, Wire.Json));
-    public byte[] LoadSecret()
+    public byte[] LoadSecret() => LoadKey("workspace.key");
+    public byte[] LoadEndpointKey() => LoadKey("remote.key");
+    private byte[] LoadKey(string name)
     {
-        var file = Path.Combine(DirectoryPath, "workspace.key");
+        var file = Path.Combine(DirectoryPath, name);
         if (File.Exists(file))
         {
             var secret = ProtectedData.Unprotect(File.ReadAllBytes(file), null, DataProtectionScope.CurrentUser);
@@ -48,7 +42,7 @@ public sealed class HostStorage
             return secret;
         }
         var key = RandomNumberGenerator.GetBytes(32);
-        AtomicWrite("workspace.key", ProtectedData.Protect(key, null, DataProtectionScope.CurrentUser));
+        AtomicWrite(name, ProtectedData.Protect(key, null, DataProtectionScope.CurrentUser));
         return key;
     }
     private void AtomicWrite(string name, byte[] data)

@@ -1,6 +1,7 @@
 param(
     [ValidateSet('x64', 'arm64')][string]$Architecture = 'x64',
     [string]$Dotnet = 'dotnet',
+    [string]$NativeDirectory = '',
     [switch]$SkipTests
 )
 $ErrorActionPreference = 'Stop'
@@ -9,20 +10,28 @@ $root = Split-Path $PSScriptRoot -Parent
 $sdk = & $Dotnet --version
 if ($LASTEXITCODE -ne 0 -or [int]($sdk.Split('.')[0]) -lt 10) { throw 'Install the .NET 10 SDK to build the Windows server.' }
 & (Join-Path $PSScriptRoot 'fetch-sunshine-windows.ps1') -Architecture $Architecture
+if ($IsWindows -and -not $NativeDirectory) {
+    & (Join-Path $PSScriptRoot 'build-windows-native.ps1') -Architecture $Architecture -SkipTests:$SkipTests
+}
+if (-not $NativeDirectory) { $NativeDirectory = Join-Path $root ".build/WindowsNative/$Architecture" }
+foreach ($library in @('nocturne_host.dll', 'nocturne_remote.dll')) {
+    if (-not (Test-Path (Join-Path $NativeDirectory $library))) { throw "Missing $library. Build on Windows, or pass -NativeDirectory with native libraries for $Architecture." }
+}
 if (-not $SkipTests) {
     & $Dotnet test (Join-Path $root 'Windows/Nocturne.Host.Tests/Nocturne.Host.Tests.csproj') -c Release -p:RestoreLockedMode=true --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Windows host tests failed.' }
     if ($IsWindows) {
-        & $Dotnet test (Join-Path $root 'Windows/Nocturne.Server.Tests/Nocturne.Server.Tests.csproj') -c Release -p:RestoreLockedMode=true --nologo
+        & $Dotnet test (Join-Path $root 'Windows/Nocturne.Server.Tests/Nocturne.Server.Tests.csproj') -c Release -p:RestoreLockedMode=true "-p:NativeArchitecture=$Architecture" --nologo
         if ($LASTEXITCODE -ne 0) { throw 'Windows application startup tests failed.' }
     }
 }
 $release = Join-Path $root '.build/WindowsRelease'
 $output = Join-Path $release "win-$Architecture"
 if (Test-Path $output) { Remove-Item $output -Recurse -Force }
-& $Dotnet publish (Join-Path $root 'Windows/Nocturne.Server/Nocturne.Server.csproj') -c Release -r "win-$Architecture" --self-contained true -p:RestoreLockedMode=true -o $output --nologo
+& $Dotnet publish (Join-Path $root 'Windows/Nocturne.Server/Nocturne.Server.csproj') -c Release -r "win-$Architecture" --self-contained true -p:RestoreLockedMode=true "-p:NativeArchitecture=$Architecture" -o $output --nologo
 if ($LASTEXITCODE -ne 0) { throw 'Windows server publish failed.' }
 Copy-Item (Join-Path $root "Vendor/StreamingRuntime-Windows-$Architecture") (Join-Path $output 'engine') -Recurse
+Copy-Item (Join-Path $NativeDirectory '*.dll') $output -Force
 foreach ($file in @('LICENSE', 'THIRD_PARTY_NOTICES.md')) { Copy-Item (Join-Path $root $file) $output }
 Copy-Item (Join-Path $root 'docs/WINDOWS.md') (Join-Path $output 'README.md')
 Copy-Item (Join-Path $root 'Windows/engine.lock.json') $output

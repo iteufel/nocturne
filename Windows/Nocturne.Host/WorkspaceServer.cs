@@ -34,6 +34,11 @@ public sealed class WorkspaceServer : IAsyncDisposable
     private readonly ConcurrentDictionary<Guid, Session> sessions = [];
     private readonly SemaphoreSlim identityChanges = new(1);
     private readonly object permissionGate = new();
+    private readonly MicrophoneSession? microphone;
+    private readonly DisplaySession? display;
+    private readonly AppWindowSessions? applications;
+    private readonly IRemoteHost? remote;
+    private Timer? mediaTimer;
     private readonly CancellationTokenSource stopped = new();
     private readonly ConcurrentDictionary<Guid, Task> tasks = [];
     private TcpListener? listener;
@@ -45,11 +50,13 @@ public sealed class WorkspaceServer : IAsyncDisposable
     public int Port => ((IPEndPoint)(listener?.LocalEndpoint ?? throw new IOException("Server is stopped."))).Port;
 
     public WorkspaceServer(string name, byte[] secret, DeviceStore devices, HostPermissions permissions,
-        IWorkspaceFiles? files, Func<int, int, ITerminal> terminalFactory, IStreamingEngine? engine = null)
+        IWorkspaceFiles? files, Func<int, int, ITerminal> terminalFactory, IStreamingEngine? engine = null,
+        MicrophoneSession? microphone = null, DisplaySession? display = null, AppWindowSessions? applications = null, IRemoteHost? remote = null)
     {
         if (secret.Length != 32) throw new ArgumentException("The workspace key must contain 32 bytes.");
         this.name = name; this.secret = (byte[])secret.Clone(); this.devices = devices;
         this.permissions = permissions; this.files = files; this.engine = engine;
+        this.microphone = microphone; this.display = display; this.applications = applications; this.remote = remote;
         terminals = new(terminalFactory);
     }
 
@@ -60,6 +67,11 @@ public sealed class WorkspaceServer : IAsyncDisposable
         if (address == null) listener.Server.DualMode = true;
         listener.Server.ExclusiveAddressUse = true;
         listener.Start(8);
+        mediaTimer = new(_ =>
+        {
+            try { microphone?.Expire(); display?.Expire(); applications?.Expire(); }
+            catch (Exception ex) when (ex is IOException or Win32Exception) { SessionError?.Invoke(ex.Message); }
+        }, null, 500, 500);
         acceptTask = AcceptAsync();
     }
 
@@ -89,6 +101,8 @@ public sealed class WorkspaceServer : IAsyncDisposable
         {
             Volatile.Write(ref permissions, value);
             if (!value.Terminal) terminals.CloseAll();
+            if (!value.Microphone) microphone?.Stop();
+            if (!value.ScreenSharing) { display?.Stop(); applications?.Stop(); }
         }
         if (!value.Files) foreach (var session in sessions.Values) session.DiscardUploads();
     }
@@ -98,6 +112,7 @@ public sealed class WorkspaceServer : IAsyncDisposable
         lock (permissionGate)
         {
             devices.Block(id, name);
+            remote?.Revoke(id);
             foreach (var session in sessions.Values.Where(s => s.Identity == id)) { session.Close(); session.DiscardUploads(); }
             terminals.CloseAll(id);
         }
@@ -115,12 +130,14 @@ public sealed class WorkspaceServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         stopped.Cancel(); listener?.Stop();
+        remote?.Dispose();
+        if (mediaTimer != null) await mediaTimer.DisposeAsync();
         foreach (var session in sessions.Values) session.Close();
         if (acceptTask != null) await acceptTask;
         try { await Task.WhenAll(tasks.Values.ToArray()); }
         finally
         {
-            terminals.Dispose(); files?.Dispose();
+            terminals.Dispose(); files?.Dispose(); microphone?.Dispose(); display?.Dispose(); applications?.Dispose();
             CryptographicOperations.ZeroMemory(secret);
         }
     }
@@ -133,6 +150,7 @@ public sealed class WorkspaceServer : IAsyncDisposable
         private readonly Dictionary<string, IUpload> uploads = [];
         private readonly object uploadGate = new();
         private int closed;
+        private readonly CancellationTokenSource closing = new();
         private string? identity;
         public string? Identity => Volatile.Read(ref identity);
         private byte[]? nonce;
@@ -178,6 +196,7 @@ public sealed class WorkspaceServer : IAsyncDisposable
                 Close();
                 writer?.GetAwaiter().GetResult();
                 server.terminals.Detach(id); DiscardUploads();
+                server.microphone?.Disconnected(id); server.display?.Disconnected(id); server.applications?.Disconnected(id);
                 server.sessions.TryRemove(id, out _); server.DevicesChanged?.Invoke();
             }
         }
@@ -189,10 +208,15 @@ public sealed class WorkspaceServer : IAsyncDisposable
                 while (outgoing.Reader.WaitToReadAsync().AsTask().GetAwaiter().GetResult())
                     while (outgoing.Reader.TryRead(out var item))
                     {
-                        stream.Write(Wire.Encode(item.Packet)); item.Completion?.TrySetResult();
+                        try { stream.Write(Wire.Encode(item.Packet)); item.Completion?.TrySetResult(); }
+                        catch (Exception error) { item.Completion?.TrySetException(error); throw; }
                     }
             }
             catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException) { Close(); }
+            finally
+            {
+                while (outgoing.Reader.TryRead(out var remaining)) remaining.Completion?.TrySetCanceled();
+            }
         }
 
         private void Send(Packet packet)
@@ -200,9 +224,17 @@ public sealed class WorkspaceServer : IAsyncDisposable
             if (!outgoing.Writer.TryWrite(new(packet))) Close();
         }
 
+        private async Task SendMediaAsync(Packet packet)
+        {
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await outgoing.Writer.WriteAsync(new(packet, completion), closing.Token);
+            await completion.Task.WaitAsync(closing.Token);
+        }
+
         public void Close()
         {
             if (Interlocked.Exchange(ref closed, 1) != 0) return;
+            closing.Cancel();
             outgoing.Writer.TryComplete(); client.Dispose();
         }
 
@@ -235,13 +267,19 @@ public sealed class WorkspaceServer : IAsyncDisposable
                 lock (server.permissionGate)
                 {
                     var device = server.devices.Authorize(fingerprint, packet.Name, packet.EnrollmentToken);
+                    var source = (IPEndPoint)client.Client.RemoteEndPoint!;
+                    if (IPAddress.IsLoopback(source.Address) || source.Address.IsIPv4MappedToIPv6 && IPAddress.IsLoopback(source.Address.MapToIPv4()))
+                        server.remote?.Authorize((ushort)source.Port, fingerprint);
                     deviceName = device.Name; Volatile.Write(ref identity, fingerprint);
                 }
                 client.ReceiveTimeout = 0;
                 reply.Version = Wire.Version; reply.Name = server.name;
                 var allowed = Volatile.Read(ref server.permissions);
                 reply.Capabilities = new[] { allowed.Files && server.files != null ? "files" : null,
-                    allowed.Terminal ? "terminal" : null, server.engine != null ? "streaming" : null }.OfType<string>().ToArray();
+                    allowed.Terminal ? "terminal" : null, allowed.ScreenSharing && server.engine != null ? "streaming" : null,
+                    allowed.ScreenSharing && server.display != null ? "display" : null,
+                    allowed.Microphone && server.microphone != null ? "microphone-pcm-v1" : null,
+                    allowed.ScreenSharing && server.applications != null ? "app-windows-v1" : null }.OfType<string>().ToArray();
                 server.DevicesChanged?.Invoke(); return reply;
             }
             var owner = Identity;
@@ -251,7 +289,7 @@ public sealed class WorkspaceServer : IAsyncDisposable
             if (packet.Operation == "pairStream")
             {
                 var bytes = packet.Data;
-                if (server.engine == null || bytes?.Length != 4 || bytes.Any(b => b is < 48 or > 57))
+                if (!permissions.ScreenSharing || server.engine == null || bytes?.Length != 4 || bytes.Any(b => b is < 48 or > 57))
                     throw new IOException("Invalid streaming pairing request.");
                 server.identityChanges.Wait(server.stopped.Token);
                 try
@@ -274,8 +312,33 @@ public sealed class WorkspaceServer : IAsyncDisposable
                     server.terminals.Handle(packet, owner, id, Send); return null;
                 }
             }
-            if (packet.Operation is "displayPrepare" or "displayHeartbeat" or "displayRelease" or "microphoneStart" or "microphoneAudio" or "microphoneStop")
-                throw new IOException("This Windows host does not support display control or microphone forwarding. Choose a fixed video resolution in Settings.");
+            if (packet.Operation is "displayPrepare" or "displayHeartbeat" or "displayRelease")
+            {
+                lock (server.permissionGate)
+                {
+                    if (!Volatile.Read(ref server.permissions).ScreenSharing || server.display == null || !server.devices.IsAuthorized(owner))
+                        throw new IOException("Enable display control in Nocturne Server, or choose a fixed video resolution in Settings.");
+                    return server.display.Handle(packet, id);
+                }
+            }
+            if (packet.Operation is "microphoneStart" or "microphoneAudio" or "microphoneStop")
+            {
+                lock (server.permissionGate)
+                {
+                    if (!Volatile.Read(ref server.permissions).Microphone || server.microphone == null || !server.devices.IsAuthorized(owner))
+                        throw new IOException("Enable Client microphone in Nocturne Server, then reconnect.");
+                    return server.microphone.Handle(packet, id);
+                }
+            }
+            if (packet.Operation is "appList" or "appIcon" or "appLaunch" or "appOpen" or "appResize" or "appInput" or "appHeartbeat" or "appClose")
+            {
+                lock (server.permissionGate)
+                {
+                    if (!Volatile.Read(ref server.permissions).ScreenSharing || server.applications == null || !server.devices.IsAuthorized(owner))
+                        throw new IOException("Enable Screen sharing in Nocturne Server, then reconnect.");
+                    return server.applications.Handle(packet, id, owner, SendMediaAsync, () => Volatile.Read(ref closed) == 0);
+                }
+            }
             lock (server.permissionGate)
             lock (uploadGate)
             {

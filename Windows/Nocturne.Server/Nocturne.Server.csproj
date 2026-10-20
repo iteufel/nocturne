@@ -10,6 +10,11 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../../.build/WindowsNative/$(NativeArchitecture)/*.dll" Condition="'$(NativeArchitecture)' != ''">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
     <InternalsVisibleTo Include="Nocturne.Server.Tests" />
     <Resource Include="app.ico" />
     <ProjectReference Include="../Nocturne.Host/Nocturne.Host.csproj" />

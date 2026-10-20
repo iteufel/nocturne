@@ -59,15 +59,23 @@ public static class Wire
 
     public static string Fingerprint(byte[] certificate) => Convert.ToHexStringLower(SHA256.HashData(certificate));
 
-    public static string Invitation(string host, string name, byte[] secret, byte[] token)
+    public static string Invitation(string host, string name, byte[] secret, byte[] token, RemoteAccessInfo? remote = null)
     {
         if (secret.Length != 32 || token.Length != 32 || !System.Net.IPAddress.TryParse(host, out _))
             throw new ArgumentException("Choose a local network address before pairing.");
-        return "nocturne://pair?" + string.Join("&", new Dictionary<string, string>
+        var fields = new Dictionary<string, string>
         {
-            ["v"] = "2", ["host"] = host, ["port"] = Port.ToString(), ["name"] = name,
+            ["v"] = remote == null ? "2" : "3", ["host"] = host, ["port"] = Port.ToString(), ["name"] = name,
             ["key"] = Convert.ToBase64String(secret), ["token"] = Convert.ToBase64String(token)
-        }.Select(kv => kv.Key + "=" + Uri.EscapeDataString(kv.Value)));
+        };
+        if (remote != null)
+        {
+            fields["broker"] = RemoteAccessInfo.ValidateBroker(remote.BrokerURL);
+            if (remote.EndpointID.Length != 64 || !remote.EndpointID.All(char.IsAsciiHexDigit))
+                throw new ArgumentException("Invalid remote endpoint identity.");
+            fields["endpoint"] = remote.EndpointID.ToLowerInvariant();
+        }
+        return "nocturne://pair?" + string.Join("&", fields.Select(kv => kv.Key + "=" + Uri.EscapeDataString(kv.Value)));
     }
 }
 
@@ -93,12 +101,50 @@ public sealed record Packet(string Operation)
     public byte[]? Certificate { get; set; }
     public byte[]? Signature { get; set; }
     public byte[]? EnrollmentToken { get; set; }
+    public DisplaySize? Display { get; set; }
+    [JsonPropertyName("applicationID")] public string? ApplicationID { get; set; }
+    public RemoteApplication[]? Applications { get; set; }
+    public RemoteAppWindow[]? Windows { get; set; }
+    public RemoteAppWindow? Window { get; set; }
+    [JsonPropertyName("windowID")] public uint? WindowID { get; set; }
+    public AppViewport? Viewport { get; set; }
+    public AppInput? Input { get; set; }
+    public AppVideo? Video { get; set; }
     public Packet Reply() => new(Operation) { Id = Id };
 }
 
 public sealed record RemoteFile(string Name, string Path, bool IsDirectory, long Size, double Modified);
 public sealed record RemoteTerminal(string Id, string Name, bool Running, int Columns, int Rows);
-public sealed record HostPermissions(bool Terminal = false, bool Files = false);
+public sealed record HostPermissions(bool Terminal = false, bool Files = false, bool Microphone = false, bool ScreenSharing = true);
+
+public sealed record DisplaySize(int Width, int Height, int FrameRate)
+{
+    [JsonIgnore] public bool IsValid => Width is >= 320 and <= 4096 && Height is >= 320 and <= 4096 &&
+        Width % 2 == 0 && Height % 2 == 0 && FrameRate is 30 or 60 or 120;
+}
+public sealed record RemoteApplication(string Id, string Name, string? BundleIdentifier = null);
+public sealed record RemoteAppWindow(uint Id, [property: JsonPropertyName("applicationID")] string ApplicationID, string Title, int Width, int Height);
+public sealed record AppViewport(int Width, int Height, double Scale, int FrameRate = 60)
+{
+    [JsonIgnore] public bool IsValid => Width is >= 240 and <= 4096 && Height is >= 160 and <= 4096 &&
+        double.IsFinite(Scale) && Scale is >= 1 and <= 3 && FrameRate is 30 or 60;
+    public DisplaySize Pixels()
+    {
+        if (!IsValid) throw new IOException("Invalid app window size.");
+        var factor = Math.Min(1, 4096 / (Math.Max(Width, Height) * Scale));
+        return new((int)Math.Round(Width * Scale * factor / 2) * 2,
+            (int)Math.Round(Height * Scale * factor / 2) * 2, FrameRate);
+    }
+}
+public sealed record AppInput(string Kind, double X = 0, double Y = 0, int Button = 0, int? ClickCount = null,
+    double DeltaX = 0, double DeltaY = 0, ushort KeyCode = 0, ulong Modifiers = 0, string Text = "")
+{
+    [JsonIgnore] public bool IsValid => Kind is "move" or "down" or "up" or "scroll" or "keyDown" or "keyUp" or "text" &&
+        double.IsFinite(X) && double.IsFinite(Y) && X is >= 0 and <= 1 && Y is >= 0 and <= 1 &&
+        Button is >= 0 and <= 2 && (ClickCount ?? 1) is >= 1 and <= 3 && double.IsFinite(DeltaX) && double.IsFinite(DeltaY) &&
+        Math.Abs(DeltaX) <= 4096 && Math.Abs(DeltaY) <= 4096 && KeyCode <= 127 && Text.Length <= 1024;
+}
+public sealed record AppVideo(byte[] Data, byte[][] ParameterSets, double Timestamp);
 
 public interface IStreamingEngine
 {
