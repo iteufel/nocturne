@@ -11,6 +11,9 @@
 #include <thread>
 #include <future>
 #include <dxgi.h>
+#include <dwmapi.h>
+#include <cwchar>
+#include <wtsapi32.h>
 #include <winrt/Windows.Graphics.Capture.h>
 
 static void decode(nocturne::EncodedFrame const& frame) {
@@ -93,9 +96,9 @@ public:
         thread = std::thread([color, &ready] {
             WNDCLASSW cls{}; cls.lpfnWndProc = procedure; cls.hInstance = GetModuleHandleW(nullptr); cls.lpszClassName = L"NocturneNativeCaptureTest";
             RegisterClassW(&cls);
-            auto handle = CreateWindowExW(WS_EX_TOOLWINDOW, cls.lpszClassName, L"Nocturne capture verification", WS_OVERLAPPEDWINDOW,
+            auto handle = CreateWindowExW(WS_EX_APPWINDOW, cls.lpszClassName, L"Nocturne capture verification", WS_OVERLAPPEDWINDOW,
                 80, 80, 700, 540, nullptr, nullptr, cls.hInstance, reinterpret_cast<void*>(static_cast<uintptr_t>(color)));
-            if (handle) { ShowWindow(handle, SW_SHOWNOACTIVATE); UpdateWindow(handle); }
+            if (handle) { ShowWindow(handle, SW_SHOWNOACTIVATE); UpdateWindow(handle); GdiFlush(); }
             ready.set_value(handle);
             if (!handle) return;
             MSG message{}; while (GetMessageW(&message, nullptr, 0, 0) > 0) { TranslateMessage(&message); DispatchMessageW(&message); }
@@ -107,16 +110,43 @@ public:
     HWND handle() const { return window; }
 };
 
-static void capture_window() {
+static bool capture_desktop_available() {
     DWORD session = 0; ProcessIdToSessionId(GetCurrentProcessId(), &session);
     if (session != WTSGetActiveConsoleSessionId() || !winrt::Windows::Graphics::Capture::GraphicsCaptureSession::IsSupported()) {
-        std::cout << "Window capture skipped: the runner has no supported interactive console.\n"; return;
+        std::cout << "Window capture skipped: the runner has no supported interactive console.\n"; return false;
     }
-    TestWindow red(RGB(220, 0, 0)), green(RGB(0, 220, 0));
+    LPWSTR state = nullptr; DWORD state_size = 0;
+    bool active = WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, session, WTSConnectState, &state, &state_size) &&
+        state_size == sizeof(WTS_CONNECTSTATE_CLASS) && *reinterpret_cast<WTS_CONNECTSTATE_CLASS*>(state) == WTSActive;
+    if (state) WTSFreeMemory(state);
+    if (!active) { std::cout << "Window capture skipped: the runner's console session is disconnected.\n"; return false; }
+    USEROBJECTFLAGS flags{}; DWORD length = 0;
+    if (!GetUserObjectInformationW(GetProcessWindowStation(), UOI_FLAGS, &flags, sizeof(flags), &length) || !(flags.dwFlags & WSF_VISIBLE)) {
+        std::cout << "Window capture skipped: the runner's window station is not visible.\n"; return false;
+    }
+    auto input = OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS);
+    if (!input) { std::cout << "Window capture skipped: the input desktop is inaccessible.\n"; return false; }
+    wchar_t current_name[256]{}, input_name[256]{};
+    bool current = GetUserObjectInformationW(GetThreadDesktop(GetCurrentThreadId()), UOI_NAME, current_name, sizeof(current_name), &length) &&
+        GetUserObjectInformationW(input, UOI_NAME, input_name, sizeof(input_name), &length) && wcscmp(current_name, input_name) == 0;
+    CloseDesktop(input);
+    if (!current) { std::cout << "Window capture skipped: the runner's desktop is locked or inactive.\n"; return false; }
+    BOOL composition = FALSE;
+    nocturne::check_stage(DwmIsCompositionEnabled(&composition), L"Check desktop composition");
+    if (!composition) { std::cout << "Window capture skipped: desktop composition is disabled.\n"; return false; }
+    return true;
+}
+
+static bool capture_window() {
+    if (!capture_desktop_available()) return false;
+    TestWindow red(RGB(220, 0, 0));
+    nocturne::check_stage(DwmFlush(), L"Present capture target window");
+    TestWindow green(RGB(0, 220, 0));
     SetWindowPos(green.handle(), HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    nocturne::check_stage(DwmFlush(), L"Present capture test windows");
     void* capture = nocturne_capture_open(red.handle(), 640, 480, 30);
     if (!capture && (nocturne::last_hresult == DXGI_ERROR_UNSUPPORTED || nocturne::last_hresult == E_NOTIMPL)) {
-        std::cout << "Window capture skipped: the runner's display driver does not support Graphics Capture.\n"; return;
+        std::cout << "Window capture skipped: the runner's display driver does not support Graphics Capture.\n"; return false;
     }
     nocturne::require(capture != nullptr, nocturne_host_error());
     try {
@@ -134,11 +164,13 @@ static void capture_window() {
     }
     catch (...) { nocturne_capture_close(capture); throw; }
     nocturne_capture_close(capture);
+    return true;
 }
 
-int main() {
+int main(int argc, char** argv) {
     try {
         nocturne::apartment();
+        if (argc == 2 && strcmp(argv[1], "--window-capture") == 0) return capture_window() ? 0 : 77;
         // Run the real BGRA -> NV12 -> H.264 path on both native architectures.
         // This does not depend on a GPU, a virtual driver, or screen contents.
         nocturne::Encoder encoder(640, 480, 30);
@@ -173,7 +205,6 @@ int main() {
         nocturne::require(frames >= 15, L"The H.264 encoder stalled during sustained capture.");
         nocturne::require(frames <= 30, L"Frame-rate conversion synthesized frames during a capture gap.");
         nocturne::require(previous_timestamp >= 2, L"Capture timestamps did not preserve the network stall.");
-        capture_window();
         // Hosted Windows runners may lack an interactive display/audio session.
         // Device availability is checked by the application when enabling a feature.
         std::cout << "Native H.264 encode/decode passed. Displays available: " << (nocturne_displays() != nullptr)

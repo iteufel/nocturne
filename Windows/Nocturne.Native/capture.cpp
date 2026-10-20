@@ -202,7 +202,7 @@ struct Capture {
         check_hresult(CreateDirect3D11DeviceFromDXGIDevice(dxgi.get(), inspectable.put()));
         projected = inspectable.as<IDirect3DDevice>();
         auto interop = get_activation_factory<GraphicsCaptureItem, IGraphicsCaptureItemInterop>();
-        check_hresult(interop->CreateForWindow(window, guid_of<GraphicsCaptureItem>(), put_abi(item)));
+        check_stage(interop->CreateForWindow(window, guid_of<GraphicsCaptureItem>(), put_abi(item)), L"Create window capture item");
         pool = Direct3D11CaptureFramePool::CreateFreeThreaded(projected, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, item.Size());
         arrived = pool.FrameArrived([signal = signal](auto const&, auto const&) { SetEvent(signal->event); });
         session = pool.CreateCaptureSession(item); session.IsCursorCaptureEnabled(true); session.StartCapture();
