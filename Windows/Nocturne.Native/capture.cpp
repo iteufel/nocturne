@@ -79,20 +79,22 @@ struct Encoder::State {
         apartment(); foundation();
         require(width >= 2 && height >= 2 && width <= 4096 && height <= 4096 && width % 2 == 0 && height % 2 == 0 && (fps == 30 || fps == 60), L"Invalid app video size.");
         check_hresult(CoCreateInstance(CLSID_CMSH264EncoderMFT, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(encoder.put())));
-        auto type = media_type(MFVideoFormat_H264, width, height, fps);
-        check_hresult(type->SetUINT32(MF_MT_AVG_BITRATE, static_cast<UINT32>(std::clamp<int64_t>(int64_t(width) * height * fps / 8, 2000000, 30000000))));
-        check_hresult(type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High));
-        check_hresult(encoder->SetOutputType(0, type.get(), 0));
-        auto input = media_type(MFVideoFormat_NV12, width, height, fps);
-        check_hresult(encoder->SetInputType(0, input.get(), 0));
+        // B-frame configuration becomes immutable when the output type is set.
+        // Apply codec properties before negotiating either media type.
         auto codec = encoder.try_as<ICodecAPI>();
         if (codec) {
             VARIANT value{}; value.vt = VT_BOOL; value.boolVal = VARIANT_TRUE;
-            check_hresult(codec->SetValue(&CODECAPI_AVLowLatencyMode, &value));
+            check_stage(codec->SetValue(&CODECAPI_AVLowLatencyMode, &value), L"Configure low-latency H.264 encoding");
             value.vt = VT_UI4; value.ulVal = 0;
-            check_hresult(codec->SetValue(&CODECAPI_AVEncMPVDefaultBPictureCount, &value));
+            check_stage(codec->SetValue(&CODECAPI_AVEncMPVDefaultBPictureCount, &value), L"Disable H.264 B frames");
             value.ulVal = fps * 2; codec->SetValue(&CODECAPI_AVEncMPVGOPSize, &value);
         }
+        auto type = media_type(MFVideoFormat_H264, width, height, fps);
+        check_hresult(type->SetUINT32(MF_MT_AVG_BITRATE, static_cast<UINT32>(std::clamp<int64_t>(int64_t(width) * height * fps / 8, 2000000, 30000000))));
+        check_hresult(type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High));
+        check_stage(encoder->SetOutputType(0, type.get(), 0), L"Set H.264 output type");
+        auto input = media_type(MFVideoFormat_NV12, width, height, fps);
+        check_stage(encoder->SetInputType(0, input.get(), 0), L"Set H.264 input type");
         UINT32 length = 0;
         type = {}; check_hresult(encoder->GetOutputCurrentType(0, type.put()));
         if (SUCCEEDED(type->GetBlobSize(MF_MT_MPEG_SEQUENCE_HEADER, &length)) && length <= 8192) {
@@ -122,11 +124,11 @@ EncodedFrame Encoder::encode(uint8_t const* bgra, int width, int height, int str
     for (int row = 0; row < height; ++row) memcpy(pointer + row * width * 4, bgra + row * stride, width * 4);
     check_hresult(buffer->Unlock()); check_hresult(buffer->SetCurrentLength(width * height * 4));
     check_hresult(input->SetSampleTime(time)); check_hresult(input->SetSampleDuration(10000000 / s.fps));
-    check_hresult(s.converter->ProcessInput(0, input.get(), 0));
+    check_stage(s.converter->ProcessInput(0, input.get(), 0), L"Submit BGRA frame to color converter");
     auto converted = output(s.converter.get(), s.width * s.height * 3 / 2);
     if (!converted) return {};
     check_hresult(converted->SetSampleTime(time)); check_hresult(converted->SetSampleDuration(10000000 / s.fps));
-    check_hresult(s.encoder->ProcessInput(0, converted.get(), 0));
+    check_stage(s.encoder->ProcessInput(0, converted.get(), 0), L"Submit NV12 frame to H.264 encoder");
     auto encoded = output(s.encoder.get(), 4 * 1024 * 1024);
     if (!encoded) return {};
     if (s.header.empty()) {

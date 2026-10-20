@@ -42,7 +42,7 @@ static void decode(nocturne::EncodedFrame const& frame) {
     memcpy(bytes, frame.data.data(), frame.data.size()); check_hresult(buffer->Unlock());
     check_hresult(buffer->SetCurrentLength(static_cast<DWORD>(frame.data.size())));
     check_hresult(sample->AddBuffer(buffer.get())); check_hresult(sample->SetSampleTime(0)); check_hresult(sample->SetSampleDuration(333333));
-    check_hresult(decoder->ProcessInput(0, sample.get(), 0));
+    nocturne::check_stage(decoder->ProcessInput(0, sample.get(), 0), L"Submit H.264 frame to verification decoder");
     check_hresult(decoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
     for (int attempt = 0; attempt < 3; ++attempt) {
         MFT_OUTPUT_STREAM_INFO info{}; check_hresult(decoder->GetOutputStreamInfo(0, &info));
@@ -57,7 +57,7 @@ static void decode(nocturne::EncodedFrame const& frame) {
         if (data.pEvents) data.pEvents->Release();
         if (!output && data.pSample) output.attach(data.pSample);
         if (hr == MF_E_TRANSFORM_STREAM_CHANGE) { set_output(); continue; }
-        check_hresult(hr);
+        nocturne::check_stage(hr, L"Retrieve decoded verification frame");
         nocturne::require(output != nullptr, L"The H.264 decoder returned no image.");
         com_ptr<IMFMediaBuffer> decoded; check_hresult(output->ConvertToContiguousBuffer(decoded.put()));
         DWORD length = 0; check_hresult(decoded->GetCurrentLength(&length));

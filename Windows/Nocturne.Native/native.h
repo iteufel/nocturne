@@ -33,6 +33,12 @@ inline void require(bool condition, wchar_t const* message) {
     if (!condition) throw winrt::hresult_error(E_FAIL, message);
 }
 inline void check_win32(LONG error) { if (error != ERROR_SUCCESS) winrt::throw_hresult(HRESULT_FROM_WIN32(error)); }
+inline void check_stage(HRESULT status, wchar_t const* stage) {
+    if (FAILED(status)) {
+        std::wstring message(stage); message += L": "; message += winrt::hresult_error(status).message().c_str();
+        throw winrt::hresult_error(status, message);
+    }
+}
 struct EncodedFrame { std::vector<uint8_t> data, header; double timestamp = 0; };
 class Encoder {
     struct State;
