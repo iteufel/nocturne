@@ -46,7 +46,7 @@ class Encoder {
 public:
     Encoder(int width, int height, int fps);
     ~Encoder();
-    EncodedFrame encode(uint8_t const* bgra, int width, int height, int stride, int64_t time);
+    std::vector<EncodedFrame> encode(uint8_t const* bgra, int width, int height, int stride, int64_t time);
 };
 }
 

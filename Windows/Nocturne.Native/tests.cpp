@@ -144,23 +144,35 @@ int main() {
         nocturne::Encoder encoder(640, 480, 30);
         std::vector<uint8_t> pixels(640 * 480 * 4, 0);
         for (size_t i = 0; i < pixels.size(); i += 4) { pixels[i + 2] = 220; pixels[i + 3] = 255; }
-        bool encoded = false; int frames = 0;
+        bool encoded = false; int frames = 0; double previous_timestamp = -1;
         for (int index = 0; index < 30; ++index) {
-            auto frame = encoder.encode(pixels.data(), 640, 480, 640 * 4, index * (10000000 / 30));
-            if (frame.data.empty()) continue;
-            nocturne::require(frame.data.size() <= 4194304 && !frame.header.empty() && frame.header.size() <= 8192, L"Invalid H.264 output.");
-            if (!encoded) {
-                decode(frame);
-                std::ofstream fixture("native-h264-frame.bin", std::ios::binary | std::ios::trunc);
-                auto header_size = static_cast<uint32_t>(frame.header.size());
-                fixture.write(reinterpret_cast<char*>(&header_size), sizeof(header_size));
-                fixture.write(reinterpret_cast<char*>(frame.header.data()), frame.header.size());
-                fixture.write(reinterpret_cast<char*>(frame.data.data()), frame.data.size());
+            // Model capture dropping frames during a two-second network stall.
+            auto timestamp = int64_t(index + (index >= 15 ? 60 : 0)) * (10000000 / 30);
+            std::vector<nocturne::EncodedFrame> output;
+            try { output = encoder.encode(pixels.data(), 640, 480, 640 * 4, timestamp); }
+            catch (winrt::hresult_error const& error) {
+                throw winrt::hresult_error(error.code(), L"CPU input " + std::to_wstring(index) + L": " + error.message().c_str());
             }
-            encoded = true; frames++;
+            for (auto const& frame : output) {
+                if (frame.data.empty()) continue;
+                nocturne::require(frame.data.size() <= 4194304 && !frame.header.empty() && frame.header.size() <= 8192, L"Invalid H.264 output.");
+                nocturne::require(frame.timestamp > previous_timestamp, L"Encoded frames lost their capture order.");
+                previous_timestamp = frame.timestamp;
+                if (!encoded) {
+                    decode(frame);
+                    std::ofstream fixture("native-h264-frame.bin", std::ios::binary | std::ios::trunc);
+                    auto header_size = static_cast<uint32_t>(frame.header.size());
+                    fixture.write(reinterpret_cast<char*>(&header_size), sizeof(header_size));
+                    fixture.write(reinterpret_cast<char*>(frame.header.data()), frame.header.size());
+                    fixture.write(reinterpret_cast<char*>(frame.data.data()), frame.data.size());
+                }
+                encoded = true; frames++;
+            }
         }
         nocturne::require(encoded, L"The H.264 encoder did not produce a frame.");
         nocturne::require(frames >= 15, L"The H.264 encoder stalled during sustained capture.");
+        nocturne::require(frames <= 30, L"Frame-rate conversion synthesized frames during a capture gap.");
+        nocturne::require(previous_timestamp >= 2, L"Capture timestamps did not preserve the network stall.");
         capture_window();
         // Hosted Windows runners may lack an interactive display/audio session.
         // Device availability is checked by the application when enabling a feature.

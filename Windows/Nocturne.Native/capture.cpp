@@ -14,6 +14,9 @@
 #include <winrt/Windows.Graphics.DirectX.Direct3D11.h>
 #include <algorithm>
 #include <memory>
+#include <deque>
+#include <chrono>
+#include <thread>
 
 using namespace winrt;
 using namespace winrt::Windows::Graphics::Capture;
@@ -47,18 +50,37 @@ com_ptr<IMFSample> sample_buffer(DWORD capacity) {
     check_hresult(sample->AddBuffer(buffer.get()));
     return sample;
 }
-com_ptr<IMFSample> output(IMFTransform* transform, DWORD capacity) {
-    MFT_OUTPUT_STREAM_INFO info{}; check_hresult(transform->GetOutputStreamInfo(0, &info));
+com_ptr<IMFSample> output(IMFTransform* transform, DWORD capacity, wchar_t const* stage) {
+    MFT_OUTPUT_STREAM_INFO info{}; check_stage(transform->GetOutputStreamInfo(0, &info), stage);
     com_ptr<IMFSample> owned;
     if (!(info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES)) owned = sample_buffer(std::max(capacity, info.cbSize));
     MFT_OUTPUT_DATA_BUFFER data{}; data.pSample = owned.get();
     DWORD status = 0;
     auto hr = transform->ProcessOutput(0, 1, &data, &status);
     if (data.pEvents) data.pEvents->Release();
-    if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) return {};
     if (!owned && data.pSample) owned.attach(data.pSample);
-    check_hresult(hr);
+    if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) return {};
+    check_stage(hr, stage);
+    require(owned != nullptr, L"The media transform returned no output sample.");
     return owned;
+}
+template<typename Accept> void drain(IMFTransform* transform, DWORD capacity, wchar_t const* stage, Accept accept) {
+    int samples = 0;
+    while (auto sample = output(transform, capacity, stage)) {
+        require(++samples <= 8, L"The media transform produced too many pending frames.");
+        accept(sample);
+    }
+}
+template<typename Accept> void process(IMFTransform* transform, IMFSample* input, DWORD capacity, wchar_t const* stage, Accept accept) {
+    auto status = transform->ProcessInput(0, input, 0);
+    if (status == MF_E_NOTACCEPTING) {
+        drain(transform, capacity, stage, accept);
+        status = transform->ProcessInput(0, input, 0);
+    }
+    check_stage(status, stage);
+    // A single input can yield several samples. Retrieve all of them before
+    // submitting another frame; otherwise synchronous MFTs can reject input.
+    drain(transform, capacity, stage, accept);
 }
 std::vector<uint8_t> sample_bytes(IMFSample* sample) {
     com_ptr<IMFMediaBuffer> buffer; check_hresult(sample->ConvertToContiguousBuffer(buffer.put()));
@@ -105,12 +127,16 @@ struct Encoder::State {
 };
 Encoder::Encoder(int width, int height, int fps) : state(std::make_unique<State>(width, height, fps)) { }
 Encoder::~Encoder() = default;
-EncodedFrame Encoder::encode(uint8_t const* bgra, int width, int height, int stride, int64_t time) {
+std::vector<EncodedFrame> Encoder::encode(uint8_t const* bgra, int width, int height, int stride, int64_t time) {
     auto& s = *state;
     require(width > 0 && height > 0 && width <= 16384 && height <= 16384 && stride >= width * 4, L"Invalid capture frame.");
     if (s.source_width != width || s.source_height != height) {
         s.converter = {};
         check_hresult(CoCreateInstance(CLSID_VideoProcessorMFT, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(s.converter.put())));
+        com_ptr<IMFAttributes> attributes; check_hresult(s.converter->GetAttributes(attributes.put()));
+        // Capture can skip frames under backpressure. Convert pixels without
+        // synthesizing replacement frames for the resulting timestamp gaps.
+        check_hresult(attributes->SetUINT32(MF_XVP_DISABLE_FRC, TRUE));
         auto input = media_type(MFVideoFormat_ARGB32, width, height, s.fps);
         check_hresult(input->SetUINT32(MF_MT_DEFAULT_STRIDE, width * 4));
         check_hresult(s.converter->SetInputType(0, input.get(), 0));
@@ -124,22 +150,27 @@ EncodedFrame Encoder::encode(uint8_t const* bgra, int width, int height, int str
     for (int row = 0; row < height; ++row) memcpy(pointer + row * width * 4, bgra + row * stride, width * 4);
     check_hresult(buffer->Unlock()); check_hresult(buffer->SetCurrentLength(width * height * 4));
     check_hresult(input->SetSampleTime(time)); check_hresult(input->SetSampleDuration(10000000 / s.fps));
-    check_stage(s.converter->ProcessInput(0, input.get(), 0), L"Submit BGRA frame to color converter");
-    auto converted = output(s.converter.get(), s.width * s.height * 3 / 2);
-    if (!converted) return {};
-    check_hresult(converted->SetSampleTime(time)); check_hresult(converted->SetSampleDuration(10000000 / s.fps));
-    check_stage(s.encoder->ProcessInput(0, converted.get(), 0), L"Submit NV12 frame to H.264 encoder");
-    auto encoded = output(s.encoder.get(), 4 * 1024 * 1024);
-    if (!encoded) return {};
-    if (s.header.empty()) {
-        com_ptr<IMFMediaType> type; UINT32 length = 0;
-        check_hresult(s.encoder->GetOutputCurrentType(0, type.put()));
-        if (SUCCEEDED(type->GetBlobSize(MF_MT_MPEG_SEQUENCE_HEADER, &length)) && length <= 8192) {
-            s.header.resize(length); check_hresult(type->GetBlob(MF_MT_MPEG_SEQUENCE_HEADER, s.header.data(), length, nullptr));
+    std::vector<EncodedFrame> frames;
+    process(s.converter.get(), input.get(), s.width * s.height * 3 / 2, L"BGRA to NV12 conversion", [&](auto const& converted) {
+        LONGLONG converted_time = time, duration = 10000000 / s.fps;
+        if (FAILED(converted->GetSampleTime(&converted_time))) {
+            converted_time = time; check_hresult(converted->SetSampleTime(time));
         }
-    }
-    LONGLONG actual_time = time; encoded->GetSampleTime(&actual_time);
-    return { sample_bytes(encoded.get()), s.header, actual_time / 10000000.0 };
+        if (FAILED(converted->GetSampleDuration(&duration))) check_hresult(converted->SetSampleDuration(10000000 / s.fps));
+        process(s.encoder.get(), converted.get(), 4 * 1024 * 1024, L"H.264 encoding", [&](auto const& encoded) {
+            if (s.header.empty()) {
+                com_ptr<IMFMediaType> type; UINT32 length = 0;
+                check_hresult(s.encoder->GetOutputCurrentType(0, type.put()));
+                if (SUCCEEDED(type->GetBlobSize(MF_MT_MPEG_SEQUENCE_HEADER, &length)) && length <= 8192) {
+                    s.header.resize(length); check_hresult(type->GetBlob(MF_MT_MPEG_SEQUENCE_HEADER, s.header.data(), length, nullptr));
+                }
+            }
+            LONGLONG actual_time = converted_time; encoded->GetSampleTime(&actual_time);
+            require(frames.size() < 8, L"The encoder produced too many pending frames.");
+            frames.push_back({ sample_bytes(encoded.get()), s.header, actual_time / 10000000.0 });
+        });
+    });
+    return frames;
 }
 
 namespace {
@@ -158,7 +189,10 @@ struct Capture {
     event_token arrived{};
     std::shared_ptr<Signal> signal = std::make_shared<Signal>();
     Encoder encoder;
-    Capture(HWND window, int width, int height, int fps) : window(window), encoder(width, height, fps) {
+    std::deque<EncodedFrame> pending;
+    std::chrono::nanoseconds interval;
+    std::chrono::steady_clock::time_point next_capture{};
+    Capture(HWND window, int width, int height, int fps) : window(window), encoder(width, height, fps), interval(1000000000 / fps) {
         require(IsWindow(window) && GraphicsCaptureSession::IsSupported(), L"Windows Graphics Capture is unavailable for this window.");
         auto hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             nullptr, 0, D3D11_SDK_VERSION, device.put(), nullptr, context.put());
@@ -180,9 +214,15 @@ struct Capture {
     }
     EncodedFrame read() {
         require(IsWindow(window), L"This app window closed. Choose another window in Apps.");
+        auto take = [&] { auto frame = std::move(pending.front()); pending.pop_front(); return frame; };
+        if (!pending.empty()) return take();
         if (WaitForSingleObject(signal->event, 250) != WAIT_OBJECT_0) return {};
+        // Limit capture cadence before choosing the newest unencoded frame.
+        // Encoded frames in pending must all be delivered in reference order.
+        std::this_thread::sleep_until(next_capture);
         auto frame = pool.TryGetNextFrame(); if (!frame) return {};
         while (auto next = pool.TryGetNextFrame()) { frame.Close(); frame = next; }
+        next_capture = std::chrono::steady_clock::now() + interval;
         auto size = frame.ContentSize(); if (size.Width <= 0 || size.Height <= 0) return {};
         auto surface = frame.Surface().as<IDirect3DDxgiInterfaceAccess>(); com_ptr<ID3D11Texture2D> texture;
         check_hresult(surface->GetInterface(__uuidof(ID3D11Texture2D), texture.put_void()));
@@ -194,11 +234,13 @@ struct Capture {
         com_ptr<ID3D11Texture2D> staging; check_hresult(device->CreateTexture2D(&desc, nullptr, staging.put()));
         context->CopyResource(staging.get(), texture.get());
         D3D11_MAPPED_SUBRESOURCE mapped{}; check_hresult(context->Map(staging.get(), 0, D3D11_MAP_READ, 0, &mapped));
-        EncodedFrame result;
-        try { result = encoder.encode(static_cast<uint8_t*>(mapped.pData), size.Width, size.Height,
+        std::vector<EncodedFrame> frames;
+        try { frames = encoder.encode(static_cast<uint8_t*>(mapped.pData), size.Width, size.Height,
             static_cast<int>(mapped.RowPitch), frame.SystemRelativeTime().count()); }
         catch (...) { context->Unmap(staging.get(), 0); throw; }
-        context->Unmap(staging.get(), 0); return result;
+        context->Unmap(staging.get(), 0);
+        for (auto& encoded : frames) pending.push_back(std::move(encoded));
+        return pending.empty() ? EncodedFrame{} : take();
     }
 };
 }
