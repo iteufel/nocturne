@@ -162,9 +162,9 @@ int main() {
                     decode(frame);
                     std::ofstream fixture("native-h264-frame.bin", std::ios::binary | std::ios::trunc);
                     auto header_size = static_cast<uint32_t>(frame.header.size());
-                    fixture.write(reinterpret_cast<char*>(&header_size), sizeof(header_size));
-                    fixture.write(reinterpret_cast<char*>(frame.header.data()), frame.header.size());
-                    fixture.write(reinterpret_cast<char*>(frame.data.data()), frame.data.size());
+                    fixture.write(reinterpret_cast<char const*>(&header_size), sizeof(header_size));
+                    fixture.write(reinterpret_cast<char const*>(frame.header.data()), frame.header.size());
+                    fixture.write(reinterpret_cast<char const*>(frame.data.data()), frame.data.size());
                 }
                 encoded = true; frames++;
             }
