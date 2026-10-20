@@ -4,6 +4,7 @@
 #include <functiondiscoverykeys_devpkey.h>
 #include <propsys.h>
 #include <winrt/Windows.Data.Json.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <filesystem>
 #include <fstream>
 #include <map>

@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include <objbase.h>
 #include <winrt/base.h>
 #include <cstdint>
 #include <string>

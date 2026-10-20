@@ -16,9 +16,10 @@
 #include <memory>
 
 using namespace winrt;
-using namespace Windows::Graphics::Capture;
-using namespace Windows::Graphics::DirectX;
-using namespace Windows::Graphics::DirectX::Direct3D11;
+using namespace winrt::Windows::Graphics::Capture;
+using namespace winrt::Windows::Graphics::DirectX;
+using namespace winrt::Windows::Graphics::DirectX::Direct3D11;
+using ::Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess;
 using namespace nocturne;
 
 NC_EXPORT wchar_t const* nocturne_host_error() { return last_error.c_str(); }
