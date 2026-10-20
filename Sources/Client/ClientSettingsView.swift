@@ -3,6 +3,7 @@ import NocturneKit
 
 struct ClientSettingsView: View {
     @ObservedObject var model: ClientModel
+    var showOnboarding: () -> Void = {}
     @AppStorage("nocturne.appearance") private var appearance = NocturneAppearance.system
     var body: some View {
         Form {
@@ -69,6 +70,8 @@ struct ClientSettingsView: View {
                 Task { await model.reconnectServer() }
             }
             Section {
+                Button("Welcome to Nocturne", systemImage: "sparkles", action: showOnboarding)
+                    .accessibilityIdentifier("replayOnboarding")
                 FeatureRow(icon: "rectangle.expand.vertical", title: "Room to move", subtitle: "Layouts follow your window on iPhone, iPad, and iPhone Duo. Expand for a sidebar; resize or fold back into a compact workspace.")
                 Link("Moonlight open-source project", destination: URL(string: "https://github.com/moonlight-stream/moonlight-ios")!)
                 Text("Nocturne 1.0 · GPL-3.0\nBuilt on Moonlight and SwiftTerm. An independent project, not affiliated with Apple or the Moonlight team.")
