@@ -33,7 +33,7 @@ struct ClientOnboardingView: View {
                     }
                 default:
                     VStack(alignment: .leading, spacing: 17) {
-                        OnboardingFeature(icon: "1.circle", title: "Start on your Mac", detail: "Install and open Nocturne Server, then start the server.")
+                        OnboardingFeature(icon: "1.circle", title: "Start on your Mac", detail: "Install and open Nocturne Server. Enabled services start automatically.")
                         OnboardingFeature(icon: "2.circle", title: "Choose Pair a device", detail: "Your Mac shows a private, single-use QR code.")
                         OnboardingFeature(icon: "3.circle", title: "Scan from this device", detail: "Choose Scan QR code on the next screen. Allow camera and local network access when asked.")
                         Link(destination: URL(string: "https://github.com/iteufel/nocturne/releases")!) {

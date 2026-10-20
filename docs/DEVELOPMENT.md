@@ -15,7 +15,11 @@ open Nocturne.xcworkspace
 
 Bootstrap fetches pinned client/terminal sources and the checksum-verified streaming engine, then generates both Xcode projects. `Vendor/` contains build dependencies and is intentionally ignored by Git. The generated workspace and dependency lock are included.
 
-Mac builds run `scripts/build-streaming-engine.sh` to compile the pinned Sunshine source with Nocturne's VideoToolbox correction. The CMake overlay leaves the upstream checkout unchanged. Sources and incremental build output live in `.build/SunshinePerformanceSource` and `.build/SunshinePerformanceBuild`. Runtime assets and shared libraries come from the verified release; Homebrew provides build tools and headers. The first build downloads and compiles additional dependencies.
+Use `scripts/bootstrap.sh mac`, `ios-simulator`, or `ios-device` to compile only the Rust transport slice needed for that build. The simulator shortcut targets Apple Silicon. Client-only bootstrap also skips downloading the Mac streaming runtime. The default `all` prepares every supported slice, including Intel simulators; rerun it when switching between Mac and iOS development in the same checkout.
+
+CI caches Cargo dependencies per job and Apple platform, and shares Docker build layers between broker verification and publication. The client job boots its disposable iPhone and iPad while one `build-for-testing` compiles the app, then runs both device suites sequentially with `test-without-building`. Run `python3 scripts/tests/test-build-orchestration.py` to check target selection, build reuse, and simulator cleanup without starting a simulator.
+
+Mac builds run `scripts/build-streaming-engine.sh` to compile the pinned Sunshine source with Nocturne's VideoToolbox correction and locked-screen display selection. The CMake overlays leave the upstream checkout unchanged. Sources and incremental build output live in `.build/SunshinePerformanceSource` and `.build/SunshinePerformanceBuild`. Runtime assets and shared libraries come from the verified release; Homebrew provides build tools and headers. The first build downloads and compiles additional dependencies.
 
 Choose **Nocturne** for iPhone/iPad or **Nocturne Server** for macOS. Select your development team in Xcode when installing on physical devices. Command-line development builds:
 
@@ -47,14 +51,16 @@ NOCTURNE_ENGINE_EXECUTABLE="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne S
 
 The command with `NOCTURNE_ENGINE_EXECUTABLE` starts a real engine on its standard ports: stop the Mac app first. It verifies authenticated administration, application-library initialization, individual removal from a two-device roster, persistence across restart, reset, and shutdown. Other tests use real TLS connections, PTYs, and files; they check wrong-key rejection, certificate/signature binding, single-use invitation handling, one-device revocation while another connection and shell remain active, permission revocation, multiple terminal tabs, commands completing while disconnected, reconnect without duplicate output, retained exit output, bounded scrollback, per-device terminal ownership and limits, detached-shell cleanup, bounded framing, transfer integrity, cancellation, traversal/symlink rejection, and no-overwrite races.
 
-To verify Dock behavior, launch the built Mac app and choose **Start server**, then run:
+`ServerLifecycleTests` and `ServerSettingsTests` cover startup from the saved Sharing toggles, pending edits, Apply/Discard, restart cancellation, login-item approval and registration errors, independent sharing capabilities, and offline video revocation. They use isolated preferences, temporary files, real TLS listeners on test ports, and a failing child executable to verify automatic screen-sharing recovery while a workspace stays connected. Login-item registration is substituted; these tests do not change your Login Items, capture your screen, or verify an actual logout/login.
+
+To verify Dock behavior, launch the built Mac app, enable **Sharing → Screen sharing**, and apply, then run:
 
 ```sh
 NOCTURNE_RUNNING_SERVER_APP="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne Server.app" \
   swift test --filter ServerDockTests
 ```
 
-This read-only check requires both the main app and streaming helper to be running. It verifies that only the main app has a Dock icon and that it has finished launching. Run it again after Stop/Start to check helper replacement. The bundle defaults to `LSUIElement`; the main SwiftUI entry point explicitly adopts regular activation, while helpers retain background activation and the same app identity for capture permissions.
+This read-only check requires both the main app and streaming helper to be running. It verifies that only the main app has a Dock icon and that it has finished launching. Run it again after disabling and re-enabling Screen sharing to check helper replacement. The bundle defaults to `LSUIElement`; the main SwiftUI entry point explicitly adopts regular activation, while helpers retain background activation and the same app identity for capture permissions.
 
 Client authorization and stream-stop regressions run in the actual iOS app (choose an installed simulator):
 
@@ -75,6 +81,8 @@ See [verification notes](VERIFICATION.md) for build and device evidence and [imp
 `test-stream-video.sh` replays periodic Wi-Fi bursts against the production pacing policy under sanitizers. It checks recovery, bounded queue age, unchanged low latency on a steady connection, 30/60/120 fps, and mismatched display refresh rates. Pass `--baseline` to compare the original drain-every-frame behavior. Both audio and video replays include the physical iPad's measured 130 ms interruptions at 30 fps. The 120 fps replay uses a shorter interruption because the upstream decoder queue holds only 15 frames; the adaptive cushion is capped at 12 frames to keep priming reachable.
 
 On an Apple Silicon Mac with hardware encoding available, `bash scripts/test-stream-encoder.sh` verifies that H.264 and HEVC preserve every frame timestamp at the physical iPad's 3200 × 2400 / 30 fps / 5 Mbps settings, including repeated recovery keyframes. Install FFmpeg development libraries with `brew install ffmpeg`, or point `PKG_CONFIG_PATH` at compatible libraries. `--baseline` selects the original encoder flags to reproduce frame dropping. This hardware check is opt-in; it is not a simulator playback test.
+
+After a Mac build has fetched the pinned engine source, `bash scripts/test-stream-lock-screen.sh` compiles its generated macOS display selection and capture callback under AddressSanitizer and UBSan. It checks connecting while locked, switching an active stream across lock/unlock, main-display changes, headless capture, and inactive user sessions. `--baseline` exercises the pinned upstream code and reproduces the missing capture transitions. The test substitutes the OS capture boundary and does not lock your Mac or type any keys. `swift test --filter DisplayTests` also verifies that locked sessions can acquire/release a display lease while logged-out and inactive sessions remain rejected.
 
 Display sizing, ownership, authenticated disconnect, removal, and heartbeat expiry are included in `swift test`. Native display checks are opt-in because they change the Mac's real display layout:
 

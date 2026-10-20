@@ -10,7 +10,7 @@ struct ServerView: View {
     @State private var selected: String? = "Overview"
     @AppStorage("nocturne.server.onboardingComplete") private var onboardingComplete = false
     private var needsOnboarding: Bool {
-        model.showOnboarding || (!onboardingComplete && model.devices.isEmpty && !model.active)
+        model.showOnboarding || (!onboardingComplete && model.devices.isEmpty)
     }
     var body: some View {
         Group {
@@ -54,6 +54,7 @@ struct ServerView: View {
             }
             .background { NocturneBackdrop() }
             .navigationTitle(selected ?? "Overview")
+            .safeAreaInset(edge: .bottom) { if selected == "Sharing" { ServerApplySettingsView(model: model) } }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Pair a device", systemImage: "plus") { model.pair() }
@@ -91,7 +92,7 @@ struct ServerView: View {
                     Text("Stream your Mac, open a terminal, and move your files. One server, ready for every device.")
                         .font(.system(size: 13)).foregroundStyle(MoonStyle.secondary)
                     NocturneGlassGroup { HStack(spacing: 12) {
-                        Button { model.active ? model.stop() : model.start() } label: { Label(model.active ? "Stop server" : "Start server", systemImage: model.active ? "stop.fill" : "play.fill") }.buttonStyle(PrimaryButtonStyle())
+                        Button { selected = "Sharing" } label: { Label("Sharing settings", systemImage: "slider.horizontal.3") }.buttonStyle(PrimaryButtonStyle())
                         if model.running { Button("Pair a device", systemImage: "plus") { model.pair() }.buttonStyle(NocturneGlassButtonStyle()).controlSize(.large) }
                         Spacer()
                         if model.running { Text("\(model.connections) connected").font(.system(size: 11)).foregroundStyle(MoonStyle.secondary) }
@@ -99,9 +100,9 @@ struct ServerView: View {
                 }
             }
             HStack(spacing: 14) {
-                capability("display", "Streaming", "Hardware accelerated")
-                capability("terminal", "Terminal", model.terminalEnabled ? "Enabled" : "Off")
-                capability("folder", "Files", model.filesEnabled ? "Enabled" : "Off")
+                capability("display", "Screen sharing", model.appliedSettings.screenSharing ? model.screenSharingStatus : "Off")
+                capability("terminal", "Terminal", model.appliedSettings.terminal ? "Enabled" : "Off")
+                capability("folder", "Files", model.appliedSettings.files ? "Enabled" : "Off")
             }
             MoonPanel {
                 VStack(alignment: .leading, spacing: 15) {
@@ -114,7 +115,7 @@ struct ServerView: View {
                     }
                 }
             }
-            HStack(spacing: 8) { Image(systemName: "lock.shield"); Text(model.remoteAccessEnabled ? "Encrypted connections, wherever you are." : "Local connection. Your computer stays yours.") }.font(.system(size: 11)).foregroundStyle(MoonStyle.secondary)
+            HStack(spacing: 8) { Image(systemName: "lock.shield"); Text(model.settings.remoteAccess ? "Encrypted connections, wherever you are." : "Local connection. Your computer stays yours.") }.font(.system(size: 11)).foregroundStyle(MoonStyle.secondary)
         }
     }
     @ViewBuilder private var permissionButtons: some View {
@@ -136,31 +137,40 @@ struct ServerView: View {
             Text("Make room for your work.").font(.system(size: 32, weight: .semibold, design: .rounded)).tracking(-1).padding(.vertical, 12)
             MoonPanel {
                 VStack(alignment: .leading, spacing: 14) {
-                    Label("Stream display", systemImage: "display").font(.headline)
-                    Text(model.display.isEmpty ? "Nocturne Display" : "Connected Mac display").font(.title3)
-                    Text(model.display.isEmpty ? model.displayStatus : "Uses the selected display’s desktop dimensions.").font(.caption).foregroundStyle(MoonStyle.secondary)
+                    HStack {
+                        Label("Screen sharing", systemImage: "display").font(.headline)
+                        Spacer()
+                        Text(model.appliedSettings.screenSharing ? model.screenSharingStatus : "Off").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text(model.settings.headlessDisplay ? "Nocturne Display" : "Connected Mac display").font(.title3)
+                    Text(model.displayStatus).font(.caption).foregroundStyle(MoonStyle.secondary)
+                    if let message = model.screenSharingError {
+                        Text(message + " Retrying automatically.").font(.caption).foregroundStyle(.orange)
+                    }
                     SettingsLink { Label("Display settings…", systemImage: "slider.horizontal.3") }
                 }
             }
             MoonPanel {
                 VStack(spacing: 20) {
-                    Toggle(isOn: $model.terminalEnabled) { FeatureRow(icon: "terminal", title: "Terminal", subtitle: "Shells keep running when devices disconnect. Turning this off closes all terminal tabs, including background shells.") }.toggleStyle(.switch)
+                    Toggle(isOn: $model.settings.screenSharing) { FeatureRow(icon: "display", title: "Screen sharing", subtitle: "Start and keep screen and app sharing ready while Nocturne is open. Files and terminal work independently when this is off.") }.toggleStyle(.switch)
                     Divider()
-                    Toggle(isOn: $model.filesEnabled) { FeatureRow(icon: "folder", title: "File sharing", subtitle: "Allow paired devices to read and upload files in the folder below. Existing files are never overwritten.") }.toggleStyle(.switch)
+                    Toggle(isOn: $model.settings.terminal) { FeatureRow(icon: "terminal", title: "Terminal", subtitle: "Shells keep running when devices disconnect. Applying changes closes all terminal tabs, including background shells.") }.toggleStyle(.switch)
+                    Divider()
+                    Toggle(isOn: $model.settings.files) { FeatureRow(icon: "folder", title: "File sharing", subtitle: "Allow paired devices to read and upload files in the folder below. Existing files are never overwritten.") }.toggleStyle(.switch)
                 }
             }
             MoonPanel {
                 VStack(alignment: .leading, spacing: 16) {
                     Label("Shared folder", systemImage: "folder.badge.person.crop").font(.headline)
-                    Text(model.sharedFolder.path).font(.system(size: 12, design: .monospaced)).foregroundStyle(MoonStyle.secondary).textSelection(.enabled)
+                    Text(model.settings.sharedFolder.path).font(.system(size: 12, design: .monospaced)).foregroundStyle(MoonStyle.secondary).textSelection(.enabled)
                     NocturneGlassGroup { HStack(spacing: 12) { Button("Show in Finder", systemImage: "arrow.up.right") { model.revealFolder() }; Button("Choose folder…", systemImage: "folder") { model.chooseFolder() } }.buttonStyle(NocturneGlassButtonStyle()) }
-                    Text("Changing the folder restarts the server and disconnects current sessions.").font(.caption2).foregroundStyle(MoonStyle.secondary)
+                    Text("Choose a folder, then apply your changes to share it.").font(.caption2).foregroundStyle(MoonStyle.secondary)
                 }
             }
             MoonPanel {
                 VStack(alignment: .leading, spacing: 16) {
-                    Toggle(isOn: $model.microphoneEnabled) {
-                        FeatureRow(icon: "mic", title: "Client microphone", subtitle: "Let a paired iPhone or iPad send its microphone to voice chat on this Mac. Turning this off immediately mutes the input.")
+                    Toggle(isOn: $model.settings.microphone) {
+                        FeatureRow(icon: "mic", title: "Client microphone", subtitle: "Let a paired iPhone or iPad send its microphone to voice chat on this Mac. Apply changes to update access.")
                     }.toggleStyle(.switch)
                     Text("In Discord or your game, choose Nocturne Microphone as the input device. Unmute with the microphone button while streaming; each new stream starts muted.")
                         .font(.caption).foregroundStyle(MoonStyle.secondary)
@@ -175,7 +185,7 @@ struct ServerView: View {
                     if let message = model.microphoneInstallationMessage { Text(message).font(.caption).foregroundStyle(MoonStyle.secondary) }
                 }
             }
-            Text("Reconnect the iOS client after enabling a new feature. Revoking access takes effect immediately.").font(.caption).foregroundStyle(MoonStyle.secondary)
+            Text("Apply changes to update sharing. Reconnect your devices after the server restarts.").font(.caption).foregroundStyle(MoonStyle.secondary)
             MoonPanel {
                 FeatureRow(icon: "gamecontroller", title: "Controllers & Bluetooth input", subtitle: "Pair your accessories with your iPhone or iPad. Nocturne forwards keyboard, mouse, trackpad, and controller input. Mac gamepad emulation uses Virtual HID Broker when installed; keyboard and mouse require Accessibility permission.")
             }

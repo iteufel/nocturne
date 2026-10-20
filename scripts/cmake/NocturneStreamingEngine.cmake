@@ -1,4 +1,6 @@
-# Apply a source overlay to the pinned engine without editing its checkout.
+include("${CMAKE_CURRENT_LIST_DIR}/NocturneMacOSCapture.cmake")
+
+# Apply source overlays to the pinned engine without editing its checkout.
 function(nocturne_streaming_engine)
     if(NOT TARGET sunshine)
         message(FATAL_ERROR "The pinned Sunshine target was not created")
@@ -20,8 +22,12 @@ function(nocturne_streaming_engine)
     get_target_property(sources sunshine SOURCES)
     list(REMOVE_ITEM sources "${original}")
     list(APPEND sources "${generated}")
+    set(macos_capture "${CMAKE_BINARY_DIR}/NocturneMacOSDisplay.mm")
+    nocturne_macos_capture("${CMAKE_SOURCE_DIR}" "${macos_capture}")
+    list(REMOVE_ITEM sources "${CMAKE_SOURCE_DIR}/src/platform/macos/display.mm")
+    list(APPEND sources "${macos_capture}")
     set_property(TARGET sunshine PROPERTY SOURCES "${sources}")
-    target_include_directories(sunshine PRIVATE "${nocturne_root}/Sources/StreamingEngine")
+    target_include_directories(sunshine PRIVATE "${nocturne_root}/Sources/StreamingEngine" "${nocturne_root}/Sources/DisplayBridge/include")
 
     # Reuse the verified runtime libraries, which retain the release's macOS
     # compatibility. Homebrew supplies headers only, not runtime dependencies.

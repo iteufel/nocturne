@@ -32,6 +32,7 @@ struct NocturneServerApp: App {
 @MainActor
 final class NocturneServerDelegate: NSObject, NSApplicationDelegate {
     let model = ServerModel()
+    func applicationDidFinishLaunching(_ notification: Notification) { model.startEnabledServices() }
     // The app owns the server even after its last window closes.
     func applicationWillTerminate(_ notification: Notification) { model.stop() }
 }
@@ -40,13 +41,12 @@ struct ServerMenu: View {
     @ObservedObject var model: ServerModel
     @Environment(\.openWindow) private var openWindow
     var body: some View {
-        Text(model.running ? "\(model.connections) connected devices" : "Server stopped")
+        Text(model.running ? "\(model.connections) connected devices" : "Sharing off")
         Button("Open Nocturne Server") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
         Button("Welcome to Nocturne…") {
             model.showOnboarding = true
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
         }
-        Button(model.active ? "Stop server" : "Start server") { model.active ? model.stop() : model.start() }
         Button("Pair a device") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true); model.pair() }
         Button("Restore Mac displays") { model.displays.restore() }.disabled(!model.displayActive && model.displays.lastError == nil)
         Divider()
@@ -59,37 +59,48 @@ struct ServerMenu: View {
 struct ServerSettingsView: View {
     @ObservedObject var model: ServerModel
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("nocturne.appearance") private var appearance = NocturneAppearance.system
     var body: some View {
         Form {
             Section {
-                Toggle("Connect over the internet", isOn: $model.remoteAccessEnabled).disabled(model.active)
-                if model.remoteAccessEnabled {
-                    TextField("Broker URL", text: $model.brokerURL, prompt: Text("https://nocturne.alkal.de"))
-                        .disabled(model.active)
+                Toggle("Open Nocturne at login", isOn: $model.settings.launchAtLogin)
+                if model.loginApprovalRequired {
+                    Text("Allow Nocturne in Login Items to finish enabling automatic startup.").foregroundStyle(.secondary)
+                    Button("Open Login Items…") { model.openLoginItems() }
+                }
+            } header: {
+                Label("Startup", systemImage: "power")
+            } footer: {
+                Text("Open Nocturne when you sign in. The toggles in Sharing control which services run. Closing the window keeps enabled services running in the menu bar.")
+            }
+            Section {
+                Toggle("Connect over the internet", isOn: $model.settings.remoteAccess)
+                if model.settings.remoteAccess {
+                    TextField("Broker URL", text: $model.settings.brokerURL, prompt: Text("https://nocturne.alkal.de"))
                 }
             } header: {
                 Label("Remote access", systemImage: "network")
             } footer: {
-                Text("Use the default Nocturne broker or enter your own to connect from other networks. Devices try peer to peer and use an encrypted relay when needed. After enabling this, scan a new pairing QR code on your device. Stop the server to change these settings.")
+                Text("Use the default Nocturne broker or enter your own to connect from other networks. Devices try peer to peer and use an encrypted relay when needed. After enabling this, scan a new pairing QR code on your device.")
             }
             Section {
-                Toggle("Headless virtual monitor", isOn: $model.headlessDisplayEnabled)
-                    .disabled(model.active || (!model.headlessDisplayEnabled && !DisplaySessionManager.isSupported))
-                if model.headlessDisplayEnabled {
+                Toggle("Headless virtual monitor", isOn: $model.settings.headlessDisplay)
+                    .disabled(!model.settings.screenSharing || (!model.settings.headlessDisplay && !DisplaySessionManager.isSupported))
+                if model.settings.headlessDisplay {
                     LabeledContent("Resolution", value: "Matches the streaming device")
                 } else {
-                    Picker("Stream display", selection: $model.display) {
+                    Picker("Stream display", selection: $model.settings.display) {
                         Text("Main display").tag("")
                         ForEach(NSScreen.screens.filter { $0.localizedName != "Nocturne Display" }, id: \.self) { screen in
                             if let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
                                 Text(screen.localizedName).tag(number.stringValue)
                             }
                         }
-                    }.disabled(model.active)
+                    }.disabled(!model.settings.screenSharing)
                 }
-                Toggle("Turn off connected Mac displays", isOn: $model.disablePhysicalDisplays)
-                    .disabled(model.active || !model.headlessDisplayEnabled || !DisplaySessionManager.canDisableDisplays)
+                Toggle("Turn off connected Mac displays", isOn: $model.settings.disablePhysicalDisplays)
+                    .disabled(!model.settings.screenSharing || !model.settings.headlessDisplay || !DisplaySessionManager.canDisableDisplays)
                 if model.displayActive {
                     LabeledContent("Streaming", value: model.displayStatus)
                     Button("Restore Mac displays") { model.displays.restore() }
@@ -97,7 +108,7 @@ struct ServerSettingsView: View {
             } header: {
                 Label("Displays", systemImage: "display.2")
             } footer: {
-                Text("The virtual monitor works with or without a physical screen and adapts to your device. Connected displays keep their layout unless you separately enable turning them off. Stop the server to change these settings.")
+                Text("The virtual monitor works with or without a physical screen and adapts to your device. Connected displays keep their layout unless you separately enable turning them off. Apply changes to restart a running server.")
             }
             Section {
                 Picker("Appearance", selection: $appearance) {
@@ -115,6 +126,39 @@ struct ServerSettingsView: View {
                 }
             }
         }.formStyle(.grouped).scrollContentBackground(.hidden)
-            .background { NocturneBackdrop() }.frame(width: 540, height: 620)
+            .safeAreaInset(edge: .bottom) { ServerApplySettingsView(model: model) }
+            .background { NocturneBackdrop() }.frame(width: 560, height: 720)
+            .onAppear { model.refreshLoginItem() }
+            .onChange(of: scenePhase) { _, phase in if phase == .active { model.refreshLoginItem() } }
+            .alert("Nocturne Server", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+                Button("OK") { model.error = nil }
+            } message: { Text(model.error ?? "") }
+    }
+}
+
+struct ServerApplySettingsView: View {
+    @ObservedObject var model: ServerModel
+    private var actionTitle: String {
+        if model.settings.hasEnabledServices { return model.active ? "Apply & restart" : "Apply & start" }
+        return model.active ? "Apply & stop" : "Apply"
+    }
+    private var changesMessage: String {
+        guard model.hasSettingsChanges else { return "All changes applied." }
+        if model.active {
+            return model.settings.hasEnabledServices
+                ? "Applying restarts the server and disconnects current sessions."
+                : "Applying stops sharing and disconnects current sessions."
+        }
+        return model.settings.hasEnabledServices ? "Applying starts the enabled sharing services." : "You have unapplied changes."
+    }
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(changesMessage)
+                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+            Button("Discard") { model.discardSettings() }.disabled(!model.hasSettingsChanges)
+            Button(actionTitle) { model.applySettings() }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!model.hasSettingsChanges || model.changingDevices)
+        }.padding(16).background(.bar)
     }
 }

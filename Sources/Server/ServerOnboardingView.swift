@@ -12,7 +12,7 @@ struct ServerOnboardingView: View {
     private let subtitles = [
         "Make room for a different way to work and play. Your Mac does the heavy lifting. Your iPhone or iPad comes along.",
         "macOS keeps you in control. Allow screen recording to stream, and Accessibility to control your Mac.",
-        "Start your server, then pair your iPhone or iPad. One QR code brings your workspace together."
+        "Your server starts enabled services automatically. Pair your iPhone or iPad to bring your workspace together."
     ]
 
     var body: some View {
@@ -46,7 +46,7 @@ struct ServerOnboardingView: View {
                 default:
                     VStack(alignment: .leading, spacing: 16) {
                         OnboardingFeature(icon: "iphone.and.arrow.forward", title: "Open Nocturne on your device", detail: "Choose Add host, then Scan QR code.")
-                        OnboardingFeature(icon: "qrcode.viewfinder", title: "Scan the code on this Mac", detail: "The next screen starts your server and shows its pairing code.")
+                        OnboardingFeature(icon: "qrcode.viewfinder", title: "Scan the code on this Mac", detail: "The next screen shows this Mac’s private pairing code.")
                         Label("Keep both devices on the same network for your first connection.", systemImage: "wifi")
                             .font(.system(size: 12)).foregroundStyle(MoonStyle.secondary)
                             .fixedSize(horizontal: false, vertical: true)
