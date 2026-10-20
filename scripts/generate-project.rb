@@ -249,7 +249,8 @@ Dir.glob('{Sources/Server,Sources/Design}/**/*.swift').sort.each do |path|
   host.source_build_phase.add_file_reference(group.new_file(path))
 end
 host.resources_build_phase.add_file_reference(group.new_file('Resources/Server.xcassets'))
-raise 'Run scripts/bootstrap.sh to fetch the server runtime.' unless File.executable?('Vendor/StreamingRuntime/Contents/Helpers/nocturne-stream-host')
+# Client-only bootstrap does not need the Mac runtime. Packaging validates it
+# when the server is actually built.
 phase = host.new_shell_script_build_phase('Package streaming server runtime')
 phase.shell_path = '/bin/bash'
 phase.shell_script = '"${SRCROOT}/scripts/package-streaming-server.sh"'

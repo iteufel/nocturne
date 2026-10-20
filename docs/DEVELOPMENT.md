@@ -15,6 +15,10 @@ open Nocturne.xcworkspace
 
 Bootstrap fetches pinned client/terminal sources and the checksum-verified streaming engine, then generates both Xcode projects. `Vendor/` contains build dependencies and is intentionally ignored by Git. The generated workspace and dependency lock are included.
 
+Use `scripts/bootstrap.sh mac`, `ios-simulator`, or `ios-device` to compile only the Rust transport slice needed for that build. The simulator shortcut targets Apple Silicon. Client-only bootstrap also skips downloading the Mac streaming runtime. The default `all` prepares every supported slice, including Intel simulators; rerun it when switching between Mac and iOS development in the same checkout.
+
+CI caches Cargo dependencies per job and Apple platform, and shares Docker build layers between broker verification and publication. The client job boots its disposable iPhone and iPad while one `build-for-testing` compiles the app, then runs both device suites sequentially with `test-without-building`. Run `python3 scripts/tests/test-build-orchestration.py` to check target selection, build reuse, and simulator cleanup without starting a simulator.
+
 Mac builds run `scripts/build-streaming-engine.sh` to compile the pinned Sunshine source with Nocturne's VideoToolbox correction and locked-screen display selection. The CMake overlays leave the upstream checkout unchanged. Sources and incremental build output live in `.build/SunshinePerformanceSource` and `.build/SunshinePerformanceBuild`. Runtime assets and shared libraries come from the verified release; Homebrew provides build tools and headers. The first build downloads and compiles additional dependencies.
 
 Choose **Nocturne** for iPhone/iPad or **Nocturne Server** for macOS. Select your development team in Xcode when installing on physical devices. Command-line development builds:
