@@ -19,6 +19,9 @@ let package = Package(
             cSettings: [.unsafeFlags(["-fobjc-arc"])], linkerSettings: [.linkedFramework("CoreGraphics"), .linkedFramework("Foundation")]),
         .target(name: "MicrophoneBridge", path: "Sources/MicrophoneBridge", publicHeadersPath: "include", linkerSettings: [.linkedFramework("CoreAudio")]),
         .target(name: "NocturneHostKit", dependencies: ["NocturneKit", "PTYBridge", "DisplayBridge", "MicrophoneBridge"], path: "Sources/HostKit"),
-        .testTarget(name: "NocturneKitTests", dependencies: ["NocturneKit", "NocturneHostKit", "NocturneFiles"], path: "Tests", exclude: ["Client"])
+        // Compile the app model for host lifecycle integration tests without launching the UI.
+        .target(name: "NocturneServerModel", dependencies: ["NocturneKit", "NocturneHostKit"], path: "Sources/Server",
+            exclude: ["NocturneServerApp.swift", "ServerView.swift"]),
+        .testTarget(name: "NocturneKitTests", dependencies: ["NocturneKit", "NocturneHostKit", "NocturneFiles", "NocturneServerModel"], path: "Tests", exclude: ["Client"])
     ]
 )

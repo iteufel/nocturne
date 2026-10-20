@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class ServerDockTests: XCTestCase {
-    /// Observe the packaged app after Start server; never launch capture or change displays here.
+    /// Observe the packaged app with Screen sharing enabled; never launch capture or change displays here.
     func testRunningServerHasOnlyOneDockApplication() throws {
         guard let path = ProcessInfo.processInfo.environment["NOCTURNE_RUNNING_SERVER_APP"] else {
             throw XCTSkip("Set NOCTURNE_RUNNING_SERVER_APP to a running app with its server started.")
@@ -14,7 +14,7 @@ final class ServerDockTests: XCTestCase {
         }
         let main = try XCTUnwrap(applications.first { $0.executableURL?.lastPathComponent == "Nocturne Server" })
         let engine = try XCTUnwrap(applications.first { $0.executableURL?.lastPathComponent == "nocturne-stream-host" },
-            "Start the server before running this check; a stopped helper cannot verify the regression.")
+            "Enable Screen sharing and apply before running this check; a stopped helper cannot verify the regression.")
         XCTAssertEqual(main.activationPolicy, .regular, "The main app must retain its Dock icon and menus")
         XCTAssertTrue(main.isFinishedLaunching, "The main app must finish launching")
         XCTAssertNotEqual(engine.activationPolicy, .regular, "The streaming helper must not create a bouncing second Dock icon")
