@@ -20,7 +20,7 @@
   <Style TargetType="TextBlock">
    <Setter Property="TextWrapping" Value="Wrap" />
   </Style>
-  <Style x:Key="Caption" TargetType="TextBlock">
+  <Style x:Key="Caption" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
    <Setter Property="Foreground" Value="{DynamicResource Muted}" />
    <Setter Property="FontSize" Value="13" />
    <Setter Property="LineHeight" Value="21" />

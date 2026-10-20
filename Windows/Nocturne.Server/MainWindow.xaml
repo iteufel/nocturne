@@ -1,9 +1,9 @@
 <Window x:Class="Nocturne.Server.MainWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="Nocturne Server" Icon="app.ico" Width="1000" Height="740" MinWidth="820" MinHeight="640"
+ Title="Nocturne Server" Icon="app.ico" Style="{StaticResource {x:Type Window}}" Width="1000" Height="740" MinWidth="820" MinHeight="640"
  WindowStartupLocation="CenterScreen" Closing="WindowClosing">
- <Grid>
+ <Grid Background="{StaticResource Canvas}">
   <Grid.ColumnDefinitions><ColumnDefinition Width="206" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
   <Border Background="#191C28" Padding="24,32">
    <DockPanel>
@@ -32,7 +32,7 @@
    <Border Grid.Row="1" Background="#402E36" Padding="14" CornerRadius="7" Margin="0,0,0,18" Visibility="{Binding HasError, Converter={StaticResource Visible}}">
     <TextBlock Text="{Binding Error}" Foreground="#FFD5D9" AutomationProperties.LiveSetting="Assertive" />
    </Border>
-   <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+   <ScrollViewer x:Name="MainScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
     <Grid>
      <StackPanel x:Name="Overview">
       <TextBlock Text="Your PC,&#x0a;on your terms." FontFamily="Bahnschrift" FontSize="40" LineHeight="47" Margin="0,8,0,16" />

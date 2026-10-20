@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     {
         var selected = (string)((Button)sender).Tag;
         foreach (var panel in new[] { Overview, Sharing, DisplaysPanel, RemotePanel, Devices }) panel.Visibility = panel.Name == selected ? Visibility.Visible : Visibility.Collapsed;
+        MainScroll.ScrollToTop();
     }
     private async void ToggleServer(object sender, RoutedEventArgs e) => await model.RunAsync(model.Running ? model.StopAsync : model.StartAsync);
     private async void SaveSettings(object sender, RoutedEventArgs e) => await model.RunAsync(model.ApplySettingsAsync);

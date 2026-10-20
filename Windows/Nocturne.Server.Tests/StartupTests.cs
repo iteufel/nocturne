@@ -38,6 +38,11 @@ public sealed class StartupTests
                     Assert.True(model.CanAct);
                     Assert.NotNull(window.FindName("DisplaysPanel"));
                     Assert.NotNull(window.FindName("RemotePanel"));
+                    var ink = Assert.IsType<SolidColorBrush>(app.FindResource("Ink")).Color;
+                    Assert.Equal(ink, Assert.IsType<SolidColorBrush>(window.Foreground).Color);
+                    var overview = Assert.IsType<StackPanel>(window.FindName("Overview"));
+                    Assert.Equal(ink, Assert.IsType<SolidColorBrush>(Assert.IsType<TextBlock>(overview.Children[0]).Foreground).Color);
+                    Assert.Equal(TextWrapping.Wrap, Assert.IsType<TextBlock>(overview.Children[1]).TextWrapping);
                     Assert.True(model.ScreenSharing); Assert.False(model.HasSettingsChanges);
                     model.Terminal = true; Assert.True(model.CanApply);
                     model.DiscardSettings(); Assert.False(model.Terminal); Assert.False(model.HasSettingsChanges);
@@ -100,14 +105,22 @@ public sealed class StartupTests
                 foreach (var descendant in Children(child)) yield return descendant;
             }
         }
-        foreach (var tab in new[] { "Overview", "Sharing", "DisplaysPanel", "RemotePanel", "Devices" })
+        void Save(string name)
         {
-            var button = Children(window).OfType<Button>().Single(button => button.Tag is string value && value == tab);
-            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); window.UpdateLayout();
+            window.UpdateLayout();
             var content = (FrameworkElement)window.Content;
             var image = new RenderTargetBitmap((int)content.ActualWidth, (int)content.ActualHeight, 96, 96, PixelFormats.Pbgra32);
             image.Render(content); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
-            using var output = File.Create(Path.Combine(directory, tab + ".png")); encoder.Save(output);
+            using var output = File.Create(Path.Combine(directory, name + ".png")); encoder.Save(output);
+        }
+        foreach (var tab in new[] { "Overview", "Sharing", "DisplaysPanel", "RemotePanel", "Devices" })
+        {
+            var button = Children(window).OfType<Button>().Single(button => button.Tag is string value && value == tab);
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Save(tab);
+            if (tab is "Sharing" or "DisplaysPanel")
+            {
+                Assert.IsType<ScrollViewer>(window.FindName("MainScroll")).ScrollToEnd(); Save(tab + "-bottom");
+            }
         }
     }
 }
