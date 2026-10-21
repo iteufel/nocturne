@@ -139,7 +139,7 @@ final class ClientModel: ObservableObject {
         engine.pairingRequired = { [weak self] in
             guard let self else { return }
             if self.hostSetup != nil {
-                self.failHostSetup("Screen sharing could not finish connecting. Check that Nocturne Server is running, then try again.")
+                self.failHostSetup("Screen sharing could not finish connecting. Check that Nocturne is running, then try again.")
             } else { self.busy = false; self.showAdd = true }
         }
         engine.authorizePairing = { [weak self] hostID, challenge, completion in
@@ -333,7 +333,7 @@ final class ClientModel: ObservableObject {
         setupDeadline?.cancel()
         setupDeadline = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
-            self?.failHostSetup("Screen sharing did not respond. Check Nocturne Server on your host, then try again.")
+            self?.failHostSetup("Screen sharing did not respond. Check Nocturne on your host, then try again.")
         }
         let address = server.streamingAddress ?? active.invitation.host
         pendingStreamAddress = address

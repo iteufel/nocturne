@@ -23,7 +23,7 @@ let package = Package(
         .target(name: "NocturneMacClient", dependencies: ["NocturneKit"], path: "Sources/MacClient"),
         // Compile the app model for host lifecycle integration tests without launching the UI.
         .target(name: "NocturneServerModel", dependencies: ["NocturneKit", "NocturneHostKit"], path: "Sources/Server",
-            exclude: ["NocturneServerApp.swift", "ServerView.swift", "ServerOnboardingView.swift", "MacComputersView.swift", "MacDesktopWorkspace.swift"]),
+            exclude: ["NocturneServerApp.swift", "ServerView.swift", "ServerOnboardingView.swift", "MacComputersView.swift", "MacDesktopWorkspace.swift", "MacAppsWorkspace.swift"]),
         .testTarget(name: "NocturneKitTests", dependencies: ["NocturneKit", "NocturneHostKit", "NocturneFiles", "NocturneServerModel", "NocturneMacClient"], path: "Tests", exclude: ["Client"])
     ]
 )

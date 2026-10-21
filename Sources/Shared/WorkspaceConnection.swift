@@ -122,7 +122,7 @@ public final class WorkspaceConnection: ObservableObject {
         var hello = Packet(.hello); hello.version = WorkspaceProtocol.version
         let greeting = try await request(hello)
         guard greeting.version == WorkspaceProtocol.version, let challenge = greeting.data, challenge.count == 32 else {
-            throw NocturneError.remote("Update Nocturne Server before connecting this device.")
+            throw NocturneError.remote("Update Nocturne before connecting this device.")
         }
         var proof = Packet(.authenticate); proof.certificate = identity.certificate; proof.name = identity.name
         proof.signature = try identity.sign(WorkspaceIdentity.message(for: channel.boundChallenge(challenge))); proof.enrollmentToken = invitation.enrollmentToken

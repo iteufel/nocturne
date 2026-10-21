@@ -23,7 +23,7 @@ final class AppWindowAccessibility {
     private var events = AppWindowEventState()
     init(pid: pid_t, windowID: CGWindowID) throws {
         guard AXIsProcessTrusted() else {
-            throw NocturneError.remote("Allow Nocturne Server in Mac System Settings → Privacy & Security → Accessibility to control and resize app windows.")
+            throw NocturneError.remote("Allow Nocturne in Mac System Settings → Privacy & Security → Accessibility to control and resize app windows.")
         }
         guard let getWindowID = Self.windowID else { throw NocturneError.remote("App window control is unavailable on this version of macOS.") }
         application = AXUIElementCreateApplication(pid); self.pid = pid; id = windowID

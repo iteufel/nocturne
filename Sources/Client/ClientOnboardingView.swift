@@ -9,7 +9,7 @@ struct ClientOnboardingView: View {
     private let subtitles = [
         "Bring your Mac to your iPhone or iPad. Pick up your desktop from a different seat.",
         "Your desktop is just the beginning. Keep your favorite ways to work close by.",
-        "Open Nocturne Server on your Mac. Your devices will be together in a moment."
+        "Open Nocturne on your Mac. Your devices will be together in a moment."
     ]
 
     var body: some View {
@@ -33,11 +33,11 @@ struct ClientOnboardingView: View {
                     }
                 default:
                     VStack(alignment: .leading, spacing: 17) {
-                        OnboardingFeature(icon: "1.circle", title: "Start on your Mac", detail: "Install and open Nocturne Server. Enabled services start automatically.")
+                        OnboardingFeature(icon: "1.circle", title: "Start on your Mac", detail: "Install and open Nocturne. Enabled services start automatically.")
                         OnboardingFeature(icon: "2.circle", title: "Choose Pair a device", detail: "Your Mac shows a private, single-use QR code.")
                         OnboardingFeature(icon: "3.circle", title: "Scan from this device", detail: "Choose Scan QR code on the next screen. Allow camera and local network access when asked.")
                         Link(destination: URL(string: "https://github.com/iteufel/nocturne/releases")!) {
-                            Label("Get Nocturne Server for Mac", systemImage: "arrow.up.right")
+                            Label("Get Nocturne for Mac", systemImage: "arrow.up.right")
                                 .font(.system(size: 12, weight: .medium))
                         }.padding(.top, 3)
                     }

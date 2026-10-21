@@ -10,6 +10,7 @@ import NocturneKit
 private final class RecordingDesktopCapture: DesktopCapture {
     var display = StreamDisplaySize(width: 640, height: 480, frameRate: 60)
     var displayID: UInt32 = 7
+    var screenLocked = false
     var inputs: [AppWindowInput] = []
     var resizes: [AppWindowViewport] = []
     var stops = 0
@@ -25,6 +26,8 @@ private final class RecordingDesktopHost: DesktopHosting {
     var captures: [RecordingDesktopCapture] = []
     var delayed = false
     var fail = false
+    var effectiveDisplayID: UInt32?
+    var locked = false
     var pending: CheckedContinuation<Void, Never>?
     func displays() -> [RemoteDesktopDisplay] {
         [.init(id: 7, name: "Main display", width: 1920, height: 1440, isMain: true),
@@ -33,9 +36,44 @@ private final class RecordingDesktopHost: DesktopHosting {
     func capture(displayID: UInt32?, viewport: AppWindowViewport, send: @escaping AppWindowSend,
                  ended: @escaping (Error) -> Void) async throws -> DesktopCapture {
         if fail { throw NocturneError.permissionDenied }
-        let capture = RecordingDesktopCapture(send: send); capture.displayID = displayID ?? 7; captures.append(capture)
+        let capture = RecordingDesktopCapture(send: send); capture.displayID = effectiveDisplayID ?? displayID ?? 7
+        capture.screenLocked = locked; captures.append(capture)
         if delayed { await withCheckedContinuation { pending = $0 } }
         return capture
+    }
+}
+
+@MainActor
+private final class MacAppCapture: AppWindowCapture {
+    var window: RemoteAppWindow
+    var display = StreamDisplaySize(width: 640, height: 480, frameRate: 60)
+    var inputs: [AppWindowInput] = []
+    var resizes: [AppWindowViewport] = []
+    var stops = 0
+    let send: AppWindowSend
+    let ended: (Error) -> Void
+    init(window: RemoteAppWindow, send: @escaping AppWindowSend, ended: @escaping (Error) -> Void) {
+        self.window = window; self.send = send; self.ended = ended
+    }
+    func resize(_ viewport: AppWindowViewport) { resizes.append(viewport) }
+    func input(_ input: AppWindowInput) { inputs.append(input) }
+    func stop() { stops += 1 }
+}
+
+@MainActor
+private final class MacAppHost: AppWindowHosting {
+    var captures: [MacAppCapture] = []
+    var launches = 0
+    func applications() -> [RemoteApplication] { (0..<130).map { .init(id: "app\($0)", name: "App \($0)") } }
+    func icon(applicationID: String) -> Data { Data() }
+    func windows(applicationID: String?) -> [RemoteAppWindow] {
+        (1...3).map { .init(id: UInt32($0), applicationID: "app0", title: "Document \($0)", width: 800, height: 600) }
+    }
+    func launch(applicationID: String) -> [RemoteAppWindow] { launches += 1; return windows(applicationID: applicationID) }
+    func capture(applicationID: String, windowID: UInt32, viewport: AppWindowViewport,
+                 send: @escaping AppWindowSend, ended: @escaping (Error) -> Void) async throws -> AppWindowCapture {
+        let window = try XCTUnwrap(windows(applicationID: applicationID).first { $0.id == windowID })
+        let capture = MacAppCapture(window: window, send: send, ended: ended); captures.append(capture); return capture
     }
 }
 
@@ -53,6 +91,54 @@ final class MacClientTests: XCTestCase {
     }
     private func rejected(_ action: () async throws -> Packet, file: StaticString = #filePath, line: UInt = #line) async {
         do { _ = try await action(); XCTFail("Unauthorized desktop command succeeded", file: file, line: line) } catch {}
+    }
+
+    func testDesktopCaptureFollowsLockScreenAndReturnsToRequestedDisplay() async throws {
+        var locked = false, available = true
+        var main: UInt32 = 7
+        var captures: [RecordingDesktopCapture] = []
+        let session = DesktopCaptureSession(viewport: viewport, target: {
+            try DesktopCaptureSession.target(requested: 8, main: main, locked: locked, available: available)
+        }, start: { target, _, _ in
+            let capture = RecordingDesktopCapture(send: self.send)
+            capture.displayID = target.displayID; captures.append(capture); return capture
+        }, ended: { _ in XCTFail("Unexpected capture failure") })
+        defer { session.stop() }
+        try await session.begin(monitorChanges: false)
+        XCTAssertEqual(session.displayID, 8)
+        locked = true
+        try session.input(AppWindowInput(.keyDown))
+        XCTAssertTrue(captures[0].inputs.isEmpty, "Input must pause until the lock-screen target is ready")
+        try await session.refresh()
+        XCTAssertEqual(session.displayID, 7, "Show loginwindow on the main display, not the selected secondary display")
+        XCTAssertEqual(captures[0].stops, 1)
+        main = 9; try await session.refresh(); XCTAssertEqual(session.displayID, 9)
+        locked = false; try await session.refresh(); XCTAssertEqual(session.displayID, 8)
+        try session.input(AppWindowInput(.keyDown)); XCTAssertEqual(captures.last?.inputs.count, 1)
+        available = false
+        await rejected { try await session.refresh(); return Packet(.ping) }
+    }
+
+    func testDesktopTargetTransitionReleasesLateCaptureAfterDisconnect() async throws {
+        var pending: CheckedContinuation<Void, Never>?
+        var locked = false
+        var captures: [RecordingDesktopCapture] = []
+        let session = DesktopCaptureSession(viewport: viewport, target: {
+            try DesktopCaptureSession.target(requested: 8, main: 7, locked: locked, available: true)
+        }, start: { target, _, _ in
+            let capture = RecordingDesktopCapture(send: self.send); capture.displayID = target.displayID; captures.append(capture)
+            if target.locked { await withCheckedContinuation { pending = $0 } }
+            return capture
+        }, ended: { _ in XCTFail("Stopped sessions must ignore late failures") })
+        try await session.begin(monitorChanges: false)
+        locked = true
+        let transition = Task { try await session.refresh() }
+        try await waitFor("lock capture startup") { pending != nil }
+        XCTAssertEqual(captures[0].stops, 1)
+        session.stop(); pending?.resume()
+        do { try await transition.value; XCTFail("A disconnected viewer acquired a lock-screen capture") } catch {}
+        XCTAssertEqual(captures[1].stops, 1)
+        try session.input(AppWindowInput(.keyDown)); XCTAssertTrue(captures[1].inputs.isEmpty)
     }
 
     func testNativeIdentityAuthenticatesAndSurvivesReloadWithoutChangingKey() throws {
@@ -146,7 +232,7 @@ final class MacClientTests: XCTestCase {
         XCTAssertEqual(inputs.map(\.kind), [.keyDown, .keyUp]); XCTAssertEqual(inputs.last?.modifiers, 0)
     }
 
-    private func encodedFrame() async throws -> AppWindowVideoFrame {
+    private func encodedFrame(screenStatus: Bool = true) async throws -> AppWindowVideoFrame {
         let received = expectation(description: "H.264 frame")
         var result: AppWindowVideoFrame?, assembler = AppWindowVideoAssembler()
         let encoder = AppWindowVideoEncoder(send: { packet, completion in
@@ -171,10 +257,84 @@ final class MacClientTests: XCTestCase {
         let captured = try XCTUnwrap(sample)
         // ScreenCaptureKit marks status on the per-sample attachment array.
         let attachments = try XCTUnwrap(CMSampleBufferGetSampleAttachmentsArray(captured, createIfNecessary: true) as? [NSMutableDictionary])
-        attachments[0][SCStreamFrameInfo.status] = SCFrameStatus.complete.rawValue
-        encoder.queue.sync { encoder.encode(captured) }
+        if screenStatus { attachments[0][SCStreamFrameInfo.status] = SCFrameStatus.complete.rawValue }
+        encoder.queue.sync { encoder.encode(captured, requiresScreenStatus: screenStatus) }
         await fulfillment(of: [received], timeout: 5)
         return try XCTUnwrap(result)
+    }
+
+    func testLoginVideoEncodesAVFoundationSamplesWithoutScreenCaptureKitAttachments() async throws {
+        let frame = try await encodedFrame(screenStatus: false)
+        XCTAssertTrue(frame.isValid)
+    }
+
+    func testMacAppBrowserLaunchAndIndependentWindowStreamsOverAuthenticatedWorkspace() async throws {
+        let frame = try await encodedFrame()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
+        let remote = RecordingDesktopHost(), desktop = DesktopSessionManager(host: remote)
+        let appHost = MacAppHost(), apps = AppWindowSessionManager(host: appHost)
+        let host = try WorkspaceServer(folder: root, name: "Host", devices: store, appWindows: apps, desktop: desktop)
+        var listening = false; host.onStatus = { status, _ in if status == "Ready" { listening = true } }
+        let secret = try SecureStore.randomKey(), port = UInt16.random(in: 52_000..<59_000)
+        try host.start(secret: secret, port: port); defer { host.stop(); desktop.stop(); apps.stop() }
+        try await waitFor("listener") { listening }
+        let invitation = try PairingInvitation(host: "127.0.0.1", port: port, name: "Host", secret: secret, enrollmentToken: store.createInvitation())
+        let identity = try MacClientIdentity.generate().workspace(name: "Viewer")
+        var saved: [String: Data] = [:]
+        var storageLocked = false
+        let client = MacClientModel(read: { saved[$0] }, write: {
+            if storageLocked { throw NocturneError.remote("Pairing storage is locked.") }; saved[$1] = $0
+        }, makeIdentity: { identity })
+        defer { client.disconnectAll() }
+        XCTAssertTrue(client.addHost(invitation.url.absoluteString))
+        let desktopStream = try XCTUnwrap(client.session)
+        desktopStream.viewport(CGSize(width: 800, height: 600), scale: 1); desktopStream.activate()
+        try await waitFor("desktop authentication") { desktopStream.display != nil || desktopStream.error != nil }
+        XCTAssertNil(desktopStream.error)
+        client.browseApps(desktopStream.serverID)
+        let browser = try XCTUnwrap(client.apps)
+        await browser.load()
+        XCTAssertNil(browser.error); XCTAssertEqual(browser.applications.count, 130, "Load every catalog page")
+        XCTAssertEqual(browser.windows.count, 3)
+        let windows = await browser.launch(try XCTUnwrap(browser.applications.first))
+        XCTAssertEqual(windows.count, 3); XCTAssertEqual(appHost.launches, 1)
+        let firstID = try XCTUnwrap(client.openAppWindow(windows[0], from: browser))
+        XCTAssertEqual(client.openAppWindow(windows[0], from: browser), firstID, "Focus an existing viewer instead of opening a duplicate capture")
+        let secondID = try XCTUnwrap(client.openAppWindow(windows[1], from: browser))
+        let first = try XCTUnwrap(client.appSessions[firstID]), second = try XCTUnwrap(client.appSessions[secondID])
+        for stream in [first, second] { stream.viewport(CGSize(width: 800, height: 600), scale: 1); stream.activate() }
+        try await waitFor("two independent app captures") { appHost.captures.count == 2 && first.display != nil && second.display != nil }
+        XCTAssertEqual(remote.captures.count, 1, "Opening an app must use appOpen, not another desktop lease")
+        let capture = try XCTUnwrap(appHost.captures.first { $0.window.id == windows[0].id })
+        var video = Packet(.appVideo); video.video = frame
+        capture.send(video) { _ in }
+        try await waitFor("app video") { first.ready }
+        first.sendInput(AppWindowInput(.keyDown))
+        try await waitFor("app input") { capture.inputs.count == 1 }
+        first.viewport(CGSize(width: 1024, height: 768), scale: 2)
+        try await waitFor("host app resize") { capture.resizes.count == 1 }
+        XCTAssertEqual(capture.resizes.first?.width, 1024)
+        let savedPairings = saved
+        storageLocked = true; browser.connection.disconnect(); await browser.load()
+        XCTAssertTrue(browser.error?.contains("storage is locked") == true)
+        XCTAssertEqual(browser.connection.state, .disconnected, "A failed save must close the reauthenticated browser even with a cached catalog")
+        XCTAssertEqual(saved, savedPairings)
+        storageLocked = false; await browser.load(); XCTAssertNil(browser.error)
+        client.closeApps(); client.disconnect()
+        try await waitFor("desktop release") { remote.captures[0].stops == 1 }
+        XCTAssertEqual(capture.stops, 0, "Closing desktop and browser keeps app streams alive")
+        client.disconnectApp(firstID)
+        try await waitFor("only the first app release") { capture.stops == 1 }
+        let remaining = try XCTUnwrap(appHost.captures.first { $0.window.id == windows[1].id })
+        XCTAssertEqual(remaining.stops, 0)
+        _ = try await second.connection.request(Packet(.ping))
+        remaining.ended(NocturneError.remote("This Mac window has closed."))
+        try await waitFor("closed-window message") { second.error != nil }
+        XCTAssertTrue(second.error?.contains("has closed") == true)
+        XCTAssertEqual(remaining.stops, 1)
     }
 
     func testMacClientStreamsOverAuthenticatedWorkspaceAndDisconnectKeepsHostRunning() async throws {
@@ -207,9 +367,12 @@ final class MacClientTests: XCTestCase {
         stream.viewport(CGSize(width: 1024, height: 768), scale: 1)
         try await waitFor("viewport resize") { remote.captures.first?.resizes.count == 1 }
         XCTAssertEqual(remote.captures.count, 1, "A viewer resize must reuse its capture lease")
+        remote.effectiveDisplayID = 7; remote.locked = true
         stream.selectDisplay(8)
         try await waitFor("display switch", timeout: 10) { (remote.captures.count == 2 && stream.display != nil) || stream.error != nil }
         XCTAssertNil(stream.error); XCTAssertEqual(stream.selectedDisplayID, 8)
+        XCTAssertTrue(stream.screenLocked)
+        XCTAssertEqual(remote.captures.last?.displayID, 7, "Capture may follow loginwindow without replacing the viewer's requested display")
         XCTAssertEqual(remote.captures.first?.stops, 1)
         let secondConnection = WorkspaceConnection(identity: identity, remoteStreaming: false)
         try await secondConnection.connect(invitation, restoreTerminalSessions: false)
@@ -217,6 +380,7 @@ final class MacClientTests: XCTestCase {
         client.disconnect()
         try await waitFor("capture release") { remote.captures.count == 2 && remote.captures[1].stops == 1 }
         XCTAssertFalse(stream.ready); XCTAssertNil(client.session)
+        remote.effectiveDisplayID = nil; remote.locked = false
         _ = try await secondConnection.request(Packet(.ping))
         XCTAssertEqual(secondConnection.state, .connected, "Closing an outgoing stream must leave host services and other connections running")
         client.connect(try XCTUnwrap(client.pairedServers.servers.first?.id))
@@ -255,7 +419,7 @@ final class MacClientTests: XCTestCase {
             XCTAssertEqual(client.pairedServers, existing)
             XCTAssertEqual(stream.connection.state, .disconnected); XCTAssertTrue(remote.captures.isEmpty)
             XCTAssertEqual(writes, failSave ? 1 : 0)
-            XCTAssertTrue(stream.error?.contains(failSave ? "storage is locked" : "latest Nocturne Server") == true)
+            XCTAssertTrue(stream.error?.contains(failSave ? "storage is locked" : "latest Nocturne") == true)
             client.disconnect()
         }
     }

@@ -1,6 +1,7 @@
 import AppKit
 import ScreenCaptureKit
 import NocturneKit
+import DisplayBridge
 
 @MainActor
 public final class NativeAppWindowHost: AppWindowHosting {
@@ -53,6 +54,9 @@ public final class NativeAppWindowHost: AppWindowHosting {
         return data
     }
     public func windows(applicationID: String?) async throws -> [RemoteAppWindow] {
+        guard !NDDisplayLayout.isScreenLocked() else {
+            throw NocturneError.remote("This Mac is locked. Open its desktop to unlock it, then refresh Apps.")
+        }
         let apps = try applications()
         if let applicationID { _ = try application(applicationID) }
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
@@ -69,6 +73,9 @@ public final class NativeAppWindowHost: AppWindowHosting {
         }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
     public func launch(applicationID: String) async throws -> [RemoteAppWindow] {
+        guard !NDDisplayLayout.isScreenLocked() else {
+            throw NocturneError.remote("This Mac is locked. Open its desktop to unlock it, then refresh Apps.")
+        }
         let app = try application(applicationID)
         let configuration = NSWorkspace.OpenConfiguration(); configuration.activates = false
         _ = try await NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: app.id), configuration: configuration)
@@ -82,6 +89,9 @@ public final class NativeAppWindowHost: AppWindowHosting {
     }
     public func capture(applicationID: String, windowID: UInt32, viewport: AppWindowViewport,
                         send: @escaping AppWindowSend, ended: @escaping (Error) -> Void) async throws -> AppWindowCapture {
+        guard !NDDisplayLayout.isScreenLocked() else {
+            throw NocturneError.remote("This Mac is locked. Open its desktop to unlock it, then reconnect this window.")
+        }
         _ = try application(applicationID)
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
         guard let window = content.windows.first(where: { $0.windowID == windowID }), window.windowLayer == 0,

@@ -17,7 +17,7 @@ struct NocturneServerApp: App {
     @NSApplicationDelegateAdaptor(NocturneServerDelegate.self) private var delegate
     @AppStorage("nocturne.appearance") private var appearance = NocturneAppearance.system
     var body: some Scene {
-        WindowGroup("Nocturne Server", id: "main") {
+        WindowGroup("Nocturne", id: "main") {
             ServerView(model: delegate.model, client: delegate.client).tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
                 .frame(minWidth: 780, minHeight: 620)
         }.defaultSize(width: 1_040, height: 760).windowToolbarStyle(.unified)
@@ -25,10 +25,16 @@ struct NocturneServerApp: App {
             MacDesktopWindow(client: delegate.client)
                 .frame(minWidth: 640, minHeight: 400)
         }.defaultSize(width: 1_280, height: 800).windowToolbarStyle(.unified)
+        Window("Mac apps", id: "remote-apps") {
+            MacAppsWindow(client: delegate.client).frame(minWidth: 640, minHeight: 460)
+        }.defaultSize(width: 880, height: 660).windowToolbarStyle(.unified)
+        WindowGroup("Remote app", id: "remote-app", for: String.self) { $id in
+            MacAppWindow(client: delegate.client, id: id).frame(minWidth: 320, minHeight: 240)
+        }.defaultSize(width: 1_000, height: 700).windowToolbarStyle(.unified)
         Settings {
             ServerSettingsView(model: delegate.model).tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
         }
-        MenuBarExtra("Nocturne Server", systemImage: "moon.fill") {
+        MenuBarExtra("Nocturne", systemImage: "moon.fill") {
             ServerMenu(model: delegate.model, client: delegate.client)
         }
     }
@@ -40,7 +46,7 @@ final class NocturneServerDelegate: NSObject, NSApplicationDelegate {
     let client = MacClientModel()
     func applicationDidFinishLaunching(_ notification: Notification) { model.startEnabledServices() }
     // The app owns the server even after its last window closes.
-    func applicationWillTerminate(_ notification: Notification) { client.disconnect(); model.stop() }
+    func applicationWillTerminate(_ notification: Notification) { client.disconnectAll(); model.stop() }
 }
 
 private struct MacDesktopWindow: View {
@@ -51,13 +57,24 @@ private struct MacDesktopWindow: View {
     }
 }
 
+private struct MacAppWindow: View {
+    @ObservedObject var client: MacClientModel
+    let id: String?
+    var body: some View {
+        if let id, let stream = client.appSessions[id] { MacDesktopWorkspace(stream: stream, client: client) }
+        else {
+            ContentUnavailableView("App window disconnected", systemImage: "macwindow", description: Text("Open a window from the host’s Apps browser."))
+        }
+    }
+}
+
 struct ServerMenu: View {
     @ObservedObject var model: ServerModel
     @ObservedObject var client: MacClientModel
     @Environment(\.openWindow) private var openWindow
     var body: some View {
         Text(model.running ? "\(model.connections) connected devices" : "Sharing off")
-        Button("Open Nocturne Server") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
+        Button("Open Nocturne") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
         Button("Connect to a Mac…") {
             client.showAddHost = true
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
@@ -65,6 +82,14 @@ struct ServerMenu: View {
         if client.session != nil {
             Button("Show remote desktop") { openWindow(id: "remote-desktop"); NSApp.activate(ignoringOtherApps: true) }
             Button("Disconnect remote desktop") { client.disconnect() }
+        }
+        if client.apps != nil {
+            Button("Show Mac apps") { openWindow(id: "remote-apps"); NSApp.activate(ignoringOtherApps: true) }
+        }
+        ForEach(client.appSessions.keys.sorted(), id: \.self) { id in
+            if let stream = client.appSessions[id] {
+                Button("Show \(stream.title)") { openWindow(id: "remote-app", value: id); NSApp.activate(ignoringOtherApps: true) }
+            }
         }
         Button("Welcome to Nocturne…") {
             model.showOnboarding = true
@@ -75,7 +100,7 @@ struct ServerMenu: View {
         Divider()
         SettingsLink { Text("Settings…") }
         Divider()
-        Button("Quit Nocturne Server") { model.stop(); NSApp.terminate(nil) }
+        Button("Quit Nocturne") { model.stop(); NSApp.terminate(nil) }
     }
 }
 
@@ -153,7 +178,7 @@ struct ServerSettingsView: View {
             .background { NocturneBackdrop() }.frame(width: 560, height: 720)
             .onAppear { model.refreshLoginItem() }
             .onChange(of: scenePhase) { _, phase in if phase == .active { model.refreshLoginItem() } }
-            .alert("Nocturne Server", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
+            .alert("Nocturne", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
                 Button("OK") { model.error = nil }
             } message: { Text(model.error ?? "") }
     }

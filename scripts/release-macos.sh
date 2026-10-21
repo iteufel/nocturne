@@ -17,19 +17,19 @@ if [[ ! "$NOCTURNE_BUILD_NUMBER" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
 fi
 
 output="$PWD/.build/MacRelease"
-app="$output/Nocturne Server.app"
+app="$output/Nocturne.app"
 mkdir -p "$output"
 
 # Compile without a distribution identity in Xcode, then sign inside out below.
 # This keeps application signing settings away from SwiftPM build products.
-xcodebuild -project Nocturne.xcodeproj -scheme 'Nocturne Server' \
+xcodebuild -project Nocturne.xcodeproj -scheme 'Nocturne Mac' \
   -configuration Release -destination 'generic/platform=macOS' \
   -derivedDataPath .build/XcodeMacRelease ARCHS=arm64 \
   CURRENT_PROJECT_VERSION="$NOCTURNE_BUILD_NUMBER" \
   CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= build
 
 rm -rf "$app"
-ditto '.build/XcodeMacRelease/Build/Products/Release/Nocturne Server.app' "$app"
+ditto '.build/XcodeMacRelease/Build/Products/Release/Nocturne.app' "$app"
 actual_build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app/Contents/Info.plist")
 if [ "$actual_build" != "$NOCTURNE_BUILD_NUMBER" ]; then
   echo "Mac bundle build number $actual_build does not match requested build $NOCTURNE_BUILD_NUMBER." >&2
@@ -74,6 +74,6 @@ codesign --verify --deep --strict "$app"
 spctl --assess --type execute --verbose=4 "$app"
 
 # Staple the app before creating the archive users actually download.
-ditto -c -k --sequesterRsrc --keepParent "$app" "$output/Nocturne-Server-macOS-arm64.zip"
-(cd "$output" && shasum -a 256 Nocturne-Server-macOS-arm64.zip > SHA256SUMS.txt)
-echo "Signed, notarized release: $output/Nocturne-Server-macOS-arm64.zip"
+ditto -c -k --sequesterRsrc --keepParent "$app" "$output/Nocturne-macOS-arm64.zip"
+(cd "$output" && shasum -a 256 Nocturne-macOS-arm64.zip > SHA256SUMS.txt)
+echo "Signed, notarized release: $output/Nocturne-macOS-arm64.zip"

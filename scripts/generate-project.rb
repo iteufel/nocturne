@@ -243,7 +243,9 @@ scheme.add_test_target(client.targets.find { |entry| entry.name == 'NocturneClie
 scheme.save_as('Vendor/moonlight-ios/Nocturne.xcodeproj', 'Nocturne', true)
 
 mac = Xcodeproj::Project.new('Nocturne.xcodeproj')
-host = mac.new_target(:application, 'Nocturne Server', :osx, '14.0')
+host = mac.new_target(:application, 'Nocturne Mac', :osx, '14.0')
+host.product_name = 'Nocturne'
+host.product_reference.path = 'Nocturne.app'
 group = mac.main_group.new_group('Server')
 Dir.glob('{Sources/Server,Sources/Design}/**/*.swift').sort.each do |path|
   host.source_build_phase.add_file_reference(group.new_file(path))
@@ -261,7 +263,7 @@ product(mac, host, kit, 'NocturneMacClient')
 host.build_configurations.each do |config|
   settings = config.build_settings
   settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'app.nocturne.server'
-  settings['PRODUCT_NAME'] = 'Nocturne Server'
+  settings['PRODUCT_NAME'] = 'Nocturne'
   settings['SWIFT_VERSION'] = '5.0'
   settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
   settings['INFOPLIST_FILE'] = 'Resources/Server-Info.plist'
@@ -279,7 +281,7 @@ end
 mac.save
 scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(host); scheme.set_launch_target(host)
-scheme.save_as('Nocturne.xcodeproj', 'Nocturne Server', true)
+scheme.save_as('Nocturne.xcodeproj', 'Nocturne Mac', true)
 workspace = Xcodeproj::Workspace.new('Nocturne.xcodeproj', 'Vendor/moonlight-ios/Nocturne.xcodeproj')
 workspace.save_as('Nocturne.xcworkspace')
 
@@ -294,7 +296,7 @@ info['NSBonjourServices'] = ['_nvstream._tcp', '_nocturne._tcp']
 info['NSLocalNetworkUsageDescription'] = 'Find your computers and connect directly for streaming, terminal access, and file transfer.'
 info['NSBluetoothAlwaysUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
 info['NSBluetoothPeripheralUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
-info['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Nocturne Server on your Mac.'
+info['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Nocturne on your Mac.'
 info['NSMicrophoneUsageDescription'] = 'Send your microphone to your paired Mac for voice chat in Discord and games when you unmute a stream.'
 info['UIApplicationSceneManifest'] = {
   'UIApplicationSupportsMultipleScenes' => true,

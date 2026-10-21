@@ -6,6 +6,8 @@ import NocturneKit
 public final class MacDesktopSession: ObservableObject {
     public let serverID: String
     public let name: String
+    public let route: AppWindowRoute?
+    public var title: String { route?.title ?? name }
     public let connection: WorkspaceConnection
     public let surface = MacVideoView(frame: .zero)
     @Published public private(set) var ready = false
@@ -15,6 +17,7 @@ public final class MacDesktopSession: ObservableObject {
     @Published public private(set) var displays: [RemoteDesktopDisplay] = []
     @Published public private(set) var selectedDisplayID: UInt32?
     @Published public private(set) var display: StreamDisplaySize?
+    @Published public private(set) var screenLocked = false
     @Published public var muted = false { didSet { audio.muted = muted } }
     var onAuthenticated: ((PairingInvitation) throws -> Void)?
     private let invitation: PairingInvitation
@@ -32,13 +35,14 @@ public final class MacDesktopSession: ObservableObject {
     private var assembler = AppWindowVideoAssembler()
     private var observer: AnyCancellable?
 
-    init(invitation: PairingInvitation, identity: WorkspaceIdentity) {
-        self.invitation = invitation; name = invitation.name
+    init(invitation: PairingInvitation, identity: WorkspaceIdentity, route: AppWindowRoute? = nil) {
+        self.invitation = invitation; name = invitation.name; self.route = route
         serverID = WorkspaceIdentity.fingerprint(invitation.secret)
         // Native media travels over this authenticated workspace socket, including
         // through a remote tunnel. It never needs Moonlight's UDP port forwarding.
         connection = WorkspaceConnection(identity: identity, remoteStreaming: false)
         surface.onInput = { [weak self] in self?.sendInput($0) }
+        surface.setAccessibilityLabel(route == nil ? "Remote Mac desktop" : "Remote Mac app window")
         observer = connection.$state.dropFirst().sink { [weak self] state in
             guard state == .disconnected else { return }
             Task { @MainActor in
@@ -50,22 +54,23 @@ public final class MacDesktopSession: ObservableObject {
     public func activate() {
         guard !active else { return }
         active = true; error = nil; audioError = nil; status = "Connecting to \(name)…"
-        connection.onDesktopPacket = { [weak self] in self?.receive($0) }
+        if route == nil { connection.onDesktopPacket = { [weak self] in self?.receive($0) } }
+        else { connection.onAppPacket = { [weak self] in self?.receive($0) } }
         configure()
     }
     public func stop() {
         active = false; epoch = UUID()
         configureTask?.cancel(); configureTask = nil; heartbeat?.cancel(); heartbeat = nil
         firstFrameDeadline?.cancel(); firstFrameDeadline = nil; inputTask?.cancel(); inputTask = nil
-        inputs.removeAll(); sessionID = nil; appliedViewport = nil; ready = false; display = nil
-        surface.reset(); audio.stop(); assembler.reset(); connection.onDesktopPacket = nil
+        inputs.removeAll(); sessionID = nil; appliedViewport = nil; ready = false; display = nil; screenLocked = false
+        surface.reset(); audio.stop(); assembler.reset(); connection.onDesktopPacket = nil; connection.onAppPacket = nil
         // Closing the authenticated socket releases capture and all held input
         // on the other Mac, independently of this Mac's own host services.
         connection.disconnect()
     }
     public func reconnect() { stop(); activate() }
     public func selectDisplay(_ id: UInt32) {
-        guard selectedDisplayID != id, displays.contains(where: { $0.id == id }) else { return }
+        guard route == nil, selectedDisplayID != id, displays.contains(where: { $0.id == id }) else { return }
         selectedDisplayID = id; reconnect()
     }
     public func viewport(_ size: CGSize, scale: CGFloat) {
@@ -90,32 +95,41 @@ public final class MacDesktopSession: ObservableObject {
                         try await self.connection.connect(self.invitation, restoreTerminalSessions: false, rediscover: true)
                         try Task.checkCancellation()
                         guard self.epoch == generation else { return }
-                        guard self.connection.capabilities.contains(DesktopStreaming.capability) else {
-                            throw NocturneError.remote("Enable Screen sharing and install the latest Nocturne Server on the other Mac to connect Mac to Mac.")
+                        guard self.connection.capabilities.contains(self.route == nil ? DesktopStreaming.capability : AppStreaming.capability) else {
+                            throw NocturneError.remote("Enable Screen sharing and install the latest Nocturne on the other Mac to share its desktop and app windows.")
                         }
                         guard let refreshed = self.connection.connectedInvitation else { throw NocturneError.disconnected }
                         try self.onAuthenticated?(refreshed)
-                        let catalog = try await self.connection.request(Packet(.desktopList), timeout: 30)
-                        try Task.checkCancellation()
-                        guard self.epoch == generation else { return }
-                        self.displays = catalog.displays ?? []
-                        if let chosen = self.selectedDisplayID, !self.displays.contains(where: { $0.id == chosen }) {
-                            self.selectedDisplayID = nil
+                        if self.route == nil {
+                            let catalog = try await self.connection.request(Packet(.desktopList), timeout: 30)
+                            try Task.checkCancellation()
+                            guard self.epoch == generation else { return }
+                            self.displays = catalog.displays ?? []
+                            if !self.displays.contains(where: { $0.id == self.selectedDisplayID }) {
+                                self.selectedDisplayID = self.displays.first(where: \.isMain)?.id ?? self.displays.first?.id
+                            }
                         }
                     }
                     try Task.checkCancellation()
                     guard self.epoch == generation else { return }
                     if self.appliedViewport == desired { return }
-                    var request = Packet(self.sessionID == nil ? .desktopOpen : .desktopResize)
+                    var request = Packet(self.operation(self.sessionID == nil ? .desktopOpen : .desktopResize,
+                                                       self.sessionID == nil ? .appOpen : .appResize))
                     if self.sessionID == nil { self.sessionID = UUID().uuidString }
                     request.sessionID = self.sessionID; request.displayID = self.selectedDisplayID; request.viewport = desired
-                    self.status = "Opening \(self.name)’s desktop…"
+                    request.applicationID = self.route?.applicationID; request.windowID = self.route?.windowID
+                    self.status = "Opening \(self.title)…"
                     let response = try await self.connection.request(request, timeout: 30)
                     guard self.epoch == generation else { return }
                     guard response.sessionID == self.sessionID, let display = response.display, display.isValidAppWindow else {
                         throw NocturneError.invalidFrame
                     }
-                    self.display = display; self.selectedDisplayID = response.displayID; self.appliedViewport = desired
+                    if let route = self.route {
+                        guard response.window?.id == route.windowID, response.window?.applicationID == route.applicationID else {
+                            throw NocturneError.invalidFrame
+                        }
+                    }
+                    self.display = display; self.screenLocked = response.screenLocked ?? false; self.appliedViewport = desired
                     self.status = "Waiting for video…"
                     if self.heartbeat == nil { self.startHeartbeat(generation) }
                     if !self.ready, self.firstFrameDeadline == nil {
@@ -139,8 +153,11 @@ public final class MacDesktopSession: ObservableObject {
                 do {
                     try await Task.sleep(nanoseconds: 5_000_000_000)
                     guard let self, self.active, self.epoch == generation, let id = self.sessionID else { return }
-                    var ping = Packet(.desktopHeartbeat); ping.sessionID = id
-                    _ = try await self.connection.request(ping, timeout: 8)
+                    var ping = Packet(self.operation(.desktopHeartbeat, .appHeartbeat)); ping.sessionID = id
+                    let reply = try await self.connection.request(ping, timeout: 8)
+                    guard self.epoch == generation else { return }
+                    if let display = reply.display, display.isValidAppWindow { self.display = display }
+                    self.screenLocked = reply.screenLocked ?? false
                 } catch {
                     guard !Task.isCancelled, let self, self.epoch == generation else { return }
                     self.fail(error); return
@@ -150,7 +167,7 @@ public final class MacDesktopSession: ObservableObject {
     }
     private func receive(_ packet: Packet) {
         guard active, let id = sessionID, packet.sessionID == id else { return }
-        if packet.operation == .desktopEnded { fail(NocturneError.remote(packet.error ?? "Desktop sharing ended.")); return }
+        if packet.operation == operation(.desktopEnded, .appEnded) { fail(NocturneError.remote(packet.error ?? "Sharing ended.")); return }
         if packet.operation == .desktopAudio {
             guard let frame = packet.audio, frame.isValid else { fail(NocturneError.invalidFrame); return }
             guard audioError == nil else { return }
@@ -176,11 +193,12 @@ public final class MacDesktopSession: ObservableObject {
             guard let self else { return }
             defer { if self.epoch == generation { self.inputTask = nil } }
             while !self.inputs.isEmpty, self.epoch == generation, let id = self.sessionID {
-                var packet = Packet(.desktopInput); packet.sessionID = id; packet.input = self.inputs.removeFirst()
+                var packet = Packet(self.operation(.desktopInput, .appInput)); packet.sessionID = id; packet.input = self.inputs.removeFirst()
                 do { _ = try await self.connection.request(packet) }
                 catch { if self.epoch == generation { self.fail(error) }; return }
             }
         }
     }
+    private func operation(_ desktop: NocturneKit.Operation, _ app: NocturneKit.Operation) -> NocturneKit.Operation { route == nil ? desktop : app }
     private func fail(_ error: Error) { stop(); self.error = error.localizedDescription }
 }

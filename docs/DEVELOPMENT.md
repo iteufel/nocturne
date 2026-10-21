@@ -21,7 +21,7 @@ CI caches Cargo dependencies per job and Apple platform, and shares Docker build
 
 Mac builds run `scripts/build-streaming-engine.sh` to compile the pinned Sunshine source with Nocturne's VideoToolbox correction and locked-screen display selection. The CMake overlays leave the upstream checkout unchanged. Sources and incremental build output live in `.build/SunshinePerformanceSource` and `.build/SunshinePerformanceBuild`. Runtime assets and shared libraries come from the verified release; Homebrew provides build tools and headers. The first build downloads and compiles additional dependencies.
 
-Choose **Nocturne** for iPhone/iPad or **Nocturne Server** for macOS. Select your development team in Xcode when installing on physical devices. Command-line development builds:
+Choose the **Nocturne** scheme for iPhone/iPad or **Nocturne Mac** for macOS. Both apps are named Nocturne. Select your development team in Xcode when installing on physical devices. Command-line development builds:
 
 ```sh
 ./scripts/build.sh ios
@@ -36,17 +36,18 @@ NOCTURNE_SIGNING_IDENTITY='Apple Development' NOCTURNE_DEVELOPMENT_TEAM='<your t
 
 Without these variables the build is ad-hoc signed; macOS may require renewed capture approval after it changes. No team identifier is committed to the projects.
 
-The Mac product is `.build/XcodeMac/Build/Products/Debug/Nocturne Server.app`; the simulator client is `.build/Xcode/Build/Products/Debug-iphonesimulator/Nocturne.app`.
+The Mac product is `.build/XcodeMac/Build/Products/Debug/Nocturne.app`; the simulator client is `.build/Xcode/Build/Products/Debug-iphonesimulator/Nocturne.app`.
 
 ## Tests
 
 ```sh
 swift test
+swift test --filter MacClientTests
 NOCTURNE_TEST_APP_WINDOWS=1 swift test --filter AppWindowTests/testNativeWindowCaptureAndResize
 bash scripts/test-microphone-driver.sh
 bash scripts/test-stream-audio.sh
 bash scripts/test-stream-video.sh
-NOCTURNE_ENGINE_EXECUTABLE="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne Server.app/Contents/MacOS/nocturne-stream-host" swift test
+NOCTURNE_ENGINE_EXECUTABLE="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne.app/Contents/MacOS/nocturne-stream-host" swift test
 ```
 
 The command with `NOCTURNE_ENGINE_EXECUTABLE` starts a real engine on its standard ports: stop the Mac app first. It verifies authenticated administration, application-library initialization, individual removal from a two-device roster, persistence across restart, reset, and shutdown. Other tests use real TLS connections, PTYs, and files; they check wrong-key rejection, certificate/signature binding, single-use invitation handling, one-device revocation while another connection and shell remain active, permission revocation, multiple terminal tabs, commands completing while disconnected, reconnect without duplicate output, retained exit output, bounded scrollback, per-device terminal ownership and limits, detached-shell cleanup, bounded framing, transfer integrity, cancellation, traversal/symlink rejection, and no-overwrite races.
@@ -56,7 +57,7 @@ The command with `NOCTURNE_ENGINE_EXECUTABLE` starts a real engine on its standa
 To verify Dock behavior, launch the built Mac app, enable **Sharing → Screen sharing**, and apply, then run:
 
 ```sh
-NOCTURNE_RUNNING_SERVER_APP="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne Server.app" \
+NOCTURNE_RUNNING_SERVER_APP="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne.app" \
   swift test --filter ServerDockTests
 ```
 

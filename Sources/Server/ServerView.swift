@@ -109,7 +109,7 @@ struct ServerView: View {
             MoonPanel {
                 VStack(alignment: .leading, spacing: 19) {
                     HStack {
-                        Label("Nocturne Server", systemImage: "network").font(.system(size: 16, weight: .semibold))
+                        Label("Nocturne", systemImage: "network").font(.system(size: 16, weight: .semibold))
                         Spacer(); StatusPill(label: model.status, active: model.running)
                     }
                     Text("Stream your Mac, open a terminal, and move your files. One server, ready for every device.")

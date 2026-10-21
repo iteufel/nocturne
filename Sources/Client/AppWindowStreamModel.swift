@@ -73,7 +73,7 @@ final class AppWindowStreamModel: ObservableObject {
                     if self.connection.state != .connected {
                         try await self.connection.connect(self.invitation(), restoreTerminalSessions: false, rediscover: true)
                         guard self.connection.capabilities.contains(AppStreaming.capability) else {
-                            throw NocturneError.remote("Update Nocturne Server on your Mac to stream app windows.")
+                            throw NocturneError.remote("Update Nocturne on your Mac to stream app windows.")
                         }
                     }
                     try Task.checkCancellation()

@@ -40,7 +40,7 @@ public final class EmbeddedStreamingEngine {
     public func start(executable: URL, name: String, display: String = "") async throws {
         guard process == nil else { return }
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
-            throw NocturneError.remote("The bundled streaming engine is missing. Rebuild Nocturne Server with scripts/bootstrap.sh.")
+            throw NocturneError.remote("The bundled streaming engine is missing. Rebuild Nocturne with scripts/bootstrap.sh.")
         }
         let epoch = UUID(); generation = epoch
         let password = try SecureStore.randomKey().base64EncodedString()

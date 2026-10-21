@@ -16,7 +16,7 @@ struct AddComputerView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     Text("Add a host").font(.system(size: 34, weight: .semibold, design: .rounded)).tracking(-1)
-                    Text("Open Nocturne Server on your Mac, start the server, and choose “Pair a device.” The QR code sets up your workspace and screen sharing.")
+                    Text("Open Nocturne on your Mac, start the server, and choose “Pair a device.” The QR code sets up your workspace and screen sharing.")
                         .font(.subheadline).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
                     MoonPanel {
                         HStack(spacing: 16) {
