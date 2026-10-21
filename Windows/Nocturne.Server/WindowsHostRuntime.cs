@@ -15,6 +15,7 @@ internal sealed class WindowsHostRuntime : IRunningHost
     private readonly Action<string> changed;
     private readonly HostStorage storage;
     private Task? captureTask, remoteTask;
+    private WorkspaceDiscovery.Advertisement? discovery;
     private volatile string screenStatus = "Disabled", remoteStatus = "Local network";
     public string[] ConnectedDevices => workspace.ConnectedDevices;
     public RemoteAccessInfo? RemoteAccess => remote.Access;
@@ -25,16 +26,16 @@ internal sealed class WindowsHostRuntime : IRunningHost
         this.storage = storage; this.settings = settings; this.changed = changed;
         engine = new(Path.Combine(storage.DirectoryPath, "Engine"));
         IWorkspaceFiles? folder = null;
-        MicrophoneSession? microphone = null; DisplaySession? display = null; AppWindowSessions? apps = null;
+        MicrophoneSession? microphone = null; DisplaySession? display = null; AppWindowSessions? apps = null; DesktopSessions? desktop = null;
         try
         {
             if (settings.Files) folder = new WindowsSharedFolder(settings.SharedFolder);
             if (settings.Microphone) microphone = new(new ThreadBoundMicrophoneOutput(() => new WindowsMicrophoneOutput(settings.MicrophoneDevice)));
-            if (settings.ScreenSharing) { display = new(new WindowsDisplayControl(settings, storage.DirectoryPath, lifetime.Token)); apps = new(new WindowsApplications()); }
+            if (settings.ScreenSharing) { display = new(new WindowsDisplayControl(settings, storage.DirectoryPath, lifetime.Token)); apps = new(new WindowsApplications()); desktop = new(new WindowsDesktopHost()); }
             workspace = new(settings.Name, secret, devices, new(settings.Terminal, settings.Files, settings.Microphone, settings.ScreenSharing), folder,
-                (columns, rows) => new ConPtyTerminal(columns, rows), engine, microphone, display, apps, remote);
+                (columns, rows) => new ConPtyTerminal(columns, rows), engine, microphone, display, apps, remote, desktop);
         }
-        catch { folder?.Dispose(); microphone?.Dispose(); display?.Dispose(); apps?.Dispose(); throw; }
+        catch { folder?.Dispose(); microphone?.Dispose(); display?.Dispose(); apps?.Dispose(); desktop?.Dispose(); throw; }
         workspace.SessionError += message => changed(message);
     }
     public static async Task<IRunningHost> StartAsync(HostStorage storage, HostSettings settings, byte[] secret, DeviceStore devices, Action<string> changed, CancellationToken cancellation)
@@ -43,6 +44,8 @@ internal sealed class WindowsHostRuntime : IRunningHost
         try
         {
             cancellation.ThrowIfCancellationRequested(); runtime.workspace.Start();
+            try { runtime.discovery = new(secret, Wire.Port); }
+            catch (System.Net.Sockets.SocketException error) { changed("Local discovery unavailable: " + error.Message); }
             foreach (var (id, name) in devices.PendingRemovals) await runtime.workspace.RemoveDeviceAsync(id, name, cancellation);
             if (settings.ScreenSharing) runtime.captureTask = Task.Run(runtime.MaintainCaptureAsync);
             if (settings.RemoteAccess) runtime.remoteTask = Task.Run(runtime.MaintainRemoteAsync);
@@ -102,6 +105,7 @@ internal sealed class WindowsHostRuntime : IRunningHost
     public async ValueTask DisposeAsync()
     {
         lifetime.Cancel();
+        discovery?.Dispose();
         try { await workspace.DisposeAsync(); }
         finally
         {

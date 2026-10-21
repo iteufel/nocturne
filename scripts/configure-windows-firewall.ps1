@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 $root = if (Test-Path (Join-Path $PSScriptRoot 'Nocturne Server.exe')) { $PSScriptRoot } else { throw 'Run the copy of this script beside Nocturne Server.exe in the extracted download.' }
 $rules = @(
     @{ Name = 'Nocturne-Workspace'; Program = (Join-Path $root 'Nocturne Server.exe'); Protocol = 'TCP'; LocalPort = '48555' },
+    @{ Name = 'Nocturne-Discovery'; Program = (Join-Path $root 'Nocturne Server.exe'); Protocol = 'UDP'; LocalPort = '5353' },
     @{ Name = 'Nocturne-Stream-TCP'; Program = (Join-Path $root 'engine/sunshine.exe'); Protocol = 'TCP'; LocalPort = @('47984', '47989', '48010') },
     @{ Name = 'Nocturne-Stream-UDP'; Program = (Join-Path $root 'engine/sunshine.exe'); Protocol = 'UDP'; LocalPort = @('47998', '47999', '48000', '48002', '48010', '5353') }
 )

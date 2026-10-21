@@ -83,6 +83,10 @@ public sealed class DeviceStore
             Save(new(devices, removing));
         }
     }
+    public void Reset()
+    {
+        lock (gate) { invitation = null; Save(new([], [])); }
+    }
 
     private void Save(Snapshot next)
     {

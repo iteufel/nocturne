@@ -33,11 +33,13 @@ public sealed class StartupTests
                 {
                     window.UpdateLayout();
                     Assert.True(window.IsLoaded);
-                    Assert.Equal("Nocturne Server", window.Title);
+                    Assert.Equal("Nocturne", window.Title);
                     Assert.NotNull(window.Content);
                     Assert.True(model.CanAct);
                     Assert.NotNull(window.FindName("DisplaysPanel"));
                     Assert.NotNull(window.FindName("RemotePanel"));
+                    Assert.NotNull(window.FindName("ComputersPanel"));
+                    Assert.NotNull(window.FindName("GeneralPanel"));
                     var ink = Assert.IsType<SolidColorBrush>(app.FindResource("Ink")).Color;
                     Assert.Equal(ink, Assert.IsType<SolidColorBrush>(window.Foreground).Color);
                     var overview = Assert.IsType<StackPanel>(window.FindName("Overview"));
@@ -47,6 +49,7 @@ public sealed class StartupTests
                     model.Terminal = true; Assert.True(model.CanApply);
                     model.DiscardSettings(); Assert.False(model.Terminal); Assert.False(model.HasSettingsChanges);
                     SaveScreens(window);
+                    VerifyReceiver(window, profile);
                 }, DispatcherPriority.ContextIdle);
             }
             catch (Exception error) { failure = ExceptionDispatchInfo.Capture(error); }
@@ -64,7 +67,7 @@ public sealed class StartupTests
         }) { IsBackground = true };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        Assert.True(thread.Join(TimeSpan.FromSeconds(30)), "The Windows application did not finish its startup smoke test.");
+        Assert.True(thread.Join(TimeSpan.FromSeconds(60)), "The Windows application did not finish its startup smoke test.");
         failure?.Throw();
     }
 
@@ -92,6 +95,68 @@ public sealed class StartupTests
                 Skip = "Run scripts/build-windows.ps1 to build and verify the native Windows encoder fixture.";
         }
     }
+    private static void VerifyReceiver(MainWindow owner, string profile)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "native-h264-frame.bin");
+        if (!File.Exists(path)) return;
+        var fixture = File.ReadAllBytes(path); var header = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(fixture);
+        var video = new H264Frame().Convert(fixture[(header + 4)..], fixture[4..(header + 4)], 1);
+        var devices = new DeviceStore(Path.Combine(profile, "receiver-fixture-devices.json"));
+        var secret = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        var server = new WorkspaceServer("Receiver test host", secret, devices, new(), null, (_, _) => throw new IOException(), desktop: new(new ReceiverDesktop(video)));
+        server.Start(0, System.Net.IPAddress.Loopback);
+        var saved = 0;
+        var window = new RemoteStreamWindow(new("127.0.0.1", (ushort)server.Port, "Receiver test host", secret, devices.CreateInvitation()),
+            ClientCredentials.Create(), _ => saved++, null) { Owner = owner };
+        try
+        {
+            window.Show(); var frame = new DispatcherFrame(); var deadline = DateTime.UtcNow.AddSeconds(20);
+            var poll = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
+            poll.Tick += (_, _) => { if (window.VideoReady || DateTime.UtcNow >= deadline) frame.Continue = false; };
+            poll.Start(); Dispatcher.PushFrame(frame); poll.Stop();
+            Assert.True(window.VideoReady, window.StreamStatus); Assert.Equal(1, saved);
+            var picture = Assert.IsAssignableFrom<BitmapSource>(window.VideoImage);
+            var pixel = new byte[4]; picture.CopyPixels(new Int32Rect(picture.PixelWidth / 2, picture.PixelHeight / 2, 1, 1), pixel, 4, 0);
+            Assert.True(pixel[2] > 150 && pixel[1] < 80 && pixel[0] < 80, "The authenticated Windows receiver did not display its decoded red frame.");
+            var directory = Environment.GetEnvironmentVariable("NOCTURNE_WINDOWS_TEST_ARTIFACTS");
+            if (directory != null)
+            {
+                window.UpdateLayout(); var content = (FrameworkElement)window.Content;
+                var image = new RenderTargetBitmap((int)content.ActualWidth, (int)content.ActualHeight, 96, 96, PixelFormats.Pbgra32); image.Render(content);
+                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image)); using var output = File.Create(Path.Combine(directory, "Remote-desktop.png")); encoder.Save(output);
+            }
+        }
+        finally { window.Close(); server.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+    }
+    private sealed class ReceiverDesktop(AppVideo frame) : IDesktopHost
+    {
+        public RemoteDesktopDisplay[] Displays() => [new(7, "Fixture monitor", 640, 480, true)];
+        public IDesktopCapture Capture(uint? display, AppViewport viewport, Func<Packet, Task> send, Action<Exception> ended) => new ReceiverCapture(frame, send);
+        public void Dispose() { }
+    }
+    private sealed class ReceiverCapture : IDesktopCapture
+    {
+        private readonly CancellationTokenSource lifetime = new();
+        public DisplaySize Display => new(640, 480, 60);
+        public uint DisplayID => 7;
+        public bool ScreenLocked => false;
+        public ReceiverCapture(AppVideo frame, Func<Packet, Task> send) => _ = Task.Run(async () =>
+        {
+            try
+            {
+                var timestamp = 1.0;
+                while (!lifetime.IsCancellationRequested)
+                {
+                    await Task.Delay(100, lifetime.Token);
+                    await send(new("desktopVideo") { Video = frame with { Timestamp = timestamp } }); timestamp += .1;
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+        public void Resize(AppViewport viewport) { }
+        public void Input(AppInput input) { }
+        public void Dispose() => lifetime.Cancel();
+    }
     private static void SaveScreens(MainWindow window)
     {
         var directory = Environment.GetEnvironmentVariable("NOCTURNE_WINDOWS_TEST_ARTIFACTS");
@@ -113,7 +178,7 @@ public sealed class StartupTests
             image.Render(content); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
             using var output = File.Create(Path.Combine(directory, name + ".png")); encoder.Save(output);
         }
-        foreach (var tab in new[] { "Overview", "Sharing", "DisplaysPanel", "RemotePanel", "Devices" })
+        foreach (var tab in new[] { "Overview", "ComputersPanel", "Sharing", "DisplaysPanel", "RemotePanel", "Devices", "GeneralPanel" })
         {
             var button = Children(window).OfType<Button>().Single(button => button.Tag is string value && value == tab);
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Save(tab);

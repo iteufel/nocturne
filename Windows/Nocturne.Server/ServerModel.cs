@@ -14,7 +14,7 @@ public sealed class ServerModel : INotifyPropertyChanged
 {
     private readonly HostStorage storage;
     private readonly DeviceStore devices;
-    private readonly byte[] secret;
+    private byte[] secret;
     private readonly HostLifecycle lifecycle;
     private readonly System.Windows.Threading.DispatcherTimer refresh;
     private HostSettings draft;
@@ -114,6 +114,15 @@ public sealed class ServerModel : INotifyPropertyChanged
         return Wire.Invitation(address, lifecycle.Settings.Name, secret, devices.CreateInvitation(), lifecycle.Runtime?.RemoteAccess);
     }
     public void CancelInvitation() => devices.CancelInvitation();
+    internal HostStorage Storage => storage;
+    public async Task ResetPairingAsync()
+    {
+        await StopAsync();
+        await using var engine = new StreamingEngine(Path.Combine(storage.DirectoryPath, "Engine"));
+        foreach (var device in engine.SavedDevices()) await engine.RemoveAsync(device.Id, CancellationToken.None);
+        devices.Reset(); storage.RotateHostingKeys(); CryptographicOperations.ZeroMemory(secret); secret = storage.LoadSecret();
+        await lifecycle.StartAsync();
+    }
     public async Task RemoveAsync(DeviceRow device)
     {
         if (lifecycle.Runtime is { } runtime) { await runtime.RemoveDeviceAsync(device.Id, device.Name, CancellationToken.None); return; }

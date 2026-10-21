@@ -32,6 +32,18 @@ public sealed class HostStorage
     public void SaveSettings(HostSettings settings) => AtomicWrite("settings.json", JsonSerializer.SerializeToUtf8Bytes(settings, Wire.Json));
     public byte[] LoadSecret() => LoadKey("workspace.key");
     public byte[] LoadEndpointKey() => LoadKey("remote.key");
+    public byte[]? ReadClientData(string name) => File.Exists(ClientPath(name))
+        ? ProtectedData.Unprotect(File.ReadAllBytes(ClientPath(name)), null, DataProtectionScope.CurrentUser) : null;
+    public void WriteClientData(string name, byte[] data) => AtomicWrite(Path.GetFileName(ClientPath(name)),
+        ProtectedData.Protect(data, null, DataProtectionScope.CurrentUser));
+    private string ClientPath(string name) => name is "client-identity" or "client-hosts"
+        ? Path.Combine(DirectoryPath, name + ".key") : throw new ArgumentException("Invalid client data name.");
+    public void RotateHostingKeys()
+    {
+        // Stop all hosting transports before calling; outgoing pairings survive.
+        AtomicWrite("workspace.key", ProtectedData.Protect(RandomNumberGenerator.GetBytes(32), null, DataProtectionScope.CurrentUser));
+        AtomicWrite("remote.key", ProtectedData.Protect(RandomNumberGenerator.GetBytes(32), null, DataProtectionScope.CurrentUser));
+    }
     private byte[] LoadKey(string name)
     {
         var file = Path.Combine(DirectoryPath, name);

@@ -174,6 +174,9 @@ int main(int argc, char** argv) {
         // Run the real BGRA -> NV12 -> H.264 path on both native architectures.
         // This does not depend on a GPU, a virtual driver, or screen contents.
         nocturne::Encoder encoder(640, 480, 30);
+        std::unique_ptr<void, decltype(&nocturne_decoder_close)> receiver(nocturne_decoder_open(640, 480), nocturne_decoder_close);
+        nocturne::require(receiver != nullptr, nocturne_host_error());
+        std::vector<uint8_t> received_pixels(4096 * 4096 * 4); int decoded_frames = 0;
         std::vector<uint8_t> pixels(640 * 480 * 4, 0);
         for (size_t i = 0; i < pixels.size(); i += 4) { pixels[i + 2] = 220; pixels[i + 3] = 255; }
         bool encoded = false; int frames = 0; double previous_timestamp = -1;
@@ -190,6 +193,17 @@ int main(int argc, char** argv) {
                 nocturne::require(frame.data.size() <= 4194304 && !frame.header.empty() && frame.header.size() <= 8192, L"Invalid H.264 output.");
                 nocturne::require(frame.timestamp > previous_timestamp, L"Encoded frames lost their capture order.");
                 previous_timestamp = frame.timestamp;
+                auto access_unit = frame.header; access_unit.insert(access_unit.end(), frame.data.begin(), frame.data.end());
+                int width = 0, height = 0, size = 0;
+                nocturne::require(nocturne_decoder_frame(receiver.get(), access_unit.data(), static_cast<int>(access_unit.size()), frame.timestamp,
+                    received_pixels.data(), static_cast<int>(received_pixels.size()), &width, &height, &size) > 0, nocturne_host_error());
+                if (size > 0) {
+                    nocturne::require(width == 640 && height == 480 && size == width * height * 4, L"Incorrect receiver image size.");
+                    auto center = (height / 2 * width + width / 2) * 4;
+                    nocturne::require(received_pixels[center + 2] > 150 && received_pixels[center + 1] < 80 && received_pixels[center] < 80,
+                        L"The production receiver did not decode the red video frame.");
+                    ++decoded_frames;
+                }
                 if (!encoded) {
                     decode(frame);
                     std::ofstream fixture("native-h264-frame.bin", std::ios::binary | std::ios::trunc);
@@ -203,6 +217,7 @@ int main(int argc, char** argv) {
         }
         nocturne::require(encoded, L"The H.264 encoder did not produce a frame.");
         nocturne::require(frames >= 15, L"The H.264 encoder stalled during sustained capture.");
+        nocturne::require(decoded_frames >= 15, L"The production receiver stalled during sustained playback.");
         nocturne::require(frames <= 30, L"Frame-rate conversion synthesized frames during a capture gap.");
         nocturne::require(previous_timestamp >= 2, L"Capture timestamps did not preserve the network stall.");
         // Hosted Windows runners may lack an interactive display/audio session.

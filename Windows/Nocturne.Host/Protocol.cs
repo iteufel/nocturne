@@ -98,6 +98,7 @@ public sealed record Packet(string Operation)
     public bool? Eof { get; set; }
     public RemoteFile[]? Files { get; set; }
     public string[]? Capabilities { get; set; }
+    public bool? ScreenLocked { get; set; }
     public byte[]? Certificate { get; set; }
     public byte[]? Signature { get; set; }
     public byte[]? EnrollmentToken { get; set; }
@@ -110,6 +111,9 @@ public sealed record Packet(string Operation)
     public AppViewport? Viewport { get; set; }
     public AppInput? Input { get; set; }
     public AppVideo? Video { get; set; }
+    public RemoteDesktopDisplay[]? Displays { get; set; }
+    [JsonPropertyName("displayID")] public uint? DisplayID { get; set; }
+    public DesktopAudio? Audio { get; set; }
     public Packet Reply() => new(Operation) { Id = Id };
 }
 
@@ -145,6 +149,11 @@ public sealed record AppInput(string Kind, double X = 0, double Y = 0, int Butto
         Math.Abs(DeltaX) <= 4096 && Math.Abs(DeltaY) <= 4096 && KeyCode <= 127 && Text != null && Text.Length <= 1024;
 }
 public sealed record AppVideo(byte[] Data, byte[][] ParameterSets, double Timestamp);
+public sealed record RemoteDesktopDisplay(uint Id, string Name, int Width, int Height, bool IsMain);
+public sealed record DesktopAudio(byte[] Data, int Frames)
+{
+    [JsonIgnore] public bool IsValid => Frames is > 0 and <= 4800 && Data?.Length == Frames * 8;
+}
 
 public interface IStreamingEngine
 {

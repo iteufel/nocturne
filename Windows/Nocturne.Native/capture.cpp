@@ -17,6 +17,7 @@
 #include <deque>
 #include <chrono>
 #include <thread>
+#include <atomic>
 
 using namespace winrt;
 using namespace winrt::Windows::Graphics::Capture;
@@ -175,25 +176,27 @@ std::vector<EncodedFrame> Encoder::encode(uint8_t const* bgra, int width, int he
 
 namespace {
 struct Signal {
+    std::atomic<bool> closed = false;
     HANDLE event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     ~Signal() { if (event) CloseHandle(event); }
 };
 struct Capture {
     HWND window;
+    HMONITOR monitor;
     com_ptr<ID3D11Device> device;
     com_ptr<ID3D11DeviceContext> context;
     IDirect3DDevice projected{ nullptr };
     GraphicsCaptureItem item{ nullptr };
     Direct3D11CaptureFramePool pool{ nullptr };
     GraphicsCaptureSession session{ nullptr };
-    event_token arrived{};
+    event_token arrived{}, closed{};
     std::shared_ptr<Signal> signal = std::make_shared<Signal>();
     Encoder encoder;
     std::deque<EncodedFrame> pending;
     std::chrono::nanoseconds interval;
     std::chrono::steady_clock::time_point next_capture{};
-    Capture(HWND window, int width, int height, int fps) : window(window), encoder(width, height, fps), interval(1000000000 / fps) {
-        require(IsWindow(window) && GraphicsCaptureSession::IsSupported(), L"Windows Graphics Capture is unavailable for this window.");
+    Capture(HWND window, HMONITOR monitor, int width, int height, int fps) : window(window), monitor(monitor), encoder(width, height, fps), interval(1000000000 / fps) {
+        require((monitor != nullptr || IsWindow(window)) && GraphicsCaptureSession::IsSupported(), L"Windows Graphics Capture is unavailable for this desktop.");
         auto hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             nullptr, 0, D3D11_SDK_VERSION, device.put(), nullptr, context.put());
         if (FAILED(hr)) check_hresult(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
@@ -202,18 +205,22 @@ struct Capture {
         check_hresult(CreateDirect3D11DeviceFromDXGIDevice(dxgi.get(), inspectable.put()));
         projected = inspectable.as<IDirect3DDevice>();
         auto interop = get_activation_factory<GraphicsCaptureItem, IGraphicsCaptureItemInterop>();
-        check_stage(interop->CreateForWindow(window, guid_of<GraphicsCaptureItem>(), put_abi(item)), L"Create window capture item");
+        if (monitor) check_stage(interop->CreateForMonitor(monitor, guid_of<GraphicsCaptureItem>(), put_abi(item)), L"Create monitor capture item");
+        else check_stage(interop->CreateForWindow(window, guid_of<GraphicsCaptureItem>(), put_abi(item)), L"Create window capture item");
+        closed = item.Closed([signal = signal](auto const&, auto const&) { signal->closed = true; SetEvent(signal->event); });
         pool = Direct3D11CaptureFramePool::CreateFreeThreaded(projected, DirectXPixelFormat::B8G8R8A8UIntNormalized, 2, item.Size());
         arrived = pool.FrameArrived([signal = signal](auto const&, auto const&) { SetEvent(signal->event); });
         session = pool.CreateCaptureSession(item); session.IsCursorCaptureEnabled(true); session.StartCapture();
     }
     ~Capture() noexcept {
+        try { if (item) item.Closed(closed); } catch (...) { }
         try { if (pool) pool.FrameArrived(arrived); } catch (...) { }
         try { if (session) session.Close(); } catch (...) { }
         try { if (pool) pool.Close(); } catch (...) { }
     }
     EncodedFrame read() {
-        require(IsWindow(window), L"This app window closed. Choose another window in Apps.");
+        require(!signal->closed.load(), L"The captured display or window disconnected. Reconnect to continue.");
+        require(monitor != nullptr || IsWindow(window), L"This app window closed. Choose another window in Apps.");
         auto take = [&] { auto frame = std::move(pending.front()); pending.pop_front(); return frame; };
         if (!pending.empty()) return take();
         if (WaitForSingleObject(signal->event, 250) != WAIT_OBJECT_0) return {};
@@ -245,7 +252,7 @@ struct Capture {
 };
 }
 NC_EXPORT void* nocturne_capture_open(HWND window, int width, int height, int fps) {
-    Capture* result = nullptr; checked([&] { result = new Capture(window, width, height, fps); }); return result;
+    Capture* result = nullptr; checked([&] { result = new Capture(window, nullptr, width, height, fps); }); return result;
 }
 NC_EXPORT int nocturne_capture_read(void* handle, uint8_t* bytes, int capacity, int* length,
     uint8_t* header, int header_capacity, int* header_length, double* timestamp) {
@@ -258,3 +265,7 @@ NC_EXPORT int nocturne_capture_read(void* handle, uint8_t* bytes, int capacity, 
     });
 }
 NC_EXPORT void nocturne_capture_close(void* handle) { checked([&] { delete static_cast<Capture*>(handle); }); }
+
+NC_EXPORT void* nocturne_desktop_open(HMONITOR monitor, int width, int height, int fps) {
+    Capture* result = nullptr; checked([&] { require(monitor != nullptr, L"The monitor is unavailable."); result = new Capture(nullptr, monitor, width, height, fps); }); return result;
+}

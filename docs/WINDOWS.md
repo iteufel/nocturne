@@ -1,9 +1,11 @@
-# Nocturne Server for Windows
+# Nocturne for Windows
 
-The native .NET 10 Windows host uses the same iPhone/iPad client and authenticated
-workspace protocol as the Mac host. It provides desktop and individual app-window
-streaming, persistent PowerShell tabs, shared files, client microphone forwarding,
-display control, and direct/relay remote access.
+The native .NET 10 Windows app can host this PC and connect to other Nocturne hosts
+at the same time. It shares the Mac app’s authenticated desktop and app-window
+protocol, including desktop audio, display selection, keyboard, mouse, resizing,
+fullscreen, reconnect, and multiple app windows. Hosting also includes persistent
+PowerShell tabs, shared files, microphone forwarding, headless display control,
+and direct/relay remote access.
 
 ## Build and run
 
@@ -27,8 +29,11 @@ and Rust QUIC libraries, runs native and .NET tests, and packages:
 ```text
 .build/WindowsRelease/Nocturne-Server-Windows-x64.zip
 .build/WindowsRelease/Nocturne-Server-Windows-arm64.zip
+.build/WindowsRelease/Nocturne-Windows-x64-Setup.exe
+.build/WindowsRelease/Nocturne-Windows-arm64-Setup.exe
 ```
 
+Choose the installer for the PC’s native architecture, or extract the portable ZIP.
 These are unsigned development packages. Both native architectures are tested in
 Windows CI and saved as download artifacts. The .NET runtime is included. Extract
 the whole package and open **Nocturne Server.exe**; launching only the executable
@@ -47,11 +52,18 @@ Changes remain a draft until **Apply changes**. Applying restarts enabled servic
 reconnect clients afterward. **Discard** restores the saved settings. Disabling
 all sharing services leaves the host stopped.
 
-Enable **Launch Nocturne at Windows login** to register the app for the current
-Windows account. Nocturne does not install a background system service. Closing
-the app stops its workspace, engine, shells, captures, transfers, and audio output.
+Enable **Settings → Open Nocturne at Windows login** to register the app for the
+current Windows account. Login opens the app in the system tray. Closing the main
+window keeps sharing running; use **Quit Nocturne** in the tray or Settings to stop
+all services and remote windows. Nocturne does not install a system service.
+
+Settings also offers System, Light, and Dark appearance. The welcome screens appear
+on first launch and can be replayed without changing sharing settings or pairings.
 The Windows secure desktop, UAC prompts, and signing into another Windows session
-remain controlled by Windows; this app does not bypass them.
+remain controlled by Windows. Native desktop/window capture ends when Windows
+switches to its lock or security desktop; unlock locally and reconnect. The Mac
+host’s signed-in lock-screen capture is platform-specific and is not available
+through Windows Graphics Capture.
 
 Allow the applications through Windows Firewall on the private home network. The
 packaged `configure-windows-firewall.ps1` can add narrowly scoped rules from an
@@ -62,7 +74,10 @@ limited to the private profile/local subnet; use `-Remove` to undo them.
 
 Choose **Pair a device**, select the PC's local address, then scan its QR code from
 **Add host → Scan QR code** on iPhone/iPad. Each code enrolls one device and expires
-after five minutes. Nearby streaming discovery is provided by the bundled engine.
+after five minutes. **Copy pairing code** supports pairing from another computer.
+The workspace advertises `_nocturne._tcp` with a public identity hash; it broadcasts
+no pairing secret. Discovery only locates a candidate: TLS and device proof remain
+mandatory. The bundled engine also advertises its streaming service.
 
 In **Remote access**, enable the feature and choose an HTTPS broker. After
 applying, wait for **Ready**, then scan a new pairing code to save remote routing
@@ -75,6 +90,34 @@ direct peer-to-peer connections and falls back to an encrypted relay. Only the
 workspace TLS port is reachable until the host verifies a paired device's
 certificate proof. Engine administration is never forwarded. Device removal also
 revokes that identity's QUIC peers.
+
+## Connecting to another computer
+
+On the host choose **Pair a device → Copy pairing code**. On Windows choose
+**Computers → Add host**, paste the code, and select **Add & connect**. Hosts are
+saved only after successful authentication. Outgoing credentials and saved pairing
+secrets use DPAPI and remain separate from this PC’s hosting keys.
+
+Use **Connect** beside a saved host for its desktop, or **Apps** to browse and launch
+applications and stream individual windows. One desktop and up to four app windows
+per host can be open at once. Click the video to control it. **Ctrl+Alt+Esc** releases
+the keyboard; losing focus also releases held keys and buttons. The toolbar offers
+reconnect, fullscreen, paste text, display selection, and desktop audio mute.
+Closing a stream releases its remote capture without stopping this PC’s host.
+
+A saved address is tried first, followed by local discovery and then the paired
+remote endpoint when available. Native desktop and app media use the authenticated
+workspace connection, including over the encrypted remote tunnel. Desktop video
+fits the selected monitor into the viewer; resizing this viewer does not change
+the host’s physical display resolution. Desktop control has one exclusive lease.
+
+Desktop audio is 48 kHz interleaved stereo Float32. Windows 11 process loopback
+excludes Nocturne playback to prevent feedback when hosting and viewing together.
+On systems that require endpoint loopback, outgoing desktop audio is suppressed
+while incoming desktop audio plays. Missing audio devices leave video available;
+reconnect after changing an endpoint. Individual app streams carry video and input,
+matching the Mac app. Gamepad and microphone forwarding from iPhone/iPad continue
+through their existing streaming controls.
 
 ## App windows
 
@@ -126,6 +169,15 @@ if it exits unexpectedly; startup also recovers any saved topology.
 state is retained if Windows cannot restore it. Configuration helpers do not
 install an unsigned driver or disable Windows driver-signature enforcement.
 
+## Controllers
+
+Pair Bluetooth accessories with the iPhone or iPad. Keyboard, mouse, and trackpad
+input use the host’s Windows input path. Gamepad emulation uses Sunshine’s Windows
+backend and needs a compatible virtual gamepad driver. **Controller setup…** opens
+the upstream [Windows input setup guide](https://docs.lizardbyte.dev/projects/sunshine/latest/md_docs_2getting__started.html),
+which covers Virtual HID Driver and the ViGEmBus fallback. Driver installation and
+any machine license remain separate from Nocturne’s installer.
+
 ## Microphone
 
 Install a compatible virtual audio driver, then choose its **playback** endpoint
@@ -167,6 +219,29 @@ Cancellation and disconnect discard unfinished uploads.
 Removing a device blocks workspace access before closing its resources and revoking
 every matching engine certificate. Saved certificates can also be removed while
 stopped. Interrupted removals remain blocked and retry on the next start.
+**Reset all pairings** stops connections, removes all streaming certificates and
+workspace devices, rotates both hosting identities, and restarts enabled services.
+Old QR codes become invalid. Outgoing computer pairings and shared files survive.
+
+## Windows installer
+
+The installer runs per user without elevation, installs to
+`%LOCALAPPDATA%\Programs\Nocturne`, creates a Start-menu shortcut and optional
+Desktop shortcut, and registers `nocturne://` pairing links. It includes the .NET
+runtime, native libraries, embedded streaming engine, licenses, and setup helpers.
+An upgrade requests a graceful shutdown before replacing application files and
+retains login startup registration. Uninstall removes installed files, shortcuts,
+URL registration, and that install’s login entry. It preserves
+`%LOCALAPPDATA%\Nocturne` and all shared folders, including keys and saved hosts.
+Optional driver and firewall changes remain explicit setup actions.
+
+Inno Setup is pinned by version, SHA-256, and verified publisher in
+`Windows/Installer/toolchain.lock.json`. `scripts/build-windows-installer.ps1`
+can rebuild an installer from published files. CI installs version 0.9.0 of the same
+payload as an upgrade fixture, opens the native app, upgrades to the current build,
+and checks key/startup preservation, URL registration, and uninstall retaining data.
+Run `scripts/test-windows-installer.ps1` only in a disposable Windows account with
+no existing Nocturne profile or installation.
 
 ## Verification
 
@@ -185,8 +260,11 @@ TLS/authentication, permissions, connection-owned media leases, replay/timeouts,
 settings application, terminal persistence, and file-path constraints. Native
 ConPTY, filesystem/junction, and DPAPI tests run on both Windows architectures.
 
-The fixture in `Windows/Nocturne.Interop` verifies Swift/.NET authentication and
-reconnects. It is excluded from the package. Native UI and codec tests do not prove
+The fixture in `Windows/Nocturne.Interop` verifies authentication and reconnects
+in both directions, including Windows receiver commands and fragmented video/audio
+from a real Swift workspace server. The WPF smoke test connects the actual Windows
+receiver over TLS and verifies a decoded native H.264 image on screen. Native CTest
+checks sustained production decoding and occluded-window capture. It is excluded from the package. Native UI and codec tests do not prove
 physical GPU capture, a driver's headless modes, audio routing into Discord, secure
 desktop behavior, or visible iPhone-to-Windows playback; those require a Windows PC
 and physical client/device checks.

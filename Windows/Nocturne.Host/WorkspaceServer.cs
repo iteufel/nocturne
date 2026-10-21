@@ -37,6 +37,7 @@ public sealed class WorkspaceServer : IAsyncDisposable
     private readonly MicrophoneSession? microphone;
     private readonly DisplaySession? display;
     private readonly AppWindowSessions? applications;
+    private readonly DesktopSessions? desktop;
     private readonly IRemoteHost? remote;
     private Timer? mediaTimer;
     private readonly CancellationTokenSource stopped = new();
@@ -51,12 +52,14 @@ public sealed class WorkspaceServer : IAsyncDisposable
 
     public WorkspaceServer(string name, byte[] secret, DeviceStore devices, HostPermissions permissions,
         IWorkspaceFiles? files, Func<int, int, ITerminal> terminalFactory, IStreamingEngine? engine = null,
-        MicrophoneSession? microphone = null, DisplaySession? display = null, AppWindowSessions? applications = null, IRemoteHost? remote = null)
+        MicrophoneSession? microphone = null, DisplaySession? display = null, AppWindowSessions? applications = null, IRemoteHost? remote = null,
+        DesktopSessions? desktop = null)
     {
         if (secret.Length != 32) throw new ArgumentException("The workspace key must contain 32 bytes.");
         this.name = name; this.secret = (byte[])secret.Clone(); this.devices = devices;
         this.permissions = permissions; this.files = files; this.engine = engine;
         this.microphone = microphone; this.display = display; this.applications = applications; this.remote = remote;
+        this.desktop = desktop;
         terminals = new(terminalFactory);
     }
 
@@ -69,7 +72,7 @@ public sealed class WorkspaceServer : IAsyncDisposable
         listener.Start(8);
         mediaTimer = new(_ =>
         {
-            try { microphone?.Expire(); display?.Expire(); applications?.Expire(); }
+            try { microphone?.Expire(); display?.Expire(); applications?.Expire(); desktop?.Expire(); }
             catch (Exception ex) when (ex is IOException or Win32Exception) { SessionError?.Invoke(ex.Message); }
         }, null, 500, 500);
         acceptTask = AcceptAsync();
@@ -102,7 +105,7 @@ public sealed class WorkspaceServer : IAsyncDisposable
             Volatile.Write(ref permissions, value);
             if (!value.Terminal) terminals.CloseAll();
             if (!value.Microphone) microphone?.Stop();
-            if (!value.ScreenSharing) { display?.Stop(); applications?.Stop(); }
+            if (!value.ScreenSharing) { display?.Stop(); applications?.Stop(); desktop?.Stop(); }
         }
         if (!value.Files) foreach (var session in sessions.Values) session.DiscardUploads();
     }
@@ -136,7 +139,7 @@ public sealed class WorkspaceServer : IAsyncDisposable
         foreach (var session in sessions.Values) session.Close();
         if (acceptTask != null) try { await acceptTask; } catch (Exception error) { failures.Add(error); }
         try { await Task.WhenAll(tasks.Values.ToArray()); } catch (Exception error) { failures.Add(error); }
-        foreach (var resource in new IDisposable?[] { terminals, files, microphone, display, applications })
+        foreach (var resource in new IDisposable?[] { terminals, files, microphone, display, applications, desktop })
             try { resource?.Dispose(); } catch (Exception error) { failures.Add(error); }
         CryptographicOperations.ZeroMemory(secret);
         if (failures.Count != 0) throw new AggregateException("Some host resources could not be restored.", failures);
@@ -196,7 +199,8 @@ public sealed class WorkspaceServer : IAsyncDisposable
                 Close();
                 writer?.GetAwaiter().GetResult();
                 foreach (var cleanup in new Action[] { () => server.terminals.Detach(id), DiscardUploads,
-                    () => server.microphone?.Disconnected(id), () => server.display?.Disconnected(id), () => server.applications?.Disconnected(id) })
+                    () => server.microphone?.Disconnected(id), () => server.display?.Disconnected(id), () => server.applications?.Disconnected(id),
+                    () => server.desktop?.Disconnected(id) })
                     try { cleanup(); } catch (Exception error) { server.SessionError?.Invoke(error.Message); }
                 server.sessions.TryRemove(id, out _); server.DevicesChanged?.Invoke();
             }
@@ -280,7 +284,8 @@ public sealed class WorkspaceServer : IAsyncDisposable
                     allowed.Terminal ? "terminal" : null, allowed.ScreenSharing && server.engine != null ? "streaming" : null,
                     allowed.ScreenSharing && server.display != null ? "display" : null,
                     allowed.Microphone && server.microphone != null ? "microphone-pcm-v1" : null,
-                    allowed.ScreenSharing && server.applications != null ? "app-windows-v1" : null }.OfType<string>().ToArray();
+                    allowed.ScreenSharing && server.applications != null ? "app-windows-v1" : null,
+                    allowed.ScreenSharing && server.desktop != null ? "desktop-stream-v1" : null }.OfType<string>().ToArray();
                 server.DevicesChanged?.Invoke(); return reply;
             }
             var owner = Identity;
@@ -338,6 +343,15 @@ public sealed class WorkspaceServer : IAsyncDisposable
                     if (!Volatile.Read(ref server.permissions).ScreenSharing || server.applications == null || !server.devices.IsAuthorized(owner))
                         throw new IOException("Enable Screen sharing in Nocturne Server, then reconnect.");
                     return server.applications.Handle(packet, id, owner, SendMediaAsync, () => Volatile.Read(ref closed) == 0);
+                }
+            }
+            if (packet.Operation is "desktopList" or "desktopOpen" or "desktopResize" or "desktopInput" or "desktopHeartbeat" or "desktopClose")
+            {
+                lock (server.permissionGate)
+                {
+                    if (!Volatile.Read(ref server.permissions).ScreenSharing || server.desktop == null || !server.devices.IsAuthorized(owner))
+                        throw new IOException("Enable Screen sharing in Nocturne, then reconnect.");
+                    return server.desktop.Handle(packet, id, SendMediaAsync, () => Volatile.Read(ref closed) == 0);
                 }
             }
             lock (server.permissionGate)

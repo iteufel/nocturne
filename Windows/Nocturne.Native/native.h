@@ -63,3 +63,16 @@ NC_EXPORT wchar_t const* nocturne_audio_devices();
 NC_EXPORT void* nocturne_audio_open(wchar_t const* device);
 NC_EXPORT int nocturne_audio_write(void* handle, uint8_t const* bytes, int length);
 NC_EXPORT void nocturne_audio_close(void* handle);
+
+NC_EXPORT void* nocturne_desktop_open(HMONITOR monitor, int width, int height, int fps);
+NC_EXPORT void* nocturne_decoder_open(int width, int height);
+NC_EXPORT int nocturne_decoder_frame(void* handle, uint8_t const* bytes, int length, double timestamp,
+    uint8_t* bgra, int capacity, int* width, int* height, int* size);
+NC_EXPORT void nocturne_decoder_close(void* handle);
+NC_EXPORT void* nocturne_loopback_open();
+NC_EXPORT int nocturne_loopback_read(void* handle, uint8_t* bytes, int capacity, int* frames);
+NC_EXPORT int nocturne_loopback_isolated(void* handle);
+NC_EXPORT void nocturne_loopback_close(void* handle);
+NC_EXPORT void* nocturne_playback_open();
+NC_EXPORT int nocturne_playback_write(void* handle, uint8_t const* bytes, int frames);
+NC_EXPORT void nocturne_playback_close(void* handle);

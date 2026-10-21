@@ -26,6 +26,17 @@ internal static class WindowsMedia
     internal static class Native
     {
         private const string Library = "nocturne_host";
+        [DllImport(Library, EntryPoint = "nocturne_desktop_open", CallingConvention = CallingConvention.Cdecl)] internal static extern nint DesktopOpen(nint monitor, int width, int height, int fps);
+        [DllImport(Library, EntryPoint = "nocturne_decoder_open", CallingConvention = CallingConvention.Cdecl)] internal static extern nint DecoderOpen(int width, int height);
+        [DllImport(Library, EntryPoint = "nocturne_decoder_frame", CallingConvention = CallingConvention.Cdecl)] internal static extern int DecoderFrame(nint handle, byte[] bytes, int length, double timestamp, [Out] byte[] bgra, int capacity, out int width, out int height, out int size);
+        [DllImport(Library, EntryPoint = "nocturne_decoder_close", CallingConvention = CallingConvention.Cdecl)] internal static extern void DecoderClose(nint handle);
+        [DllImport(Library, EntryPoint = "nocturne_loopback_open", CallingConvention = CallingConvention.Cdecl)] internal static extern nint LoopbackOpen();
+        [DllImport(Library, EntryPoint = "nocturne_loopback_read", CallingConvention = CallingConvention.Cdecl)] internal static extern int LoopbackRead(nint handle, [Out] byte[] bytes, int capacity, out int frames);
+        [DllImport(Library, EntryPoint = "nocturne_loopback_isolated", CallingConvention = CallingConvention.Cdecl)] internal static extern int LoopbackIsolated(nint handle);
+        [DllImport(Library, EntryPoint = "nocturne_loopback_close", CallingConvention = CallingConvention.Cdecl)] internal static extern void LoopbackClose(nint handle);
+        [DllImport(Library, EntryPoint = "nocturne_playback_open", CallingConvention = CallingConvention.Cdecl)] internal static extern nint PlaybackOpen();
+        [DllImport(Library, EntryPoint = "nocturne_playback_write", CallingConvention = CallingConvention.Cdecl)] internal static extern int PlaybackWrite(nint handle, byte[] bytes, int frames);
+        [DllImport(Library, EntryPoint = "nocturne_playback_close", CallingConvention = CallingConvention.Cdecl)] internal static extern void PlaybackClose(nint handle);
         [DllImport(Library, EntryPoint = "nocturne_host_error", CallingConvention = CallingConvention.Cdecl)] internal static extern nint Error();
         [DllImport(Library, EntryPoint = "nocturne_displays", CallingConvention = CallingConvention.Cdecl)] internal static extern nint Displays();
         [DllImport(Library, EntryPoint = "nocturne_display_save", CharSet = CharSet.Unicode, ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)] internal static extern int DisplaySave(string path);

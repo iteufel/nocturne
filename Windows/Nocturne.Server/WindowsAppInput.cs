@@ -5,22 +5,27 @@ using Nocturne.Host;
 
 namespace Nocturne.Server;
 
-internal sealed class WindowsAppInput(nint window)
+internal sealed class WindowsAppInput(nint window, Func<WindowsAppInput.Rect>? desktop = null)
 {
     private readonly HashSet<ushort> keys = [];
     private readonly HashSet<int> buttons = [];
     public void Handle(AppInput input)
     {
         if (!input.IsValid) throw new IOException("Invalid app input.");
-        Native.ShowWindow(window, 9);
-        if (Native.GetForegroundWindow() != window) Native.SetForegroundWindow(window);
-        if (Native.GetForegroundWindow() != window) throw new IOException("Windows could not focus this window. Close any security prompt on the PC and retry.");
+        if (desktop == null)
+        {
+            Native.ShowWindow(window, 9);
+            if (Native.GetForegroundWindow() != window) Native.SetForegroundWindow(window);
+            if (Native.GetForegroundWindow() != window) throw new IOException("Windows could not focus this window. Close any security prompt on the PC and retry.");
+        }
         Synchronize(0xA0, (input.Modifiers & (1UL << 17)) != 0);
         Synchronize(0xA2, (input.Modifiers & ((1UL << 18) | (1UL << 20))) != 0);
         Synchronize(0xA4, (input.Modifiers & (1UL << 19)) != 0);
         if (input.Kind is "move" or "down" or "up" or "scroll")
         {
-            if (!Native.GetWindowRect(window, out var rect)) throw new Win32Exception();
+            Rect rect;
+            if (desktop != null) rect = desktop();
+            else if (!Native.GetWindowRect(window, out rect)) throw new Win32Exception();
             var x = rect.Left + (int)Math.Round(input.X * Math.Max(1, rect.Right - rect.Left - 1));
             var y = rect.Top + (int)Math.Round(input.Y * Math.Max(1, rect.Bottom - rect.Top - 1));
             if (!Native.SetCursorPos(x, y)) throw new Win32Exception();
