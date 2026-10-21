@@ -21,7 +21,7 @@ struct ClientRootView: View {
             } else { workspace }
         }
         .tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
-        .sheet(isPresented: $model.showAdd) { AddComputerView(model: model) }
+        .sheet(isPresented: $model.showAdd, onDismiss: { model.pairingLink = "" }) { AddComputerView(model: model) }
         .sheet(isPresented: $model.showLibrary) { AppLibraryView(model: model) }
         .alert("Connection needs attention", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
@@ -120,7 +120,7 @@ struct ComputersView: View {
                         MoonMark(size: 42)
                         Text("Your desktop, wherever you are.")
                             .font(.system(size: 27, weight: .semibold, design: .rounded))
-                        Text("Start Nocturne Server on your host, choose Pair a device, then scan its QR code.")
+                        Text("Start Nocturne Server on your host, choose Pair a device, then scan its QR code or use a pairing link.")
                             .font(.subheadline).foregroundStyle(.secondary)
                         Button("Add host", systemImage: "qrcode.viewfinder") { model.showAdd = true }
                             .buttonStyle(PrimaryButtonStyle())
@@ -147,7 +147,7 @@ struct ComputersView: View {
                                 Image(systemName: "desktopcomputer").font(.title2).foregroundStyle(MoonStyle.accent).frame(width: 36)
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(host.name).font(.body.weight(.semibold)).foregroundStyle(.primary)
-                                    Text(host.paired ? "Open library" : "Scan QR code to pair").font(.caption).foregroundStyle(.secondary)
+                                    Text(host.paired ? "Open library" : "Use QR code or pairing link").font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Image(systemName: host.paired ? "play.circle" : "qrcode").foregroundStyle(MoonStyle.accent)

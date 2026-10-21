@@ -11,7 +11,7 @@ struct PairedHostsView: View {
             Section {
                 if model.pairedServers.servers.isEmpty {
                     ContentUnavailableView("No paired hosts", systemImage: "desktopcomputer",
-                        description: Text("Add a host by scanning its Nocturne Server QR code."))
+                        description: Text("Add a host with its Nocturne Server QR code or pairing link."))
                 }
                 ForEach(model.pairedServers.servers) { paired in
                     NavigationLink { PairedHostDetailView(model: model, hostID: paired.id) } label: {

@@ -10,7 +10,7 @@ public enum StreamDisplayPreparation {
                                workspaceLinked: Bool, capabilities: [String]) throws -> Packet? {
         guard workspaceLinked else {
             if matchesDevice {
-                throw NocturneError.remote("To match the Mac desktop to this device, pair using the QR code in Nocturne Server. For a computer without Nocturne display control, choose a fixed resolution in Settings.")
+                throw NocturneError.remote("To match the Mac desktop to this device, pair using the QR code or pairing link in Nocturne Server. For a computer without Nocturne display control, choose a fixed resolution in Settings.")
             }
             return nil
         }

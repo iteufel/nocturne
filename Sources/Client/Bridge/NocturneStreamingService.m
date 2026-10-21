@@ -386,7 +386,7 @@ NSNotificationName const NocturneStreamControlsRequestedNotification = @"Nocturn
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.pairingAttempt != attempt) return;
         if (!attempt.qrAuthorized || !self.canPairHost || !self.canPairHost(attempt.hostID)) {
-            [self pairFailed:@"Scan the QR code on your Mac before pairing this computer." attempt:attempt]; return;
+            [self pairFailed:@"Use the QR code or pairing link on your Mac before pairing this computer." attempt:attempt]; return;
         }
         attempt.pendingServerCertificate = serverCert;
         [self completePairingIfReady:attempt];
@@ -414,7 +414,7 @@ NSNotificationName const NocturneStreamControlsRequestedNotification = @"Nocturn
 - (void)requireQRPairing {
     [self cancelPairing]; [self.discovery startDiscovery]; [self publishHosts];
     if (self.pairingRequired) self.pairingRequired();
-    else if (self.failed) self.failed(@"Scan the QR code in Nocturne Server to pair this computer.");
+    else if (self.failed) self.failed(@"Use the QR code or pairing link in Nocturne Server to pair this computer.");
 }
 - (void)pairFailed:(NSString *)message {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -433,7 +433,7 @@ NSNotificationName const NocturneStreamControlsRequestedNotification = @"Nocturn
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.pairingAttempt != attempt) return;
         if (![self hasApprovalForHost:attempt.host]) {
-            [self pairFailed:@"Scan the QR code on this computer before connecting." attempt:attempt]; return;
+            [self pairFailed:@"Use the QR code or pairing link on this computer before connecting." attempt:attempt]; return;
         }
         [self.operations addOperationWithBlock:^{ [self loadAppsForAttempt:attempt]; }];
     });

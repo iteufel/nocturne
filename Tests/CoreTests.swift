@@ -33,6 +33,28 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try PairingInvitation(host: "bad/host", name: "Mac", secret: Data(repeating: 0, count: 32)))
         XCTAssertThrowsError(try PairingInvitation(host: "mac.local", name: "Mac", secret: Data(repeating: 0, count: 4)))
     }
+    func testPastedPairingLinkPreservesEnrollmentAndRemoteAccess() throws {
+        let remote = try RemoteAccess(brokerURL: "https://broker.example.com", endpointID: String(repeating: "ab", count: 32))
+        for access in [nil, remote] {
+            let invitation = try PairingInvitation(host: "fe80::abcd%en0", name: "Allan’s Mac + Studio & Café",
+                secret: Data(repeating: 0xfb, count: 32), enrollmentToken: Data(repeating: 0xff, count: 32), remoteAccess: access)
+            XCTAssertEqual(try PairingInvitation(pairingLink: " \n" + invitation.url.absoluteString + "\n "), invitation)
+        }
+    }
+    func testPairingLinkRejectsMalformedAndAmbiguousURLs() throws {
+        let invitation = try PairingInvitation(host: "mac.local", name: "Mac", secret: Data(repeating: 1, count: 32), enrollmentToken: Data(repeating: 2, count: 32))
+        let link = invitation.url.absoluteString
+        for invalid in ["", "not a link", link.replacingOccurrences(of: "nocturne:", with: "https:"),
+                        link.replacingOccurrences(of: "//pair?", with: "//other?"),
+                        link.replacingOccurrences(of: "//pair?", with: "//user@pair?"),
+                        link.replacingOccurrences(of: "//pair?", with: "//pair:123?"),
+                        link.replacingOccurrences(of: "//pair?", with: "//pair/extra?"),
+                        link + "#fragment", link + "&host=other.local", link + "&token=bad",
+                        link.replacingOccurrences(of: "v=2", with: "v=99"),
+                        link.replacingOccurrences(of: "token=", with: "missing=")] {
+            XCTAssertThrowsError(try PairingInvitation(pairingLink: invalid))
+        }
+    }
     func testFramingRejectsUnboundedPayloads() throws {
         var packet = Packet(.uploadChunk); packet.data = Data(repeating: 1, count: 10)
         let encoded = try FrameCodec.encode(packet)

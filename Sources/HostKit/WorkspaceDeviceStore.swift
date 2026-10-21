@@ -43,7 +43,7 @@ public final class WorkspaceDeviceStore {
         guard blocked[id] == nil else { throw NocturneError.remote("This device is being removed.") }
         let enrolling = token != nil && token == invitation?.token && (invitation?.expires ?? .distantPast) > Date()
         guard records[id] != nil || enrolling else {
-            throw NocturneError.remote("This device is no longer paired. Scan a new code in Nocturne Server → Devices.")
+            throw NocturneError.remote("This device is no longer paired. Create a new QR code or pairing link in Nocturne Server → Devices.")
         }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanName.isEmpty, cleanName.utf8.count <= 128,

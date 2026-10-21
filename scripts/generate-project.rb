@@ -301,7 +301,9 @@ info['UIApplicationSceneManifest'] = {
     {'UISceneConfigurationName' => 'Nocturne', 'UISceneDelegateClassName' => '$(PRODUCT_MODULE_NAME).DarkSceneDelegate'}
   ]}
 }
-info.delete('CFBundleURLTypes') # Pairing invitations are accepted only by the in-app QR scanner.
+info['CFBundleURLTypes'] = [
+  {'CFBundleURLName' => 'app.nocturne.client.pairing', 'CFBundleURLSchemes' => ['nocturne']}
+]
 orientations = %w[UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown]
 info['UISupportedInterfaceOrientations'] = orientations
 info['UISupportedInterfaceOrientations~ipad'] = orientations
