@@ -1,6 +1,6 @@
 # Using Nocturne
 
-Setup and feature instructions for the iPhone/iPad client and Mac server. For downloads and a quick start, see the [README](../README.md).
+Setup and feature instructions for the iPhone/iPad client and the Mac app's host and client. For downloads and a quick start, see the [README](../README.md).
 
 ## Connect
 
@@ -9,11 +9,19 @@ Setup and feature instructions for the iPhone/iPad client and Mac server. For do
 3. Choose **Pair a device**. On iPhone/iPad, choose **Add host → Scan QR code** and scan the Mac's screen. Pairing completes automatically, including video, through the authenticated connection. Each QR code enrolls one device and expires after five minutes.
 4. Tap a saved host in **Computers → Paired hosts** to open its desktop. After first-time pairing, choose **Desktop** from its library. Swipe inward from the right edge of the stream to open its controls. The menu opens terminal/files alongside the video. On large windows they appear to the side; smaller windows use a bottom panel.
 
-Nearby hosts are discovered automatically. Select **Pair a device** on the Mac and scan its QR code using **Add host** on the client. No address selection or entry is needed: the QR code uses the Mac’s local network name, and authenticated discovery finds its current connection address. Selecting an unpaired nearby host also opens QR pairing. Manual PIN entry, pasted links, and external pairing links are not supported. Already paired hosts remain available.
+Nearby hosts are discovered automatically on iPhone and iPad. Select **Pair a device** on the Mac and scan its QR code using **Add host** on the iOS client. No address selection or entry is needed: the QR code uses the Mac’s local network name, and authenticated discovery finds its current connection address. Selecting an unpaired nearby host also opens QR pairing. The iOS client accepts pairing through its scanner; manual PIN entry, pasted links, and external pairing links are not supported there. Already paired hosts remain available.
 
 Paired Macs are rediscovered when their IP address changes, including after moving both devices to another local network. Update both apps for workspace discovery by a stable pairing identity; existing QR pairings continue to work without scanning again. The client retries workspace connections while foregrounded and saves the authenticated address for video, terminal, files, and microphone access. Remote access is disabled by default, with `https://nocturne.alkal.de` preconfigured as the broker. For access from other networks, enable **Remote access** in the Mac server settings, keep the default broker or enter your own, and scan a new QR code. Nocturne tries local connections first, then uses an encrypted Rust transport that attempts peer-to-peer NAT traversal with relay fallback. See [online broker setup](REMOTE_ACCESS.md). An interrupted video stream or file transfer must be started again.
 
 Selecting a discovered computer requires explicit pairing approval before its library or desktop can open. Cached streaming certificates alone cannot grant access. A new video pairing is saved only after both QR workspace authorization and the streaming handshake succeed. **Forget host** in a host’s details removes its workspace pairing and linked video approval.
+
+### Mac to Mac
+
+Install the updated **Nocturne Server** app on both Macs. On the host, enable **Screen sharing**, allow Screen & System Audio Recording and Accessibility, and choose **Pair a device → Copy pairing code**. On the viewing Mac, open **Computers → Add host**, paste that code, and choose **Add & connect**. The same one-device, five-minute invitation used by QR pairing authorizes this connection. Pairings and the outgoing device identity are saved in Keychain separately from the local host's credentials.
+
+The remote desktop opens in its own Mac window. Click inside to send keyboard shortcuts, mouse movement, clicks, dragging, and scrolling to the host. Press **Control–Option–Escape** to release the keyboard locally. The toolbar selects a host display, mutes system audio, reconnects, and toggles full screen. Losing keyboard focus releases held keys and buttons. Closing the desktop window disconnects it; your local host and other connected devices keep running. Saved hosts remain under Computers and can be forgotten individually.
+
+Mac desktop streams use the host's existing displays and preserve their resolution and arrangement. The viewer scales video to its window while preserving the display's aspect ratio. One Mac client controls a host desktop at a time. This Mac client currently provides desktop video, stereo audio, and keyboard/mouse input; iOS terminal, Files integration, app-window scenes, game controllers, microphone forwarding, and adaptive virtual-display control remain in the iPhone/iPad client. Both Mac apps must support the optional desktop-stream capability. Older hosts show an update instruction. LAN discovery and authenticated remote-access tunnels use the same saved host identity as other Nocturne connections.
 
 ### Automatic startup and settings
 

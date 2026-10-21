@@ -11,6 +11,7 @@ public final class WorkspaceConnection: ObservableObject {
     @Published public private(set) var capabilities: [String] = []
     @Published public private(set) var lastError: String?
     public var onAppPacket: ((Packet) -> Void)?
+    public var onDesktopPacket: ((Packet) -> Void)?
     @Published public private(set) var terminals: [TerminalTab] = []
     @Published public private(set) var terminalID: String?
     /// Authenticated pairing with a refreshed LAN address; remote proxy addresses are never saved.
@@ -225,6 +226,9 @@ public final class WorkspaceConnection: ObservableObject {
         if terminalID == id { terminalID = terminals.isEmpty ? nil : terminals[min(index, terminals.count - 1)].id }
     }
     private func received(_ packet: Packet) {
+        if [.desktopVideo, .desktopAudio, .desktopEnded].contains(packet.operation) {
+            onDesktopPacket?(packet); return
+        }
         if packet.operation == .appVideo || packet.operation == .appEnded {
             onAppPacket?(packet); return
         }

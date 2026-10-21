@@ -257,6 +257,7 @@ phase.shell_script = '"${SRCROOT}/scripts/package-streaming-server.sh"'
 phase.always_out_of_date = '1'
 kit = package(mac, '.')
 product(mac, host, kit, 'NocturneKit'); product(mac, host, kit, 'NocturneHostKit')
+product(mac, host, kit, 'NocturneMacClient')
 host.build_configurations.each do |config|
   settings = config.build_settings
   settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'app.nocturne.server'

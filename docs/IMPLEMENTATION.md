@@ -1,5 +1,13 @@
 # Implementation notes
 
+## Integrated Mac client
+
+The Mac app links `NocturneMacClient` and presents its saved-host library under Computers. `MacClientModel` owns outgoing sessions independently of `ServerModel`: disconnecting a viewer never stops local hosting. A Security-generated RSA identity and the saved host roster use separate Mac-client Keychain accounts. Pairing accepts the same expiring, single-device invitation as the QR scanner, via an explicit Copy pairing code/Paste pairing code flow. No credentials enter UserDefaults or scene restoration.
+
+Mac desktop streaming is an optional protocol-v4 extension advertised as `desktop-stream-v1`. `DesktopSessionManager` reserves one global desktop-control lease before capture starts and checks connection/session ownership for input, resize, heartbeat, and close. Disconnect, revocation, failed capture, expiry, and server shutdown release capture and held input. The host only installs this manager when Screen sharing is enabled. Older iOS clients continue using their existing capabilities and protocols.
+
+`NativeDesktopHost` captures an existing display with ScreenCaptureKit, uses the shared bounded H.264 encoder and fragmented-frame assembler, and sends bounded 48 kHz Float32 stereo packets. Audio excludes the current process to prevent feedback when a Mac views and hosts simultaneously. `MacDesktopSession` connects through the existing TLS-PSK/device-proof workspace transport, including authenticated remote tunnels; native media needs no GameStream UDP tunnel or new public port. AppKit presents video in an `AVSampleBufferDisplayLayer`, maps input through aspect-fit geometry, and releases input on focus loss. Viewer resizing adjusts encode dimensions while retaining the host display's aspect ratio and layout. The Mac viewer does not acquire the iOS adaptive virtual-display lease.
+
 ## One server application
 
 `ServerModel` owns `EmbeddedStreamingEngine` and `WorkspaceServer`. It starts the bundled engine first, waits for its certificate-pinned, authenticated local API to respond, then starts the TLS workspace listener. Either component failing stops the combined service. Stop and application termination close listeners, shells, uploads, and the child process. The server runs directly as `Contents/MacOS/nocturne-stream-host`, a managed subprocess. Its libraries are in `Contents/Frameworks` and its assets in `Contents/Resources/assets`. There is no nested Sunshine.app, independent app launcher, or separate server installation. Nocturne never searches `/Applications` for another engine or opens a web configuration page.

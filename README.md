@@ -1,12 +1,13 @@
 # Nocturne
 
-Stream your Mac to iPhone and iPad, with a native terminal and file transfer alongside your desktop.
+Stream your Mac to iPhone, iPad, or another Mac. The Mac app can host your desktop and connect to other Nocturne hosts at the same time.
 
 - Stream your desktop or open individual Mac app windows on iPad.
 - Use touch, a keyboard, a mouse, or a game controller.
 - Keep terminal sessions running on your Mac and access shared files in Apple’s Files app.
 - Connect locally or enable remote access for other networks.
 - Pair several Macs and switch between them.
+- Connect Mac to Mac from **Computers**, with desktop video, audio, keyboard, and mouse in a separate window.
 
 Requires iOS/iPadOS 17+ and an Apple Silicon Mac running macOS 14+. Nocturne Server includes its streaming engine; no separate Sunshine installation is needed.
 
@@ -18,6 +19,8 @@ Requires iOS/iPadOS 17+ and an Apple Silicon Mac running macOS 14+. Nocturne Ser
 4. Choose **Desktop** to stream, or **Apps** to open a Mac app window. Enable optional terminal and file access in the Mac app’s **Sharing** settings.
 
 For the iPhone/iPad app, see the [build and TestFlight guide](docs/RELEASING.md) or [build from source](docs/DEVELOPMENT.md).
+
+To connect from a Mac, install the updated Mac app on both computers. On the host choose **Pair a device → Copy pairing code**. On the viewing Mac choose **Computers → Add host**, paste the code, and select **Add & connect**. Saved hosts reconnect from Computers.
 
 ## Documentation
 
