@@ -30,8 +30,20 @@ public sealed class HostStorage
         ? JsonSerializer.Deserialize<HostSettings>(File.ReadAllBytes(Path.Combine(DirectoryPath, "settings.json")), Wire.Json)
             ?? throw new IOException("Settings could not be read.") : new();
     public void SaveSettings(HostSettings settings) => AtomicWrite("settings.json", JsonSerializer.SerializeToUtf8Bytes(settings, Wire.Json));
-    public byte[] LoadSecret() => LoadKey("workspace.key");
-    public byte[] LoadEndpointKey() => LoadKey("remote.key");
+    public byte[] LoadSecret() => HostingKey(0, "workspace.key");
+    public byte[] LoadEndpointKey() => HostingKey(32, "remote.key");
+    private byte[] HostingKey(int offset, string legacy)
+    {
+        var file = Path.Combine(DirectoryPath, "hosting.keys");
+        if (!File.Exists(file)) return LoadKey(legacy);
+        var keys = ProtectedData.Unprotect(File.ReadAllBytes(file), null, DataProtectionScope.CurrentUser);
+        try
+        {
+            if (keys.Length != 64) throw new IOException("The hosting keys are invalid. Restore your Nocturne data before starting.");
+            return keys[offset..(offset + 32)];
+        }
+        finally { CryptographicOperations.ZeroMemory(keys); }
+    }
     public byte[]? ReadClientData(string name) => File.Exists(ClientPath(name))
         ? ProtectedData.Unprotect(File.ReadAllBytes(ClientPath(name)), null, DataProtectionScope.CurrentUser) : null;
     public void WriteClientData(string name, byte[] data) => AtomicWrite(Path.GetFileName(ClientPath(name)),
@@ -41,8 +53,9 @@ public sealed class HostStorage
     public void RotateHostingKeys()
     {
         // Stop all hosting transports before calling; outgoing pairings survive.
-        AtomicWrite("workspace.key", ProtectedData.Protect(RandomNumberGenerator.GetBytes(32), null, DataProtectionScope.CurrentUser));
-        AtomicWrite("remote.key", ProtectedData.Protect(RandomNumberGenerator.GetBytes(32), null, DataProtectionScope.CurrentUser));
+        var keys = RandomNumberGenerator.GetBytes(64);
+        try { AtomicWrite("hosting.keys", ProtectedData.Protect(keys, null, DataProtectionScope.CurrentUser)); }
+        finally { CryptographicOperations.ZeroMemory(keys); }
     }
     private byte[] LoadKey(string name)
     {

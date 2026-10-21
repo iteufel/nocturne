@@ -18,6 +18,26 @@ public sealed class WindowsFactAttribute : FactAttribute
 public sealed class WindowsPlatformTests(ITestOutputHelper testOutput)
 {
     [WindowsFact]
+    public void ResetRotatesBothHostingKeysAtomicallyAndPreservesOutgoingPairings()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "nocturne-reset-" + Guid.NewGuid());
+        try
+        {
+            var storage = new HostStorage(root); var secret = storage.LoadSecret(); var endpoint = storage.LoadEndpointKey();
+            var outgoing = RandomNumberGenerator.GetBytes(128); storage.WriteClientData("client-hosts", outgoing);
+            storage.RotateHostingKeys();
+            Assert.NotEqual(secret, storage.LoadSecret()); Assert.NotEqual(endpoint, storage.LoadEndpointKey());
+            Assert.Equal(storage.LoadSecret(), new HostStorage(root).LoadSecret());
+            Assert.Equal(storage.LoadEndpointKey(), new HostStorage(root).LoadEndpointKey());
+            Assert.Equal(outgoing, storage.ReadClientData("client-hosts"));
+            Assert.NotEqual(outgoing, File.ReadAllBytes(Path.Combine(root, "client-hosts.key")));
+            File.WriteAllBytes(Path.Combine(root, "hosting.keys"), [1, 2, 3]);
+            Assert.Throws<CryptographicException>(() => storage.LoadSecret());
+            Assert.Throws<CryptographicException>(() => storage.LoadEndpointKey());
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+    [WindowsFact]
     public void TransfersAreHiddenBoundedAndNeverOverwrite()
     {
         var root = Path.Combine(Path.GetTempPath(), "nocturne-files-" + Guid.NewGuid());

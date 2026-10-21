@@ -50,6 +50,7 @@ public sealed class StartupTests
                     model.DiscardSettings(); Assert.False(model.Terminal); Assert.False(model.HasSettingsChanges);
                     SaveScreens(window);
                     VerifyReceiver(window, profile);
+                    VerifyBackgroundHost(window, model);
                 }, DispatcherPriority.ContextIdle);
             }
             catch (Exception error) { failure = ExceptionDispatchInfo.Capture(error); }
@@ -126,7 +127,28 @@ public sealed class StartupTests
                 var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image)); using var output = File.Create(Path.Combine(directory, "Remote-desktop.png")); encoder.Save(output);
             }
         }
-        finally { window.Close(); server.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        finally
+        {
+            window.Close();
+            // Dispose away from the dispatcher: server cleanup awaits session
+            // workers and must not capture the UI context blocked by this test.
+            Task.Run(async () => await server.DisposeAsync()).GetAwaiter().GetResult();
+        }
+    }
+    private static void VerifyBackgroundHost(MainWindow window, ServerModel model)
+    {
+        var channel = "Nocturne-tests-" + Guid.NewGuid();
+        using var shell = new BackgroundShell(window, channel);
+        window.KeepAlive = true; window.Close();
+        Assert.False(window.IsVisible); Assert.True(model.CanAct);
+        var activate = BackgroundShell.SendAsync("activate", channel: channel);
+        var frame = new DispatcherFrame(); var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        timer.Tick += (_, _) => { if (activate.IsCompleted || DateTime.UtcNow >= deadline) frame.Continue = false; };
+        timer.Start(); Dispatcher.PushFrame(frame); timer.Stop();
+        Assert.True(activate.IsCompletedSuccessfully, "The private activation pipe did not respond.");
+        Assert.Equal(Environment.ProcessId, activate.Result); Assert.True(window.IsVisible);
+        window.KeepAlive = false;
     }
     private sealed class ReceiverDesktop(AppVideo frame) : IDesktopHost
     {

@@ -20,9 +20,10 @@ final class WindowsHostInteropTests: XCTestCase {
         let ready = expectation(description: "Mac host ready")
         var started = false
         server.onStatus = { status, _ in Task { @MainActor in if status == "Ready", !started { started = true; ready.fulfill() } } }
-        let secret = try SecureStore.randomKey(), port = UInt16.random(in: 50_000...60_000)
-        try server.start(secret: secret, port: port); defer { server.stop() }
+        let secret = try SecureStore.randomKey()
+        try server.start(secret: secret, port: 0); defer { server.stop() }
         await fulfillment(of: [ready], timeout: 5)
+        let port = try XCTUnwrap(server.listeningPort)
         let invitation = try PairingInvitation(host: "127.0.0.1", port: port, name: "Mac", secret: secret, enrollmentToken: devices.createInvitation())
         let process = Process(), input = Pipe(), output = Pipe()
         process.executableURL = URL(fileURLWithPath: dotnet); process.arguments = [fixture, "--client"]

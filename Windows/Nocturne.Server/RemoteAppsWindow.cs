@@ -28,6 +28,7 @@ internal sealed class RemoteAppsWindow : Window
         Title = invitation.Name + " · Apps"; Width = 880; Height = 700; MinWidth = 600; MinHeight = 460;
         SetResourceReference(StyleProperty, typeof(Window));
         var root = new DockPanel { Margin = new(24) };
+        root.SetResourceReference(Panel.BackgroundProperty, "Canvas");
         var title = new TextBlock { Text = "Apps on " + invitation.Name, FontSize = 28, Margin = new(0, 0, 0, 16) }; DockPanel.SetDock(title, Dock.Top); root.Children.Add(title);
         DockPanel.SetDock(status, Dock.Bottom); root.Children.Add(status);
         var actions = new WrapPanel { Margin = new(0, 12, 0, 8) }; DockPanel.SetDock(actions, Dock.Bottom);

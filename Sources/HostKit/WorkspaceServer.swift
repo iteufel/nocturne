@@ -37,6 +37,8 @@ public final class WorkspaceServer {
     private var permissions: HostPermissions
     private let name: String
     private let devices: WorkspaceDeviceStore
+    // Available after Ready, including when a test asks the OS for port zero.
+    var listeningPort: UInt16? { queue.sync { listener?.port?.rawValue } }
     public init(folder: URL, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions = .init(), microphoneOutput: MicrophoneOutput = VirtualMicrophone(), appWindows: AppWindowSessionManager? = nil, desktop: DesktopSessionManager? = nil) throws {
         self.folder = try SharedFolder(url: folder); self.name = name; self.devices = devices; self.permissions = permissions
         self.appWindows = appWindows

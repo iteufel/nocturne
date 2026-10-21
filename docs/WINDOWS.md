@@ -202,7 +202,9 @@ enroll another device. This protocol is verified against the real Swift client.
 
 Private state lives in `%LOCALAPPDATA%\Nocturne`, restricted to the user,
 Administrators, and SYSTEM. Workspace and remote identity keys are separate and
-protected with Windows DPAPI. Secrets are not command arguments or discovery data.
+protected with Windows DPAPI. Pairing secrets are excluded from logs and discovery data. Pairing codes pasted
+in the app stay within its process; opening an OS `nocturne://` link passes that
+invitation through Windows’ registered protocol command.
 Engine administration uses a random password, salted hash, pinned local certificate,
 no proxy, and no redirects. Native libraries load from the app or system directory.
 

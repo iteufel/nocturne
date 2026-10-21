@@ -17,7 +17,8 @@ internal sealed class RemoteStreamWindow : Window
     private readonly Action<ClientInvitation> save;
     private readonly RemoteAppWindow? app;
     private readonly Image image = new() { Stretch = Stretch.Uniform, Focusable = true };
-    private readonly TextBlock status = new() { Margin = new(16), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+    private readonly TextBlock status = new() { Margin = new(16), Padding = new(12), Foreground = Brushes.White,
+        Background = new SolidColorBrush(Color.FromArgb(200, 0, 0, 0)), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
     private readonly ComboBox displays = new() { MinWidth = 160, MaxWidth = 260, DisplayMemberPath = "Name", SelectedValuePath = "Id", Foreground = Brushes.Black };
     private readonly TextBlock route = new() { Margin = new(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
     private readonly DispatcherTimer resize = new() { Interval = TimeSpan.FromMilliseconds(300) };
@@ -48,7 +49,8 @@ internal sealed class RemoteStreamWindow : Window
         this.invitation = invitation; this.identity = identity; this.save = save; this.app = app;
         Title = app?.Title ?? invitation.Name; Width = 1280; Height = 800; MinWidth = 640; MinHeight = 400;
         SetResourceReference(StyleProperty, typeof(Window));
-        var root = new DockPanel(); var tools = new WrapPanel { Margin = new(10) }; DockPanel.SetDock(tools, Dock.Top);
+        var root = new DockPanel(); root.SetResourceReference(Panel.BackgroundProperty, "Canvas");
+        var tools = new WrapPanel { Margin = new(10) }; DockPanel.SetDock(tools, Dock.Top);
         Button Action(string label, Action action)
         {
             var button = new Button { Content = label, Margin = new(0, 0, 8, 0), Padding = new(12, 8, 12, 8) };

@@ -35,15 +35,16 @@ public partial class App : Application
         {
             try
             {
-                await BackgroundShell.SendAsync(e.Args.Contains("--shutdown") ? "quit" : pairing == null ? "activate" : "pair", pairing);
-                if (e.Args.Contains("--shutdown")) await Task.Run(() =>
+                var previous = await BackgroundShell.SendAsync(e.Args.Contains("--shutdown") ? "quit" : pairing == null ? "activate" : "pair", pairing);
+                if (e.Args.Contains("--shutdown"))
                 {
-                    var acquired = false;
-                    try { acquired = instance.WaitOne(TimeSpan.FromSeconds(30)); }
-                    catch (AbandonedMutexException) { acquired = true; }
-                    finally { if (acquired) instance.ReleaseMutex(); }
-                    if (!acquired) throw new IOException("Nocturne is still closing. Wait for its sessions to finish, then retry.");
-                });
+                    try
+                    {
+                        using var process = Process.GetProcessById(previous);
+                        await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+                    }
+                    catch (ArgumentException) { } // The process already exited.
+                }
             }
             catch (Exception error) { if (!e.Args.Contains("--shutdown")) MessageBox.Show(error.Message, "Nocturne"); Shutdown(1); return; }
             Shutdown(); return;

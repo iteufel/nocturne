@@ -14,14 +14,16 @@ namespace Nocturne.Server;
 internal sealed class BackgroundShell : IDisposable
 {
     private readonly MainWindow window;
+    private readonly string channel;
     private readonly HwndSource source;
     private readonly CancellationTokenSource lifetime = new();
     private NotifyIcon icon;
     private readonly Task commands;
     private static string PipeName => "Nocturne." + WindowsIdentity.GetCurrent().User!.Value + "." + System.Diagnostics.Process.GetCurrentProcess().SessionId;
-    public BackgroundShell(MainWindow window)
+    public BackgroundShell(MainWindow window, string? channel = null)
     {
-        this.window = window; source = HwndSource.FromHwnd(new WindowInteropHelper(window).EnsureHandle())!; source.AddHook(Messages);
+        this.window = window; this.channel = channel ?? PipeName;
+        source = HwndSource.FromHwnd(new WindowInteropHelper(window).EnsureHandle())!; source.AddHook(Messages);
         var handle = Native.ExtractIcon(0, Environment.ProcessPath!, 0);
         icon = new() { Size = (uint)Marshal.SizeOf<NotifyIcon>(), Window = source.Handle, Id = 1, Flags = 7, Callback = 0x801F, Icon = handle, Tip = "Nocturne · Sharing in the background" };
         if (!Native.Notify(0, ref icon)) { if (handle != 0) Native.DestroyIcon(handle); throw new IOException("Windows could not create the Nocturne tray icon."); }
@@ -49,7 +51,7 @@ internal sealed class BackgroundShell : IDisposable
         {
             try
             {
-                await using var pipe = new NamedPipeServerStream(PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+                await using var pipe = new NamedPipeServerStream(channel, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 await pipe.WaitForConnectionAsync(lifetime.Token);
                 var request = await Task.Run(() => Wire.Read(pipe), lifetime.Token).WaitAsync(TimeSpan.FromSeconds(5), lifetime.Token);
@@ -63,15 +65,18 @@ internal sealed class BackgroundShell : IDisposable
             catch (Exception error) when (error is IOException or OperationCanceledException or TimeoutException or ObjectDisposedException) { }
         }
     }
-    public static async Task SendAsync(string operation, string? code = null)
+    public static async Task<int> SendAsync(string operation, string? code = null, string? channel = null)
     {
-        await using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await using var pipe = new NamedPipeClientStream(".", channel ?? PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         await pipe.ConnectAsync(5000, deadline.Token);
+        if (!Native.ServerProcess(pipe.SafePipeHandle, out var process)) throw new IOException("The running Nocturne process could not be identified.");
+        using var abort = deadline.Token.Register(pipe.Dispose);
         await pipe.WriteAsync(Wire.Encode(new(operation) { Path = code }), deadline.Token);
         // Shutdown acknowledgement can be lost when the application exits. The
         // installer separately waits for the executable to leave memory.
         if (operation != "quit") _ = await Task.Run(() => Wire.Read(pipe), deadline.Token);
+        return checked((int)process);
     }
     public void Dispose()
     {
@@ -93,5 +98,6 @@ internal sealed class BackgroundShell : IDisposable
         [DllImport("shell32.dll", EntryPoint = "Shell_NotifyIconW", CharSet = CharSet.Unicode)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool Notify(uint command, ref NotifyIcon icon);
         [DllImport("shell32.dll", EntryPoint = "ExtractIconW", CharSet = CharSet.Unicode)] internal static extern nint ExtractIcon(nint instance, string file, uint index);
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool DestroyIcon(nint icon);
+        [DllImport("kernel32.dll", EntryPoint = "GetNamedPipeServerProcessId", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool ServerProcess(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint process);
     }
 }

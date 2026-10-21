@@ -61,7 +61,11 @@ public sealed class ServerModel : INotifyPropertyChanged
         this.storage = storage;
         secret = storage.LoadSecret(); devices = new(Path.Combine(storage.DirectoryPath, "devices.json"));
         lifecycle = new(storage.LoadSettings(), new WindowsStartup(), storage.SaveSettings,
-            (settings, cancellation) => WindowsHostRuntime.StartAsync(storage, settings, secret, devices, RuntimeChanged, cancellation));
+            (settings, cancellation) =>
+            {
+                var current = storage.LoadSecret(); CryptographicOperations.ZeroMemory(secret); secret = current;
+                return WindowsHostRuntime.StartAsync(storage, settings, secret, devices, RuntimeChanged, cancellation);
+            });
         draft = lifecycle.Settings;
         refresh = new() { Interval = TimeSpan.FromSeconds(2) };
         refresh.Tick += (_, _) => { RefreshDevices(); NotifyState(); }; refresh.Start();

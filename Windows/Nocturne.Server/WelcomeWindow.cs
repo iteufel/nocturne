@@ -13,6 +13,7 @@ internal sealed class WelcomeWindow : Window
     public WelcomeWindow(MainWindow main, Action complete)
     {
         this.main = main; this.complete = complete; Owner = main; Title = "Welcome to Nocturne"; Width = 680; Height = 580;
+        SetResourceReference(StyleProperty, typeof(Window)); content.SetResourceReference(Panel.BackgroundProperty, "Canvas");
         MinWidth = 600; MinHeight = 500; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = content; Draw();
     }
