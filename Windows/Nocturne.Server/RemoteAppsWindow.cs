@@ -100,7 +100,9 @@ internal sealed class RemoteAppsWindow : Window
             var reply = await client.RequestAsync(new("appIcon") { ApplicationID = selected.Id }, lifetime.Token);
             if (applications.SelectedItem as RemoteApplication != selected || reply.Data is not { Length: > 0 and <= 262144 }) return;
             using var stream = new MemoryStream(reply.Data);
-            var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.DecodePixelWidth = 96; bitmap.StreamSource = stream; bitmap.EndInit(); bitmap.Freeze(); icon.Source = bitmap;
+            var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.DecodePixelWidth = 96; bitmap.DecodePixelHeight = 96;
+            bitmap.StreamSource = stream; bitmap.EndInit(); bitmap.Freeze(); icon.Source = bitmap;
         }
         catch (Exception error) when (error is IOException or OperationCanceledException or NotSupportedException) { }
     }
