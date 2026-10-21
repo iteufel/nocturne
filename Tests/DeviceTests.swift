@@ -80,7 +80,7 @@ final class DeviceIdentityTests: XCTestCase {
 
 @MainActor
 final class DeviceRevocationIntegrationTests: XCTestCase {
-    func testVideoPairingRequiresQREnrollmentAndAllowsRegisteredReconnect() async throws {
+    func testVideoPairingRequiresInvitationEnrollmentAndAllowsRegisteredReconnect() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
@@ -100,7 +100,9 @@ final class DeviceRevocationIntegrationTests: XCTestCase {
         do { try await client.connect(transportOnly); XCTFail("A transport key enrolled a device without QR authorization") } catch {}
         XCTAssertEqual(approvals, 0); XCTAssertTrue(store.devices.isEmpty)
         let invitation = try PairingInvitation(host: "127.0.0.1", port: port, name: "Mac", secret: secret, enrollmentToken: store.createInvitation())
-        try await client.connect(invitation)
+        // A copied link carries exactly the QR invitation and consumes the same token.
+        let copied = try PairingInvitation(pairingLink: invitation.url.absoluteString)
+        try await client.connect(copied)
         var packet = Packet(.pairStream); packet.data = Data("1234".utf8)
         _ = try await client.request(packet)
         XCTAssertEqual(approvals, 1)

@@ -83,7 +83,7 @@ public enum NocturneError: LocalizedError, Equatable {
     case invalidInvitation, invalidFrame, disconnected, timeout, remote(String), invalidPath, permissionDenied, invalidTransfer
     public var errorDescription: String? {
         switch self {
-        case .invalidInvitation: return "This QR code is invalid. Scan a new QR code from Nocturne Server on your Mac."
+        case .invalidInvitation: return "This pairing link or QR code is invalid. Create a new invitation in Nocturne Server on your Mac."
         case .invalidFrame: return "The server sent an invalid message."
         case .disconnected: return "Connection closed. Reconnect to your Mac to continue."
         case .timeout: return "The Mac did not respond in time. Check that Nocturne Server is running."
@@ -126,8 +126,10 @@ public struct PairingInvitation: Codable, Equatable {
         self.remoteAccess = remoteAccess
     }
     public init(url: URL) throws {
-        guard url.scheme == "nocturne", url.host == "pair",
+        guard url.scheme?.lowercased() == "nocturne", url.host?.lowercased() == "pair",
               let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              parts.user == nil, parts.password == nil, parts.port == nil,
+              parts.path.isEmpty, parts.fragment == nil,
               let items = parts.queryItems else { throw NocturneError.invalidInvitation }
         func value(_ key: String) -> String? { items.first(where: { $0.name == key })?.value }
         guard let host = value("host"), let encoded = value("key"), let secret = Data(base64Encoded: encoded),
@@ -141,6 +143,13 @@ public struct PairingInvitation: Codable, Equatable {
             remote = try RemoteAccess(brokerURL: broker, endpointID: endpoint)
         }
         try self.init(host: host, port: port, name: value("name") ?? host, secret: secret, enrollmentToken: token, remoteAccess: remote)
+    }
+    /// The same invitation is accepted from a QR scan, a pasted link, or the app's URL handler.
+    public init(pairingLink: String) throws {
+        guard let url = URL(string: pairingLink.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw NocturneError.invalidInvitation
+        }
+        try self.init(url: url)
     }
     private enum CodingKeys: String, CodingKey { case host, port, name, secret, enrollmentToken, remoteAccess }
     public init(from decoder: Decoder) throws {

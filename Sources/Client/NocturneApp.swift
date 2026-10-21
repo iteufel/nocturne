@@ -51,6 +51,20 @@ final class DarkSceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         self.window = window
         window.makeKeyAndVisible()
+        if let url = connectionOptions.urlContexts.first?.url { openPairingLink(url) }
+    }
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        if let url = URLContexts.first?.url { openPairingLink(url) }
+    }
+    private func openPairingLink(_ url: URL) {
+        guard ClientModel.shared.receivePairingLink(url), appStream != nil else { return }
+        // A link opened from an app-window scene belongs in the main workspace.
+        let library = UIApplication.shared.connectedScenes.first {
+            ($0.delegate as? DarkSceneDelegate).map { $0.appStream == nil } == true
+        }
+        UIApplication.shared.requestSceneSessionActivation(library?.session, userActivity: nil, options: nil) { error in
+            Task { @MainActor in ClientModel.shared.error = error.localizedDescription }
+        }
     }
     func stateRestorationActivity(for scene: UIScene) -> NSUserActivity? { scene.userActivity }
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {

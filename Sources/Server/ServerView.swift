@@ -200,7 +200,7 @@ struct ServerView: View {
                     Button { model.pair() } label: { Label("Pair a device", systemImage: "qrcode") }.buttonStyle(PrimaryButtonStyle())
                 }
             }
-            Text("Pair new devices by scanning this Mac’s QR code in Nocturne. No pairing code needs to be entered.").font(.caption).foregroundStyle(MoonStyle.secondary)
+            Text("Pair new devices with this Mac’s QR code or copy a pairing link to open in Nocturne.").font(.caption).foregroundStyle(MoonStyle.secondary)
             pairedDevices
             MoonPanel {
                 VStack(alignment: .leading, spacing: 15) {
@@ -267,6 +267,7 @@ struct ServerView: View {
 struct ServerPairingView: View {
     let invitation: PairingInvitation
     @Environment(\.dismiss) private var dismiss
+    @State private var copied = false
     var body: some View {
         VStack(spacing: 20) {
             HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(NocturneGlassButtonStyle()).keyboardShortcut(.defaultAction) }
@@ -276,7 +277,15 @@ struct ServerPairingView: View {
                 Image(nsImage: image).interpolation(.none).resizable().frame(width: 210, height: 210).padding(16).background(.white, in: RoundedRectangle(cornerRadius: 18))
             }
             Text(invitation.name).font(.subheadline.weight(.medium)).foregroundStyle(MoonStyle.secondary)
-            Text("This code pairs one device and expires after five minutes.\nKeep it private. Remove devices individually in Devices.").font(.caption2).foregroundStyle(MoonStyle.secondary).multilineTextAlignment(.center)
+            Button {
+                NSPasteboard.general.clearContents()
+                copied = NSPasteboard.general.setString(invitation.url.absoluteString, forType: .string)
+            } label: {
+                Label(copied ? "Pairing link copied" : "Copy pairing link", systemImage: copied ? "checkmark" : "link")
+            }.buttonStyle(NocturneGlassButtonStyle()).accessibilityIdentifier("copyPairingLink")
+            Text("No camera? Send the link to your device, then open it\nor paste it in Nocturne → Add host.")
+                .font(.caption).foregroundStyle(MoonStyle.secondary).multilineTextAlignment(.center)
+            Text("This code and link share one invitation for one device.\nThey expire after five minutes. Keep them private.").font(.caption2).foregroundStyle(MoonStyle.secondary).multilineTextAlignment(.center)
         }.padding(28).frame(width: 440).background { NocturneBackdrop() }.tint(MoonStyle.accent)
     }
     private var qrImage: NSImage? {

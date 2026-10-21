@@ -64,6 +64,8 @@ final class ClientModel: ObservableObject {
     @Published var busy = false
     @Published var error: String?
     @Published var showAdd = false
+    /// Kept only in memory until the user confirms or dismisses the pairing sheet.
+    @Published var pairingLink = ""
     @Published var showLibrary = false
     @Published var session: StreamSession?
     @Published var controllers: [String] = []
@@ -474,13 +476,28 @@ final class ClientModel: ObservableObject {
             microphone.start(invitation: invitation, connection: server.mediaConnection())
         } catch { self.error = error.localizedDescription }
     }
-    func pairScannedServer(_ text: String) async {
+    @discardableResult
+    func receivePairingLink(_ url: URL) -> Bool {
+        guard !busy, session == nil, pendingStream == nil, server.state != .connecting else {
+            error = "Finish the current connection or close your desktop stream before adding a host."
+            return false
+        }
+        do {
+            let invitation = try PairingInvitation(pairingLink: url.absoluteString)
+            pairingLink = invitation.url.absoluteString
+            error = nil; showLibrary = false; showAdd = true
+            return true
+        } catch { self.error = error.localizedDescription; return false }
+    }
+    func pairServer(_ text: String) async {
+        guard !busy, session == nil, pendingStream == nil, server.state != .connecting else { return }
+        let invitation: PairingInvitation
+        do { invitation = try PairingInvitation(pairingLink: text) }
+        catch { self.error = error.localizedDescription; return }
         cancelReconnect()
         let generation = serverPairingGeneration
-        engine.cancelPairing()
+        engine.cancelPairing(); error = nil; busy = true
         do {
-            guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw NocturneError.invalidInvitation }
-            let invitation = try PairingInvitation(url: url)
             if let previous = linkedHostID { engine.clearTemporaryAddress(previous) }
             try await server.connect(invitation, rediscover: true)
             guard serverPairingGeneration == generation else { return }
@@ -488,7 +505,7 @@ final class ClientModel: ObservableObject {
             var list = pairedServers; list.pair(connected)
             try savePairedServers(list)
             updateFilesLocation(connected)
-            showAdd = false
+            pairingLink = ""; showAdd = false
             prepareScreenSharing(openLibrary: true)
         } catch {
             if serverPairingGeneration == generation { failHostSetup(error.localizedDescription) }

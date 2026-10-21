@@ -29,6 +29,50 @@ final class HostConnectionTests: XCTestCase {
         for _ in 0..<100 where !condition() { try await Task.sleep(nanoseconds: 50_000_000) }
         XCTAssertTrue(condition())
     }
+    func testPairingURLSchemeIsRegistered() {
+        let types = Bundle.main.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]]
+        XCTAssertTrue(types?.contains { ($0["CFBundleURLSchemes"] as? [String])?.contains("nocturne") == true } == true)
+    }
+    func testOpenedPairingLinkWaitsForConfirmationAndPreservesTheCurrentHost() async throws {
+        let workspace = try TestWorkspace(); try await workspace.start()
+        let (model, engine) = try model(for: workspace.address, linked: true)
+        defer { model.suspend(); workspace.stop() }
+        await model.reconnectServer()
+        try await waitUntil { engine.approved }
+        let invitation = try PairingInvitation(host: "other.local", name: "Other Mac", secret: SecureStore.randomKey(), enrollmentToken: SecureStore.randomKey())
+        XCTAssertTrue(model.receivePairingLink(invitation.url))
+        XCTAssertTrue(model.showAdd)
+        XCTAssertEqual(model.pairingLink, invitation.url.absoluteString)
+        XCTAssertEqual(model.server.state, .connected)
+        XCTAssertEqual(model.server.connectedInvitation?.secret, workspace.address.secret)
+        XCTAssertEqual(model.pairedServers.servers.count, 1)
+        XCTAssertEqual(model.pairedServers.active?.invitation.secret, workspace.address.secret)
+    }
+    func testInvalidPastedLinkDoesNotDisconnectTheCurrentHost() async throws {
+        let workspace = try TestWorkspace(); try await workspace.start()
+        let (model, engine) = try model(for: workspace.address, linked: true)
+        defer { model.suspend(); workspace.stop() }
+        await model.reconnectServer()
+        try await waitUntil { engine.approved }
+        await model.pairServer("invalid pairing link")
+        XCTAssertEqual(model.error, NocturneError.invalidInvitation.localizedDescription)
+        XCTAssertEqual(model.server.state, .connected)
+        XCTAssertEqual(model.pairedServers.servers.count, 1)
+        XCTAssertFalse(model.busy)
+        XCTAssertFalse(model.receivePairingLink(URL(string: "nocturne://pair?key=invalid")!))
+        XCTAssertTrue(model.pairingLink.isEmpty)
+        XCTAssertFalse(model.showAdd)
+    }
+    func testPairingLinkCannotInterruptADesktopStream() throws {
+        let invitation = try PairingInvitation(host: "mac.local", name: "Mac", secret: SecureStore.randomKey())
+        let (model, engine) = try model(for: invitation, linked: true)
+        defer { model.suspend() }
+        model.session = StreamSession(host: engine.host, app: StreamingApp(["id": "desktop", "name": "Desktop"]), preferences: model.preferences)
+        XCTAssertFalse(model.receivePairingLink(invitation.url))
+        XCTAssertFalse(model.showAdd)
+        XCTAssertTrue(model.pairingLink.isEmpty)
+        XCTAssertNotNil(model.session)
+    }
     func testReconnectRepairsInterruptedVideoPairingWithoutAnotherQRScan() async throws {
         let workspace = try TestWorkspace(); try await workspace.start()
         let (model, engine) = try model(for: workspace.address, linked: false)
@@ -102,7 +146,7 @@ final class HostConnectionTests: XCTestCase {
         try await first.start(); try await second.start()
         let (model, engine) = try model(for: first.address, linked: false)
         defer { model.suspend(); first.stop(); second.stop() }
-        await model.pairScannedServer(second.address.url.absoluteString)
+        await model.pairServer(" \n" + second.address.url.absoluteString + "\n")
         try await waitUntil { engine.approved }
         let secondID = try XCTUnwrap(model.pairedServers.activeID)
         model.showLibrary = false

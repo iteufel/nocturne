@@ -28,7 +28,7 @@ final class FilesIntegrationTests: XCTestCase {
         let registered = expectation(description: "Paired Mac registered as an Apple Files location")
         let observation = model.filesIntegration.$locationNames.first { $0.contains(invitation.name) }.sink { _ in registered.fulfill() }
         defer { observation.cancel(); model.server.disconnect() }
-        await model.pairScannedServer(invitation.url.absoluteString)
+        await model.pairServer(invitation.url.absoluteString)
         XCTAssertEqual(model.server.state, .connected, model.error ?? "Pairing failed")
         await fulfillment(of: [registered], timeout: 15)
         let accountName = FilesProviderAccount.keychainAccount(domainIdentifier: FilesProviderAccount.domainIdentifier(secret: invitation.secret))
@@ -84,10 +84,10 @@ final class FilesIntegrationTests: XCTestCase {
             XCTAssertTrue(condition())
         }
 
-        await model.pairScannedServer(first.url.absoluteString)
+        await model.pairServer(first.url.absoluteString)
         XCTAssertEqual(model.server.state, .connected, model.error ?? "First pairing failed")
         let shell = try await model.server.openTerminal()
-        await model.pairScannedServer(second.url.absoluteString)
+        await model.pairServer(second.url.absoluteString)
         XCTAssertEqual(model.server.state, .connected, model.error ?? "Second pairing failed")
         XCTAssertEqual(model.server.name, second.name)
         XCTAssertEqual(model.pairedServers.servers.map(\.id), [firstID, secondID])

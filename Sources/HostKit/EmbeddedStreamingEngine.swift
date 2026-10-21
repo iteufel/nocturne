@@ -124,7 +124,7 @@ public final class EmbeddedStreamingEngine {
         }
         guard let api else { throw NocturneError.disconnected }
         let result = try await api.request("/api/pin", body: ["pairing_id": request.id, "pin": pin, "name": name])
-        guard result["status"] as? Bool == true else { throw NocturneError.remote("Pairing did not complete. Scan a new QR code and try again.") }
+        guard result["status"] as? Bool == true else { throw NocturneError.remote("Pairing did not complete. Use a new QR code or pairing link and try again.") }
     }
 
     /// A QR-authorized client may approve only a pending video pairing from its own IP address.
@@ -135,11 +135,11 @@ public final class EmbeddedStreamingEngine {
             try Task.checkCancellation()
             guard generation == epoch else { throw NocturneError.disconnected }
             let requests = try await pendingPairings().filter { Self.normalizedAddress($0.address) == Self.normalizedAddress(address) }
-            if requests.count > 1 { throw NocturneError.remote("Several devices are pairing at this address. Wait for them to finish, then scan a new QR code on one device at a time.") }
+            if requests.count > 1 { throw NocturneError.remote("Several devices are pairing at this address. Wait for them to finish, then use a new QR code or pairing link on one device at a time.") }
             if let request = requests.first { try await approve(request, pin: pin, name: name); return }
             try await Task.sleep(nanoseconds: 250_000_000)
         }
-        throw NocturneError.remote("The video pairing request was not found. Scan a new QR code on your Mac and try again.")
+        throw NocturneError.remote("The video pairing request was not found. Create a new QR code or pairing link on your Mac and try again.")
     }
 
     public func resetPairing() async throws {
