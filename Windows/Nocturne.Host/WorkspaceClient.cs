@@ -86,7 +86,7 @@ public sealed class WorkspaceClient : IAsyncDisposable
         this.socket = socket; this.stream = stream; this.tunnel = tunnel;
         Invitation = invitation with { Name = authenticated.Name ?? invitation.Name, EnrollmentToken = null };
         Capabilities = authenticated.Capabilities ?? [];
-        reader = Task.Run(ReadLoop);
+        reader = Task.Factory.StartNew(ReadLoop, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     }
     public static async Task<WorkspaceClient> ConnectAsync(ClientInvitation invitation, ClientCredentials identity, string deviceName,
         CancellationToken cancellation = default, Func<RemoteAccessInfo, CancellationToken, Task<IClientTunnel>>? makeTunnel = null)
@@ -116,7 +116,7 @@ public sealed class WorkspaceClient : IAsyncDisposable
                 deadline.CancelAfter(TimeSpan.FromSeconds(remote == null ? 4 : 15));
                 await socket.ConnectAsync(host, port, deadline.Token);
                 deadline.CancelAfter(TimeSpan.FromSeconds(12));
-                return await Task.Run(() =>
+                return await Task.Factory.StartNew(() =>
                 {
                     using var abort = deadline.Token.Register(socket.Dispose);
                     var protocol = new TlsClientProtocol(socket.GetStream());
@@ -131,7 +131,7 @@ public sealed class WorkspaceClient : IAsyncDisposable
                     if (reply.Version != Wire.Version) throw new IOException("Update both Nocturne apps to the same version.");
                     deadline.Token.ThrowIfCancellationRequested(); socket.ReceiveTimeout = 0;
                     return new WorkspaceClient(socket, protocol.Stream, remote, remote == null ? invitation with { Host = host, Port = port } : invitation, reply);
-                }, CancellationToken.None);
+                }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             }
             catch { socket.Dispose(); throw; }
         }

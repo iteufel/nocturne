@@ -6,6 +6,48 @@ namespace Nocturne.Host.Tests;
 public sealed class DesktopClientTests
 {
     [Fact]
+    public async Task AcceptLoopDoesNotDependOnTheCallersUiContext()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "nocturne-context-" + Guid.NewGuid());
+        var devices = new DeviceStore(Path.Combine(path, "devices.json")); var secret = RandomNumberGenerator.GetBytes(32);
+        await using var server = new WorkspaceServer("Context host", secret, devices, new(), null, (_, _) => throw new IOException());
+        var context = new RecordingContext(); var previous = SynchronizationContext.Current;
+        try { SynchronizationContext.SetSynchronizationContext(context); server.Start(0, IPAddress.Loopback); }
+        finally { SynchronizationContext.SetSynchronizationContext(previous); }
+        await using (var client = await WorkspaceClient.ConnectAsync(new("127.0.0.1", (ushort)server.Port, "Host", secret, devices.CreateInvitation()), ClientCredentials.Create(), "Viewer"))
+            Assert.Null((await client.RequestAsync(new("ping"))).Error);
+        Assert.Equal(0, context.Posts);
+        Directory.Delete(path, true);
+    }
+    private sealed class RecordingContext : SynchronizationContext
+    {
+        private int posts;
+        public int Posts => Volatile.Read(ref posts);
+        public override void Post(SendOrPostCallback callback, object? state)
+        {
+            Interlocked.Increment(ref posts);
+            ThreadPool.QueueUserWorkItem(_ => callback(state));
+        }
+    }
+    [Fact]
+    public async Task IdleAuthenticatedSocketsDoNotDelayNewConnectionsOrRequests()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "nocturne-idle-" + Guid.NewGuid());
+        var devices = new DeviceStore(Path.Combine(path, "devices.json")); var secret = RandomNumberGenerator.GetBytes(32);
+        await using var server = new WorkspaceServer("Idle host", secret, devices, new(), null, (_, _) => throw new IOException());
+        server.Start(0, IPAddress.Loopback); var identity = ClientCredentials.Create();
+        var invitation = new ClientInvitation("127.0.0.1", (ushort)server.Port, "Host", secret, devices.CreateInvitation());
+        await using var first = await WorkspaceClient.ConnectAsync(invitation, identity, "Viewer");
+        var clients = await Task.WhenAll(Enumerable.Range(0, 12).Select(_ => WorkspaceClient.ConnectAsync(first.Invitation, identity, "Viewer")));
+        try
+        {
+            var replies = await Task.WhenAll(clients.Append(first).Select(client => client.RequestAsync(new("ping"))));
+            Assert.All(replies, reply => Assert.Null(reply.Error));
+        }
+        finally { foreach (var client in clients) await client.DisposeAsync(); }
+        Directory.Delete(path, true);
+    }
+    [Fact]
     public async Task ReceiverAuthenticatesStreamsReconnectsAndRejectsUnenrolledIdentity()
     {
         var path = Path.Combine(Path.GetTempPath(), "nocturne-client-" + Guid.NewGuid());

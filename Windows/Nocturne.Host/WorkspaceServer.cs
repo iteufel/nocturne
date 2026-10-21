@@ -84,14 +84,17 @@ public sealed class WorkspaceServer : IAsyncDisposable
         {
             while (!stopped.IsCancellationRequested)
             {
-                var client = await listener!.AcceptTcpClientAsync(stopped.Token);
+                var client = await listener!.AcceptTcpClientAsync(stopped.Token).ConfigureAwait(false);
                 if (sessions.Count >= 32) { client.Dispose(); continue; }
                 client.NoDelay = true;
                 client.ReceiveTimeout = 12_000; client.SendTimeout = 15_000;
                 var id = Guid.NewGuid(); var session = new Session(this, id, client);
                 sessions[id] = session;
-                // Keep synchronous TLS reads off the UI and one bounded worker per connection.
-                var task = Task.Run(() => session.Run()); tasks[id] = task;
+                // Synchronous TLS reads can remain idle for the whole session.
+                // Dedicated workers keep them off both the UI and the shared
+                // pool; the connection limit bounds the number of threads.
+                var task = Task.Factory.StartNew(session.Run, CancellationToken.None,
+                    TaskCreationOptions.LongRunning, TaskScheduler.Default); tasks[id] = task;
                 _ = task.ContinueWith(_ => { tasks.TryRemove(id, out var ignored); }, TaskScheduler.Default);
             }
         }
@@ -168,7 +171,8 @@ public sealed class WorkspaceServer : IAsyncDisposable
                 var protocol = new TlsServerProtocol(client.GetStream());
                 tls = new(server.secret);
                 protocol.Accept(tls);
-                writer = Task.Run(() => WriteLoop(protocol.Stream));
+                writer = Task.Factory.StartNew(() => WriteLoop(protocol.Stream), CancellationToken.None,
+                    TaskCreationOptions.LongRunning, TaskScheduler.Default);
                 using var authDeadline = new Timer(_ => { if (Identity == null) Close(); }, null, 12_000, Timeout.Infinite);
                 while (Volatile.Read(ref closed) == 0)
                 {

@@ -17,6 +17,8 @@ public sealed class StartupTests
     public void MainWindowInitializesAndRendersOnAnStaThread()
     {
         ExceptionDispatchInfo? failure = null;
+        var phase = "Create UI thread";
+        void Stage(string value) => Volatile.Write(ref phase, value);
         var thread = new Thread(() =>
         {
             var profile = Path.Combine(Path.GetTempPath(), "nocturne-ui-" + Guid.NewGuid());
@@ -25,6 +27,7 @@ public sealed class StartupTests
             {
                 // Generated BAML URIs already identify the application's assembly.
                 RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
+                Stage("Initialize application");
                 app = new App(); app.InitializeComponent();
                 model = new ServerModel(new HostStorage(profile));
                 window = new MainWindow(model);
@@ -48,8 +51,10 @@ public sealed class StartupTests
                     Assert.True(model.ScreenSharing); Assert.False(model.HasSettingsChanges);
                     model.Terminal = true; Assert.True(model.CanApply);
                     model.DiscardSettings(); Assert.False(model.Terminal); Assert.False(model.HasSettingsChanges);
-                    SaveScreens(window);
+                    Stage("Render settings panels"); SaveScreens(window);
+                    Stage("Verify authenticated receiver");
                     VerifyReceiver(window, profile);
+                    Stage("Verify background activation");
                     VerifyBackgroundHost(window, model);
                 }, DispatcherPriority.ContextIdle);
             }
@@ -58,9 +63,12 @@ public sealed class StartupTests
             {
                 try
                 {
-                    window?.Close();
+                    Stage("Close main window"); window?.Close();
+                    Stage("Dispose model");
                     model?.CloseAsync().GetAwaiter().GetResult();
+                    Stage("Shut down application");
                     app?.Shutdown();
+                    Stage("Remove test profile");
                     if (Directory.Exists(profile)) Directory.Delete(profile, true);
                 }
                 catch (Exception error) { failure ??= ExceptionDispatchInfo.Capture(error); }
@@ -68,7 +76,7 @@ public sealed class StartupTests
         }) { IsBackground = true };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        Assert.True(thread.Join(TimeSpan.FromSeconds(60)), "The Windows application did not finish its startup smoke test.");
+        Assert.True(thread.Join(TimeSpan.FromSeconds(60)), "The Windows application did not finish its startup smoke test. Last stage: " + Volatile.Read(ref phase));
         failure?.Throw();
     }
 
