@@ -18,7 +18,16 @@ public sealed class StartupTests
     {
         ExceptionDispatchInfo? failure = null;
         var phase = "Create UI thread";
-        void Stage(string value) => Volatile.Write(ref phase, value);
+        void Stage(string value)
+        {
+            Volatile.Write(ref phase, value);
+            var directory = Environment.GetEnvironmentVariable("NOCTURNE_WINDOWS_TEST_ARTIFACTS");
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+                File.AppendAllText(Path.Combine(directory, "startup-stages.log"), DateTime.UtcNow.ToString("O") + " " + value + Environment.NewLine);
+            }
+        }
         var thread = new Thread(() =>
         {
             var profile = Path.Combine(Path.GetTempPath(), "nocturne-ui-" + Guid.NewGuid());
@@ -55,7 +64,7 @@ public sealed class StartupTests
                     Stage("Verify authenticated receiver");
                     VerifyReceiver(window, profile);
                     Stage("Verify background activation");
-                    VerifyBackgroundHost(window, model);
+                    VerifyBackgroundHost(window, model, Stage);
                 }, DispatcherPriority.ContextIdle);
             }
             catch (Exception error) { failure = ExceptionDispatchInfo.Capture(error); }
@@ -143,20 +152,26 @@ public sealed class StartupTests
             Task.Run(async () => await server.DisposeAsync()).GetAwaiter().GetResult();
         }
     }
-    private static void VerifyBackgroundHost(MainWindow window, ServerModel model)
+    private static void VerifyBackgroundHost(MainWindow window, ServerModel model, Action<string> stage)
     {
         var channel = "Nocturne-tests-" + Guid.NewGuid();
+        stage("Create tray and activation listener");
         using var shell = new BackgroundShell(window, channel);
+        stage("Hide main window while sharing stays available");
         window.KeepAlive = true; window.Close();
         Assert.False(window.IsVisible); Assert.True(model.CanAct);
+        stage("Connect to activation pipe");
         var activate = BackgroundShell.SendAsync("activate", channel: channel);
         var frame = new DispatcherFrame(); var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
         var deadline = DateTime.UtcNow.AddSeconds(5);
         timer.Tick += (_, _) => { if (activate.IsCompleted || DateTime.UtcNow >= deadline) frame.Continue = false; };
+        stage("Pump dispatcher until activation completes");
         timer.Start(); Dispatcher.PushFrame(frame); timer.Stop();
+        stage("Verify activation reply and visible window");
         Assert.True(activate.IsCompletedSuccessfully, "The private activation pipe did not respond.");
         Assert.Equal(Environment.ProcessId, activate.Result); Assert.True(window.IsVisible);
         window.KeepAlive = false;
+        stage("Dispose tray and activation listener");
     }
     private sealed class ReceiverDesktop(AppVideo frame) : IDesktopHost
     {

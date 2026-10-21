@@ -24,7 +24,7 @@ if (-not $SkipTests) {
     if ($LASTEXITCODE -ne 0) { throw 'Windows host tests failed.' }
     if ($IsWindows) {
         $env:NOCTURNE_WINDOWS_TEST_ARTIFACTS = Join-Path $root ".build/WindowsTests-$Architecture"
-        & $Dotnet test (Join-Path $root 'Windows/Nocturne.Server.Tests/Nocturne.Server.Tests.csproj') -c Release -p:RestoreLockedMode=true "-p:NativeArchitecture=$Architecture" --nologo
+        & $Dotnet test (Join-Path $root 'Windows/Nocturne.Server.Tests/Nocturne.Server.Tests.csproj') -c Release -p:RestoreLockedMode=true "-p:NativeArchitecture=$Architecture" --nologo --blame-hang-timeout 45s --blame-hang-dump-type full --results-directory (Join-Path $env:NOCTURNE_WINDOWS_TEST_ARTIFACTS 'TestResults')
         if ($LASTEXITCODE -ne 0) { throw 'Windows application startup tests failed.' }
         Remove-Item Env:NOCTURNE_WINDOWS_TEST_ARTIFACTS
     }
