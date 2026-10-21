@@ -1,4 +1,28 @@
-# Verification — 19 October 2026
+# Verification — 21 October 2026
+
+## Unified Mac app name (October 21, 2026)
+
+- The Mac product, executable, display name, window/menu labels, onboarding, permission guidance, and companion-client instructions now use **Nocturne**. The distinct **Nocturne Mac** scheme keeps the shared workspace unambiguous beside the iOS **Nocturne** scheme. `app.nocturne.server` and credential storage identifiers stay unchanged.
+- The Mac build produces `.build/XcodeMac/Build/Products/Debug/Nocturne.app`. Its built Info.plist and executable name were checked, and deep/strict signature verification passes. The actual Mac section of the project generator was executed in a temporary directory and its target, product, scheme, and bundle ID verified. Shell/Ruby syntax, workflow YAML, and both Info.plists pass validation.
+- Release packaging now emits `Nocturne-macOS-arm64.zip`; CI paths and release titles match. The website accepts both the renamed archive and earlier release archives, retaining its existing pinned download. Checks cover both names, release ordering, URL validation, and exclusion of drafts. Historical verification paths and existing release URLs retain the names they actually used.
+- A full Swift rerun discovered 104 tests with eight opt-in skips and hit the previously reproduced intermittent discovery-listener startup failure. The Mac feature tests in that run passed; all five discovery tests passed on a standalone rerun. This rename was built locally; no installed application was replaced and no release was published.
+
+## Mac locked-screen capture and app windows (October 21, 2026)
+
+- The native Mac viewer now has its own lock-aware capture lifecycle. A locked signed-in host follows its main display using AVFoundation screen capture; unlocking restores the requested display and ScreenCaptureKit audio. Capture replacement releases held input, pauses input against the previous target, and retains the authenticated desktop lease. The selected display is kept separate from the effective lock-screen display.
+- Computers and the desktop toolbar now open a searchable Apps browser. Applications launch through the existing authenticated app-window protocol, and individual windows open independent native viewers with keyboard/mouse input and host-window resizing. Duplicate selections reuse their viewer. Closing the browser, desktop, or one app viewer leaves other viewers connected. App windows carry video/input; system audio remains in Desktop.
+- `swift test --filter MacClientTests`: 11 tests, zero failures. Four new tests cover main-display selection across lock/unlock, disconnect during lock-capture startup, encoding AVFoundation samples without ScreenCaptureKit attachments, and app browsing/launch/multiple-window video/input/resize over real TLS workspace connections. The integration tests also check failed pairing persistence on browser reconnection and preserving the requested display while the host reports a different lock-screen target.
+- `bash scripts/test-stream-lock-screen.sh`: all 12 existing engine checks pass with AddressSanitizer/UBSan. `bash scripts/build.sh mac` passes, and the ad-hoc development bundle passes deep/strict signature verification.
+- Final full `swift test`: 104 tests, eight opt-in skips, zero failures. Earlier runs hit transient listener-start failures in device pairing, discovery, and server settings, including an explicit `Address already in use`; the pairing/settings cases passed alone. An isolated clean snapshot of the original commit reproduced listener failures too (100 tests, eight skips, two failures in workspace integration). The final full run completed without concurrent build activity. Baseline and retry logs are retained alongside the passing result.
+- This verification uses recording capture hosts, generated H.264 samples, and local TLS connections. It does not establish live two-Mac capture, visible lock-screen password entry, audible sound, or WAN app-window streaming. No physical display layout was changed, no installed app was replaced, and no signed/notarized release was published. The host still requires a running app in an existing signed-in user session; reboot/FileVault/logout login is outside this support.
+- Evidence is in `.build/MacConnectionVerification/`: the failing lock-selection regression, passing feature tests, engine harness, Mac build, signature verification, and full-suite/retry logs.
+
+## Integrated Mac client (October 21, 2026)
+
+- `swift test`: 100 shared/host/client tests, eight existing opt-in skips, zero failures. Seven new Mac-client tests cover persistent Security-generated device identity, locked/corrupt credential handling, self-pairing rejection, connection/session ownership, capture cancellation, lease expiry, aspect-fit input, held-key release, authenticated video presentation and keyboard delivery, viewer resizing, display switching, saved-host reconnection, unsupported hosts, and failed pairing persistence. Disconnecting the client leaves another authenticated connection to the host usable.
+- iPad Pro 13-inch (M5), iOS 27 simulator: 66 client tests, three opt-in skips, zero failures; `MacClientIOSFinal.xcresult` reports Passed. The iOS build-for-testing and Mac app build passed. The Mac bundle passed deep/strict signature verification. The running Mac UI was checked through Computers, Add host, and invalid-code validation.
+- The Mac integration test uses real TLS workspace connections and software-encoded H.264 with a recording desktop host. It does not establish physical Mac-to-Mac capture, audible system sound, hardware input, multi-monitor switching, or WAN playback. Those remain live checks on two Macs. The native Mac viewer currently streams existing displays; iOS adaptive virtual displays and other iOS-only features are documented in Usage.
+- Evidence: `.build/mac-client-verified-all-tests.log`, `.build/mac-client-final-tests.log`, `.build/mac-client-app-final.log`, `.build/mac-client-ios-build.log`, `.build/mac-client-ios-final-tests.log`, and `.build/MacClientIOSFinal.xcresult`. The first iPad run passed its suite but stalled collecting Xcode diagnostics; the final run disabled that collection and produced the passing result bundle.
 
 ## iPad pointer lock (October 19, 2026)
 
@@ -122,7 +146,7 @@ Local build logs: `/tmp/nocturne-mac-build.log`, `/tmp/nocturne-ios-build.log`, 
 Nine tests passed, zero failures, using the directly packaged server executable:
 
 ```sh
-NOCTURNE_ENGINE_EXECUTABLE="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne Server.app/Contents/MacOS/nocturne-stream-host" swift test
+NOCTURNE_ENGINE_EXECUTABLE="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne.app/Contents/MacOS/nocturne-stream-host" swift test
 ```
 
 Coverage includes actual TLS client/server connections, wrong-key rejection, a 450,000-byte bidirectional file transfer with byte comparison, a real PTY command and resize, permission revocation, upload cancellation, framing bounds, invitation validation, adaptive layout, traversal/symlink rejection, and atomic no-overwrite behavior. The engine integration test starts the real executable, authenticates its local administration API, verifies the desktop library, resets pairing, stops it, and starts it again. Log: `/tmp/nocturne-tests.log`.

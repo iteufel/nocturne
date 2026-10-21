@@ -11,7 +11,7 @@ public final class VirtualMicrophone: MicrophoneOutput {
     public func start() throws {
         let found = NocturneMicFindDevice()
         guard found != kAudioObjectUnknown else {
-            throw NocturneError.remote("Install Nocturne Microphone in Nocturne Server → Sharing, then restart your Mac.")
+            throw NocturneError.remote("Install Nocturne Microphone in Nocturne → Sharing, then restart your Mac.")
         }
         guard NocturneMicSetControl(found, UInt32(NocturneMicStart)) == noErr else {
             throw NocturneError.remote("Nocturne Microphone is busy. Mute the other device and try again.")

@@ -89,12 +89,12 @@ NOCTURNE_BUILD_NUMBER='<unused numeric build number>' scripts/archive-ios.sh
 ```
 
 The archive and exported IPA stay in the ignored `.build/TestFlight` directory.
-Build scripts never start Nocturne Server or change the Mac's display layout.
+Build scripts never start Nocturne or change the Mac's display layout.
 
 ## Signed Mac downloads
 
-Use the ZIP attached to a [Mac server release](https://github.com/iteufel/nocturne/releases).
-Quit an older Nocturne Server, unzip the download, and move the app to Applications.
+Use the ZIP attached to a [Mac release](https://github.com/iteufel/nocturne/releases).
+Quit any running copy of Nocturne, unzip the download, and move Nocturne.app to Applications.
 The ZIP includes the stapled notarization ticket; `SHA256SUMS.txt` accompanies it.
 Builds target Apple Silicon and macOS 14 or later. They remain previews, with the
 display limitations described in [VERIFICATION.md](VERIFICATION.md).
@@ -121,11 +121,12 @@ and result under `.build/MacRelease`, and publishes a ZIP only after Apple accep
 it and local Gatekeeper verification succeeds. CI retains signing diagnostics for
 seven days. The script never starts the streaming engine or changes display state.
 
-`python3 scripts/verify-macos-release.py '/path/Nocturne Server.app' '<team ID>'`
+`python3 scripts/verify-macos-release.py '/path/Nocturne.app' '<team ID>'`
 checks every Mach-O binary. This catches the Team ID mismatch that made the old
 ad-hoc runtime abort during library loading, as well as missing Developer ID
 signatures or secure timestamps. Keep Gatekeeper enabled; a downloadable release
-must pass `spctl --assess --type execute --verbose=4 '/path/Nocturne Server.app'`.
+must pass `spctl --assess --type execute --verbose=4 '/path/Nocturne.app'`.
+
 ## Windows host packages
 
 `scripts/build-windows.ps1` builds a self-contained .NET 10 WPF host for x64 or

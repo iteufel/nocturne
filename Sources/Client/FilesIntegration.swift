@@ -106,7 +106,7 @@ struct FilesIntegrationSettings: View {
             ForEach(Array(integration.locationNames.enumerated()), id: \.offset) { _, name in LabeledContent("Location", value: name) }
             Text("In Apple Files, open Browse → Locations → Nocturne. Each paired Mac is its own location. Enable a location when asked. If it is hidden, choose More (…) → Edit and enable Nocturne.")
                 .font(.caption).foregroundStyle(MoonStyle.secondary)
-            Text("Browse folders, preview files, and copy them to your device or another app. To send files to your Mac, use Nocturne’s Files tab. Your Mac must be reachable with Nocturne Server running and File sharing enabled.")
+            Text("Browse folders, preview files, and copy them to your device or another app. To send files to your Mac, use Nocturne’s Files tab. Your Mac must be reachable with Nocturne running and File sharing enabled.")
                 .font(.caption).foregroundStyle(MoonStyle.secondary)
             if paired { Button("Refresh Files location", action: refresh) }
             if let error = integration.error { Text(error).font(.caption).foregroundStyle(.orange) }

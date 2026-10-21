@@ -11,6 +11,7 @@ public final class WorkspaceConnection: ObservableObject {
     @Published public private(set) var capabilities: [String] = []
     @Published public private(set) var lastError: String?
     public var onAppPacket: ((Packet) -> Void)?
+    public var onDesktopPacket: ((Packet) -> Void)?
     @Published public private(set) var terminals: [TerminalTab] = []
     @Published public private(set) var terminalID: String?
     /// Authenticated pairing with a refreshed LAN address; remote proxy addresses are never saved.
@@ -121,7 +122,7 @@ public final class WorkspaceConnection: ObservableObject {
         var hello = Packet(.hello); hello.version = WorkspaceProtocol.version
         let greeting = try await request(hello)
         guard greeting.version == WorkspaceProtocol.version, let challenge = greeting.data, challenge.count == 32 else {
-            throw NocturneError.remote("Update Nocturne Server before connecting this device.")
+            throw NocturneError.remote("Update Nocturne before connecting this device.")
         }
         var proof = Packet(.authenticate); proof.certificate = identity.certificate; proof.name = identity.name
         proof.signature = try identity.sign(WorkspaceIdentity.message(for: channel.boundChallenge(challenge))); proof.enrollmentToken = invitation.enrollmentToken
@@ -225,6 +226,9 @@ public final class WorkspaceConnection: ObservableObject {
         if terminalID == id { terminalID = terminals.isEmpty ? nil : terminals[min(index, terminals.count - 1)].id }
     }
     private func received(_ packet: Packet) {
+        if [.desktopVideo, .desktopAudio, .desktopEnded].contains(packet.operation) {
+            onDesktopPacket?(packet); return
+        }
         if packet.operation == .appVideo || packet.operation == .appEnded {
             onAppPacket?(packet); return
         }

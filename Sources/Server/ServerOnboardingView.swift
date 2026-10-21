@@ -16,7 +16,7 @@ struct ServerOnboardingView: View {
     ]
 
     var body: some View {
-        NocturneOnboarding(product: "Nocturne Server", steps: ["Welcome", "Mac permissions", "Pair your device"], step: step,
+        NocturneOnboarding(product: "Nocturne", steps: ["Welcome", "Mac permissions", "Pair your device"], step: step,
             scene: step == 0 ? .welcome : step == 1 ? .permissions : .pairing,
             title: titles[step], subtitle: subtitles[step],
             action: step == 2 ? (model.starting ? "Starting server…" : model.running ? "Pair a device" : "Start & pair a device") : "Continue",
@@ -39,7 +39,7 @@ struct ServerOnboardingView: View {
                             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
                             if !AXIsProcessTrustedWithOptions(options) { model.openPrivacy("Accessibility") }
                         }
-                        Text("Enable Nocturne Server in System Settings. If macOS asks you to quit and reopen, do that before starting. You can also finish permissions later.")
+                        Text("Enable Nocturne in System Settings. If macOS asks you to quit and reopen, do that before starting. You can also finish permissions later.")
                             .font(.system(size: 11)).foregroundStyle(MoonStyle.secondary).lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }

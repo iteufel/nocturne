@@ -295,7 +295,7 @@ NSNotificationName const NocturneStreamControlsRequestedNotification = @"Nocturn
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (self.addressRequest != request) return;
                 self.addressRequest = nil;
-                if (self.failed) self.failed(@"Cannot reach screen sharing on this host. Check that Nocturne Server is running, then try again.");
+                if (self.failed) self.failed(@"Cannot reach screen sharing on this host. Check that Nocturne is running, then try again.");
             });
             return;
         }
@@ -347,7 +347,7 @@ NSNotificationName const NocturneStreamControlsRequestedNotification = @"Nocturn
                                                              fallbackError:401 fallbackRequest:[manager newHttpServerInfoRequest]]];
         if (!remote) [self.discovery resumeDiscoveryForHost:host];
         if (self.pairingAttempt != attempt) return;
-        if (![info isStatusOk]) { [attempt pairFailed:info.statusMessage ?: @"Cannot reach this computer. Check that Nocturne Server is running."]; return; }
+        if (![info isStatusOk]) { [attempt pairFailed:info.statusMessage ?: @"Cannot reach this computer. Check that Nocturne is running."]; return; }
         if (![[[info getStringTag:TAG_UNIQUE_ID] trim] isEqualToString:attempt.hostID]) {
             [attempt pairFailed:@"This address belongs to a different computer. Add it again to pair securely."]; return;
         }
@@ -414,7 +414,7 @@ NSNotificationName const NocturneStreamControlsRequestedNotification = @"Nocturn
 - (void)requireQRPairing {
     [self cancelPairing]; [self.discovery startDiscovery]; [self publishHosts];
     if (self.pairingRequired) self.pairingRequired();
-    else if (self.failed) self.failed(@"Scan the QR code in Nocturne Server to pair this computer.");
+    else if (self.failed) self.failed(@"Scan the QR code in Nocturne to pair this computer.");
 }
 - (void)pairFailed:(NSString *)message {
     dispatch_async(dispatch_get_main_queue(), ^{

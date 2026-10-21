@@ -16,6 +16,7 @@ public enum Operation: String, Codable {
     case displayPrepare, displayHeartbeat, displayRelease
     case microphoneStart, microphoneAudio, microphoneStop
     case appList, appIcon, appLaunch, appOpen, appResize, appInput, appHeartbeat, appClose, appVideo, appEnded
+    case desktopList, desktopOpen, desktopResize, desktopInput, desktopHeartbeat, desktopClose, desktopVideo, desktopAudio, desktopEnded
 }
 
 public struct RemoteTerminal: Codable, Identifiable, Equatable {
@@ -61,6 +62,7 @@ public struct Packet: Codable {
     public var eof: Bool? = nil
     public var files: [RemoteFile]? = nil
     public var capabilities: [String]? = nil
+    public var screenLocked: Bool? = nil
     public var certificate: Data? = nil
     public var signature: Data? = nil
     public var enrollmentToken: Data? = nil
@@ -73,6 +75,9 @@ public struct Packet: Codable {
     public var viewport: AppWindowViewport? = nil
     public var input: AppWindowInput? = nil
     public var video: AppWindowVideoFrame? = nil
+    public var displays: [RemoteDesktopDisplay]? = nil
+    public var displayID: UInt32? = nil
+    public var audio: DesktopAudioFrame? = nil
     public init(_ operation: Operation, id: String = UUID().uuidString) { self.operation = operation; self.id = id }
     public func reply(error: String? = nil) -> Packet {
         var result = Packet(operation, id: id); result.error = error; return result
@@ -83,13 +88,13 @@ public enum NocturneError: LocalizedError, Equatable {
     case invalidInvitation, invalidFrame, disconnected, timeout, remote(String), invalidPath, permissionDenied, invalidTransfer
     public var errorDescription: String? {
         switch self {
-        case .invalidInvitation: return "This QR code is invalid. Scan a new QR code from Nocturne Server on your computer."
+        case .invalidInvitation: return "This QR code is invalid. Scan a new QR code from Nocturne on your computer."
         case .invalidFrame: return "The server sent an invalid message."
         case .disconnected: return "Connection closed. Reconnect to your computer to continue."
-        case .timeout: return "The computer did not respond in time. Check that Nocturne Server is running."
+        case .timeout: return "The computer did not respond in time. Check that Nocturne is running."
         case .remote(let message): return message
         case .invalidPath: return "This path is outside the shared folder or contains a symbolic link."
-        case .permissionDenied: return "Enable this feature in Nocturne Server on your computer."
+        case .permissionDenied: return "Enable this feature in Nocturne on your computer."
         case .invalidTransfer: return "The transfer is incomplete or out of order. Start it again."
         }
     }

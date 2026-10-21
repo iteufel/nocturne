@@ -382,9 +382,9 @@ jobs:
       - name: Save the notarized Mac download
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: Nocturne-Server-macOS-arm64
+          name: Nocturne-macOS-arm64
           path: |
-            .build/MacRelease/Nocturne-Server-macOS-arm64.zip
+            .build/MacRelease/Nocturne-macOS-arm64.zip
             .build/MacRelease/SHA256SUMS.txt
           retention-days: 7
           if-no-files-found: error
@@ -392,14 +392,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' '.build/MacRelease/Nocturne Server.app/Contents/Info.plist')
+          version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' '.build/MacRelease/Nocturne.app/Contents/Info.plist')
           build="$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
           cat > "$RUNNER_TEMP/mac-release-notes.md" <<EOF
-          Nocturne Server for Apple Silicon Macs running macOS 14 or later.
+          Nocturne for Apple Silicon Macs running macOS 14 or later.
 
           Signed with Developer ID, notarized by Apple, and verified by Gatekeeper.
-          Download the ZIP, unzip it, quit an older Nocturne Server if it is running,
-          and move Nocturne Server.app to Applications.
+          Download the ZIP, unzip it, quit any running copy of Nocturne,
+          and move Nocturne.app to Applications.
 
           This is an early preview. Virtual-display and monitor-off features have
           an unresolved black-screen issue; keep those features disabled.
@@ -408,9 +408,9 @@ jobs:
           SHA256SUMS.txt contains the download checksum.
           EOF
           release_url=$(gh release create "server-v$version-$build" \
-            .build/MacRelease/Nocturne-Server-macOS-arm64.zip \
+            .build/MacRelease/Nocturne-macOS-arm64.zip \
             .build/MacRelease/SHA256SUMS.txt \
-            --target "$GITHUB_SHA" --title "Nocturne Server $version ($build)" \
+            --target "$GITHUB_SHA" --title "Nocturne $version ($build)" \
             --prerelease --notes-file "$RUNNER_TEMP/mac-release-notes.md")
           printf 'Signed and notarized Mac release: %s\n' "$release_url" >> "$GITHUB_STEP_SUMMARY"
       - name: Save Mac signing diagnostics

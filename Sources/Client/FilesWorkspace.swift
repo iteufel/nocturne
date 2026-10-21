@@ -20,7 +20,7 @@ struct FilesWorkspace: View {
             if connection.state != .connected {
                 ServerEmptyView(icon: "folder", title: "Less sending.\nMore doing.", detail: "Browse your computer’s shared folder and move files between devices, right here.", action: connect)
             } else if !connection.capabilities.contains("files") {
-                ContentUnavailableView("Allow file sharing", systemImage: "folder.badge.gearshape", description: Text("Enable File sharing in Nocturne Server on your computer, then reconnect."))
+                ContentUnavailableView("Allow file sharing", systemImage: "folder.badge.gearshape", description: Text("Enable File sharing in Nocturne on your computer, then reconnect."))
             } else {
                 HStack(spacing: 12) {
                     if !path.isEmpty { Button("Back", systemImage: "chevron.left") { path = path.split(separator: "/").dropLast().joined(separator: "/"); Task { await refresh() } }.labelStyle(.iconOnly).buttonStyle(NocturneGlassButtonStyle()) }

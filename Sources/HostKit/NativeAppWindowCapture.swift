@@ -111,11 +111,13 @@ final class AppWindowVideoEncoder: @unchecked Sendable {
             }
         }
     }
-    func encode(_ sample: CMSampleBuffer) {
+    func encode(_ sample: CMSampleBuffer, requiresScreenStatus: Bool = true) {
         guard !pending, let session, CMSampleBufferIsValid(sample),
-              let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-              let raw = attachments.first?[.status] as? Int, raw == SCFrameStatus.complete.rawValue,
               let image = CMSampleBufferGetImageBuffer(sample) else { return }
+        if requiresScreenStatus {
+            guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+                  let raw = attachments.first?[.status] as? Int, raw == SCFrameStatus.complete.rawValue else { return }
+        }
         pending = true
         let epoch = generation
         let properties: CFDictionary? = forceKeyframe ? [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary : nil

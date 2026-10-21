@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleDevelopmentRegion</key><string>en</string>
-<key>CFBundleDisplayName</key><string>Nocturne Server</string>
+<key>CFBundleDisplayName</key><string>Nocturne</string>
 <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
 <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
@@ -14,7 +14,7 @@
 <!-- Auxiliary executables share this bundle. Only the main UI opts into the Dock. -->
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
-<key>NSLocalNetworkUsageDescription</key><string>Connect your iPhone and iPad directly to this Mac.</string>
+<key>NSLocalNetworkUsageDescription</key><string>Connect directly to your paired Macs, iPhones, and iPads for streaming.</string>
 <key>NSBonjourServices</key><array><string>_nocturne._tcp</string><string>_nvstream._tcp</string></array>
 <key>NSScreenCaptureUsageDescription</key><string>Stream this Mac’s display to your paired devices.</string>
 <key>NSAudioCaptureUsageDescription</key><string>Include your Mac’s audio in the stream.</string>

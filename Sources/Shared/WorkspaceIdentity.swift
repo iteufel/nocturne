@@ -23,7 +23,7 @@ public struct WorkspaceIdentity {
               let key = SecCertificateCopyKey(cert),
               SecKeyVerifySignature(key, .rsaSignatureMessagePKCS1v15SHA256,
                                     message(for: challenge) as CFData, signature as CFData, nil) else {
-            throw NocturneError.remote("This device could not be authenticated. Pair it again from Nocturne Server.")
+            throw NocturneError.remote("This device could not be authenticated. Pair it again from Nocturne.")
         }
         return fingerprint(certificate)
     }

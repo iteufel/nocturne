@@ -120,7 +120,7 @@ struct ComputersView: View {
                         MoonMark(size: 42)
                         Text("Your desktop, wherever you are.")
                             .font(.system(size: 27, weight: .semibold, design: .rounded))
-                        Text("Start Nocturne Server on your host, choose Pair a device, then scan its QR code.")
+                        Text("Start Nocturne on your host, choose Pair a device, then scan its QR code.")
                             .font(.subheadline).foregroundStyle(.secondary)
                         Button("Add host", systemImage: "qrcode.viewfinder") { model.showAdd = true }
                             .buttonStyle(PrimaryButtonStyle())
@@ -247,7 +247,7 @@ struct AppLibraryView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     Text("Pick up where\nyou left off.").font(.system(size: 34, weight: .semibold, design: .rounded)).tracking(-1)
                     HStack { StatusPill(label: "Paired", active: true); Text("\(model.preferences.resolution) · \(model.preferences.frameRate) fps").font(.caption).foregroundStyle(MoonStyle.secondary) }
-                    if model.apps.isEmpty { ContentUnavailableView("No apps yet", systemImage: "square.grid.2x2", description: Text("Restart Nocturne Server on your computer, then reconnect to load your desktop.")) }
+                    if model.apps.isEmpty { ContentUnavailableView("No apps yet", systemImage: "square.grid.2x2", description: Text("Restart Nocturne on your computer, then reconnect to load your desktop.")) }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 16) {
                         ForEach(model.apps) { app in
                             Button { model.stream(app) } label: {

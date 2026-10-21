@@ -22,6 +22,7 @@ final class ServerModel: ObservableObject {
     private let engineExecutable: URL
     private let port: UInt16
     private let appWindows = AppWindowSessionManager(host: NativeAppWindowHost())
+    private let desktop = DesktopSessionManager(host: NativeDesktopHost())
     @Published private(set) var running = false
     @Published private(set) var starting = false
     @Published private(set) var status = "Stopped"
@@ -119,7 +120,7 @@ final class ServerModel: ObservableObject {
             do {
                 try Task.checkCancellation()
                 guard generation == epoch else { return }
-                guard let deviceStore else { throw NocturneError.remote("The saved device list could not be loaded. Restart Nocturne Server and try again.") }
+                guard let deviceStore else { throw NocturneError.remote("The saved device list could not be loaded. Restart Nocturne and try again.") }
                 let key = try keyProvider("server-key")
                 guard key.count == 32 else { throw NocturneError.invalidInvitation }
                 secret = key
@@ -130,7 +131,7 @@ final class ServerModel: ObservableObject {
                     guard generation == epoch, !Task.isCancelled else { tunnel.stop(); return }
                     remoteTunnel = tunnel
                 }
-                let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: configuration.terminal, files: configuration.files, microphone: configuration.microphone), appWindows: configuration.screenSharing ? appWindows : nil)
+                let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: configuration.terminal, files: configuration.files, microphone: configuration.microphone), appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil)
                 if let tunnel = remoteTunnel {
                     host.authorizeRemoteDevice = { [weak tunnel] port, device in
                         guard let tunnel else { throw NocturneError.disconnected }
@@ -198,6 +199,7 @@ final class ServerModel: ObservableObject {
     }
     func stop() {
         appWindows.stop()
+        desktop.stop()
         generation = UUID(); startTask?.cancel(); startTask = nil; pollTask?.cancel(); pollTask = nil
         screenSharingTask?.cancel(); screenSharingTask = nil; screenSharingStatus = "Stopped"
         screenSharingError = nil
