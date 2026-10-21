@@ -20,7 +20,7 @@ public struct AppWindowVideoAssembler {
     public init() {}
     public mutating func reset() { id = nil; data = Data(); expected = 0; sets = [] }
     public mutating func receive(_ packet: Packet) throws -> AppWindowVideoFrame? {
-        guard packet.operation == .appVideo, let video = packet.video, video.isValid else { throw NocturneError.invalidFrame }
+        guard [.appVideo, .desktopVideo].contains(packet.operation), let video = packet.video, video.isValid else { throw NocturneError.invalidFrame }
         if packet.transferID == nil, packet.offset == nil, packet.size == nil { reset(); return video }
         guard let frameID = packet.transferID, !frameID.isEmpty, frameID.utf8.count <= 64,
               let offset = packet.offset, let total = packet.size,

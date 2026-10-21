@@ -16,6 +16,7 @@ public enum Operation: String, Codable {
     case displayPrepare, displayHeartbeat, displayRelease
     case microphoneStart, microphoneAudio, microphoneStop
     case appList, appIcon, appLaunch, appOpen, appResize, appInput, appHeartbeat, appClose, appVideo, appEnded
+    case desktopList, desktopOpen, desktopResize, desktopInput, desktopHeartbeat, desktopClose, desktopVideo, desktopAudio, desktopEnded
 }
 
 public struct RemoteTerminal: Codable, Identifiable, Equatable {
@@ -73,6 +74,9 @@ public struct Packet: Codable {
     public var viewport: AppWindowViewport? = nil
     public var input: AppWindowInput? = nil
     public var video: AppWindowVideoFrame? = nil
+    public var displays: [RemoteDesktopDisplay]? = nil
+    public var displayID: UInt32? = nil
+    public var audio: DesktopAudioFrame? = nil
     public init(_ operation: Operation, id: String = UUID().uuidString) { self.operation = operation; self.id = id }
     public func reply(error: String? = nil) -> Packet {
         var result = Packet(operation, id: id); result.error = error; return result

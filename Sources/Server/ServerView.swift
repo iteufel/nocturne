@@ -2,9 +2,12 @@ import SwiftUI
 import CoreImage.CIFilterBuiltins
 import NocturneKit
 import NocturneHostKit
+import NocturneMacClient
 
 struct ServerView: View {
     @ObservedObject var model: ServerModel
+    @ObservedObject var client: MacClientModel
+    @Environment(\.openWindow) private var openWindow
     @State private var reset = false
     @State private var deviceToRemove: ServerDevice?
     @State private var selected: String? = "Overview"
@@ -20,11 +23,25 @@ struct ServerView: View {
                     model.showOnboarding = false
                     if pair { model.pair() }
                 }
+                .safeAreaInset(edge: .bottom) {
+                    Button("Connect to another Mac", systemImage: "desktopcomputer") {
+                        onboardingComplete = true; model.showOnboarding = false; selected = "Computers"
+                    }.buttonStyle(NocturneGlassButtonStyle()).padding(.bottom, 16)
+                }
             } else { workspace }
         }
         .sheet(isPresented: $model.showPairing) { if let invitation = model.invitation { ServerPairingView(invitation: invitation) } }
-        .alert("Nocturne Server", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
+        .sheet(isPresented: $client.showAddHost) { MacAddHostView(client: client) }
+        .alert("Nocturne", isPresented: Binding(get: { model.error != nil || (client.error != nil && !client.showAddHost) }, set: {
+            if !$0 { model.error = nil; client.error = nil }
+        })) {
+            Button("OK") { model.error = nil; client.error = nil }
+        } message: { Text(model.error ?? client.error ?? "") }
         .task(id: needsOnboarding) { if !needsOnboarding { onboardingComplete = true } }
+        .onChange(of: client.showAddHost, initial: true) { _, show in
+            if show { onboardingComplete = true; model.showOnboarding = false; selected = "Computers" }
+        }
+        .onChange(of: client.session != nil) { _, connected in if connected { openWindow(id: "remote-desktop") } }
     }
     private var workspace: some View {
         NavigationSplitView {
@@ -33,6 +50,9 @@ struct ServerView: View {
                     Label("Overview", systemImage: "square.grid.2x2").tag("Overview")
                     Label("Sharing", systemImage: "folder").tag("Sharing")
                     Label("Devices", systemImage: "ipad.and.iphone").tag("Devices")
+                }
+                Section("Connect") {
+                    Label("Computers", systemImage: "desktopcomputer").tag("Computers")
                 }
             }
             .listStyle(.sidebar)
@@ -45,20 +65,23 @@ struct ServerView: View {
             }
             .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
         } detail: {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
-                    if selected == "Overview" || selected == nil { overview }
-                    if selected == "Sharing" { sharing }
-                    if selected == "Devices" { devices }
-                }.padding(32).frame(maxWidth: 950).frame(maxWidth: .infinity)
-            }
-            .background { NocturneBackdrop() }
-            .navigationTitle(selected ?? "Overview")
-            .safeAreaInset(edge: .bottom) { if selected == "Sharing" { ServerApplySettingsView(model: model) } }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Pair a device", systemImage: "plus") { model.pair() }
-                        .help("Pair an iPhone or iPad")
+            if selected == "Computers" { MacComputersView(client: client) }
+            else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 26) {
+                        if selected == "Overview" || selected == nil { overview }
+                        if selected == "Sharing" { sharing }
+                        if selected == "Devices" { devices }
+                    }.padding(32).frame(maxWidth: 950).frame(maxWidth: .infinity)
+                }
+                .background { NocturneBackdrop() }
+                .navigationTitle(selected ?? "Overview")
+                .safeAreaInset(edge: .bottom) { if selected == "Sharing" { ServerApplySettingsView(model: model) } }
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Pair a device", systemImage: "plus") { model.pair() }
+                            .help("Pair an iPhone, iPad, or Mac")
+                    }
                 }
             }
         }.navigationSplitViewStyle(.balanced).foregroundStyle(MoonStyle.silver)
@@ -267,6 +290,7 @@ struct ServerView: View {
 struct ServerPairingView: View {
     let invitation: PairingInvitation
     @Environment(\.dismiss) private var dismiss
+    @State private var copied = false
     var body: some View {
         VStack(spacing: 20) {
             HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(NocturneGlassButtonStyle()).keyboardShortcut(.defaultAction) }
@@ -276,6 +300,13 @@ struct ServerPairingView: View {
                 Image(nsImage: image).interpolation(.none).resizable().frame(width: 210, height: 210).padding(16).background(.white, in: RoundedRectangle(cornerRadius: 18))
             }
             Text(invitation.name).font(.subheadline.weight(.medium)).foregroundStyle(MoonStyle.secondary)
+            Button(copied ? "Pairing code copied" : "Copy pairing code", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(invitation.url.absoluteString, forType: .string)
+                copied = true
+            }.buttonStyle(NocturneGlassButtonStyle())
+            Text("On another Mac, choose Computers → Add host and paste the code.")
+                .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Text("This code pairs one device and expires after five minutes.\nKeep it private. Remove devices individually in Devices.").font(.caption2).foregroundStyle(MoonStyle.secondary).multilineTextAlignment(.center)
         }.padding(28).frame(width: 440).background { NocturneBackdrop() }.tint(MoonStyle.accent)
     }

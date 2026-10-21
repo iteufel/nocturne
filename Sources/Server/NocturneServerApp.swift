@@ -1,5 +1,6 @@
 import SwiftUI
 import NocturneHostKit
+import NocturneMacClient
 
 @main
 enum NocturneServerMain {
@@ -17,14 +18,18 @@ struct NocturneServerApp: App {
     @AppStorage("nocturne.appearance") private var appearance = NocturneAppearance.system
     var body: some Scene {
         WindowGroup("Nocturne Server", id: "main") {
-            ServerView(model: delegate.model).tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
+            ServerView(model: delegate.model, client: delegate.client).tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
                 .frame(minWidth: 780, minHeight: 620)
         }.defaultSize(width: 1_040, height: 760).windowToolbarStyle(.unified)
+        Window("Remote desktop", id: "remote-desktop") {
+            MacDesktopWindow(client: delegate.client)
+                .frame(minWidth: 640, minHeight: 400)
+        }.defaultSize(width: 1_280, height: 800).windowToolbarStyle(.unified)
         Settings {
             ServerSettingsView(model: delegate.model).tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
         }
         MenuBarExtra("Nocturne Server", systemImage: "moon.fill") {
-            ServerMenu(model: delegate.model)
+            ServerMenu(model: delegate.model, client: delegate.client)
         }
     }
 }
@@ -32,17 +37,35 @@ struct NocturneServerApp: App {
 @MainActor
 final class NocturneServerDelegate: NSObject, NSApplicationDelegate {
     let model = ServerModel()
+    let client = MacClientModel()
     func applicationDidFinishLaunching(_ notification: Notification) { model.startEnabledServices() }
     // The app owns the server even after its last window closes.
-    func applicationWillTerminate(_ notification: Notification) { model.stop() }
+    func applicationWillTerminate(_ notification: Notification) { client.disconnect(); model.stop() }
+}
+
+private struct MacDesktopWindow: View {
+    @ObservedObject var client: MacClientModel
+    var body: some View {
+        if let stream = client.session { MacDesktopWorkspace(stream: stream, client: client) }
+        else { ContentUnavailableView("No Mac connected", systemImage: "desktopcomputer", description: Text("Choose a host in Computers to open its desktop.")) }
+    }
 }
 
 struct ServerMenu: View {
     @ObservedObject var model: ServerModel
+    @ObservedObject var client: MacClientModel
     @Environment(\.openWindow) private var openWindow
     var body: some View {
         Text(model.running ? "\(model.connections) connected devices" : "Sharing off")
         Button("Open Nocturne Server") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
+        Button("Connect to a Mac…") {
+            client.showAddHost = true
+            openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
+        }.disabled(client.session != nil)
+        if client.session != nil {
+            Button("Show remote desktop") { openWindow(id: "remote-desktop"); NSApp.activate(ignoringOtherApps: true) }
+            Button("Disconnect remote desktop") { client.disconnect() }
+        }
         Button("Welcome to Nocturne…") {
             model.showOnboarding = true
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)

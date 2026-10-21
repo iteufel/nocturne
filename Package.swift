@@ -6,7 +6,8 @@ let package = Package(
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .library(name: "NocturneKit", targets: ["NocturneKit"]),
-        .library(name: "NocturneHostKit", targets: ["NocturneHostKit"])
+        .library(name: "NocturneHostKit", targets: ["NocturneHostKit"]),
+        .library(name: "NocturneMacClient", targets: ["NocturneMacClient"])
     ],
     targets: [
         .binaryTarget(name: "NocturneRemote", path: "Vendor/NocturneRemote.xcframework"),
@@ -19,9 +20,10 @@ let package = Package(
             cSettings: [.unsafeFlags(["-fobjc-arc"])], linkerSettings: [.linkedFramework("CoreGraphics"), .linkedFramework("Foundation")]),
         .target(name: "MicrophoneBridge", path: "Sources/MicrophoneBridge", publicHeadersPath: "include", linkerSettings: [.linkedFramework("CoreAudio")]),
         .target(name: "NocturneHostKit", dependencies: ["NocturneKit", "PTYBridge", "DisplayBridge", "MicrophoneBridge"], path: "Sources/HostKit"),
+        .target(name: "NocturneMacClient", dependencies: ["NocturneKit"], path: "Sources/MacClient"),
         // Compile the app model for host lifecycle integration tests without launching the UI.
         .target(name: "NocturneServerModel", dependencies: ["NocturneKit", "NocturneHostKit"], path: "Sources/Server",
-            exclude: ["NocturneServerApp.swift", "ServerView.swift", "ServerOnboardingView.swift"]),
-        .testTarget(name: "NocturneKitTests", dependencies: ["NocturneKit", "NocturneHostKit", "NocturneFiles", "NocturneServerModel"], path: "Tests", exclude: ["Client"])
+            exclude: ["NocturneServerApp.swift", "ServerView.swift", "ServerOnboardingView.swift", "MacComputersView.swift", "MacDesktopWorkspace.swift"]),
+        .testTarget(name: "NocturneKitTests", dependencies: ["NocturneKit", "NocturneHostKit", "NocturneFiles", "NocturneServerModel", "NocturneMacClient"], path: "Tests", exclude: ["Client"])
     ]
 )

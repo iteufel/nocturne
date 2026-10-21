@@ -194,7 +194,7 @@ struct AppWindowEventState {
     private var buttons = Set<Int>()
     private var keys = Set<UInt16>()
     private var lastPointer = CGPoint.zero
-    mutating func events(for input: AppWindowInput, frame: CGRect, windowID: CGWindowID) -> [CGEvent] {
+    mutating func events(for input: AppWindowInput, frame: CGRect, windowID: CGWindowID?) -> [CGEvent] {
         let point = CGPoint(x: frame.minX + min(input.x * frame.width, max(0, frame.width - 1)),
                             y: frame.minY + min(input.y * frame.height, max(0, frame.height - 1)))
         let source = CGEventSource(stateID: .privateState)
@@ -206,13 +206,15 @@ struct AppWindowEventState {
             if input.kind == .up { buttons.remove(input.button) }
             let button = CGMouseButton(rawValue: UInt32(input.button)) ?? .left
             let type: CGEventType
-            if input.kind == .move { type = buttons.contains(0) ? .leftMouseDragged : buttons.contains(1) ? .rightMouseDragged : .mouseMoved }
+            if input.kind == .move { type = buttons.contains(0) ? .leftMouseDragged : buttons.contains(1) ? .rightMouseDragged : buttons.contains(2) ? .otherMouseDragged : .mouseMoved }
             else if input.button == 0 { type = input.kind == .down ? .leftMouseDown : .leftMouseUp }
             else if input.button == 1 { type = input.kind == .down ? .rightMouseDown : .rightMouseUp }
             else { type = input.kind == .down ? .otherMouseDown : .otherMouseUp }
             event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: button)
-            event?.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(windowID))
-            event?.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(windowID))
+            if let windowID {
+                event?.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(windowID))
+                event?.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(windowID))
+            }
             event?.setIntegerValueField(.mouseEventClickState, value: Int64(input.clickCount ?? 1))
         case .scroll:
             event = CGEvent(scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2,
@@ -233,15 +235,17 @@ struct AppWindowEventState {
         event?.flags = CGEventFlags(rawValue: input.modifiers & 0x00ff0000)
         return event.map { [$0] } ?? []
     }
-    mutating func release(windowID: CGWindowID) -> [CGEvent] {
+    mutating func release(windowID: CGWindowID?) -> [CGEvent] {
         let source = CGEventSource(stateID: .privateState)
         var events: [CGEvent] = []
         for button in buttons.sorted() {
             let type: CGEventType = button == 0 ? .leftMouseUp : button == 1 ? .rightMouseUp : .otherMouseUp
             if let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: lastPointer,
                                   mouseButton: CGMouseButton(rawValue: UInt32(button)) ?? .left) {
-                event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(windowID))
-                event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(windowID))
+                if let windowID {
+                    event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(windowID))
+                    event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(windowID))
+                }
                 event.flags = []; events.append(event)
             }
         }

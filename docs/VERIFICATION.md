@@ -1,4 +1,11 @@
-# Verification — 19 October 2026
+# Verification — 21 October 2026
+
+## Integrated Mac client (October 21, 2026)
+
+- `swift test`: 100 shared/host/client tests, eight existing opt-in skips, zero failures. Seven new Mac-client tests cover persistent Security-generated device identity, locked/corrupt credential handling, self-pairing rejection, connection/session ownership, capture cancellation, lease expiry, aspect-fit input, held-key release, authenticated video presentation and keyboard delivery, viewer resizing, display switching, saved-host reconnection, unsupported hosts, and failed pairing persistence. Disconnecting the client leaves another authenticated connection to the host usable.
+- iPad Pro 13-inch (M5), iOS 27 simulator: 66 client tests, three opt-in skips, zero failures; `MacClientIOSFinal.xcresult` reports Passed. The iOS build-for-testing and Mac app build passed. The Mac bundle passed deep/strict signature verification. The running Mac UI was checked through Computers, Add host, and invalid-code validation.
+- The Mac integration test uses real TLS workspace connections and software-encoded H.264 with a recording desktop host. It does not establish physical Mac-to-Mac capture, audible system sound, hardware input, multi-monitor switching, or WAN playback. Those remain live checks on two Macs. The native Mac viewer currently streams existing displays; iOS adaptive virtual displays and other iOS-only features are documented in Usage.
+- Evidence: `.build/mac-client-verified-all-tests.log`, `.build/mac-client-final-tests.log`, `.build/mac-client-app-final.log`, `.build/mac-client-ios-build.log`, `.build/mac-client-ios-final-tests.log`, and `.build/MacClientIOSFinal.xcresult`. The first iPad run passed its suite but stalled collecting Xcode diagnostics; the final run disabled that collection and produced the passing result bundle.
 
 ## iPad pointer lock (October 19, 2026)
 
