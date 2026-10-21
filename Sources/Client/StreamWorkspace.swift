@@ -200,7 +200,7 @@ struct StreamControlsMenu: View {
     private var microphoneExplanation: String {
         if let error = microphone.error { return error }
         if !session.videoReady { return "Your stream is still connecting. Unmute after it starts." }
-        return "On your Mac, open Nocturne Server → Sharing, enable Client microphone, and install the microphone input. Pair using the server’s QR code and reconnect after enabling it.\n\nChoose Nocturne Microphone as the input in Discord or your game. Headphones help keep game audio out of voice chat."
+        return "On your Mac, open Nocturne → Sharing, enable Client microphone, and install the microphone input. Pair using the server’s QR code and reconnect after enabling it.\n\nChoose Nocturne Microphone as the input in Discord or your game. Headphones help keep game audio out of voice chat."
     }
 }
 

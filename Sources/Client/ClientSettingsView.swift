@@ -30,7 +30,7 @@ struct ClientSettingsView: View {
             Section("Picture & sound") {
                 Picker("Resolution", selection: $model.preferences.resolution) { ForEach(["Match device", "720p", "1080p", "1440p", "4K"], id: \.self) { Text($0) } }
                 if model.preferences.resolution == "Match device" {
-                    Text("Matches the Mac desktop to your display and follows rotation and window resizing. Enable Headless virtual monitor in Nocturne Server’s display settings and pair using its QR code. Video briefly reconnects when the size changes.")
+                    Text("Matches the Mac desktop to your display and follows rotation and window resizing. Enable Headless virtual monitor in Nocturne’s display settings and pair using its QR code. Video briefly reconnects when the size changes.")
                         .font(.caption).foregroundStyle(MoonStyle.secondary)
                 }
                 Picker("Frame rate", selection: $model.preferences.frameRate) { Text("30 fps").tag(30); Text("60 fps").tag(60); Text("120 fps").tag(120) }
@@ -61,7 +61,7 @@ struct ClientSettingsView: View {
             }.listRowBackground(MoonStyle.surface)
             Section("Microphone") {
                 Label("Voice chat on your Mac", systemImage: "mic")
-                Text("Enable Client microphone in Nocturne Server → Sharing and install the microphone input. In Discord or your game, select Nocturne Microphone. Open Controls → Microphone in your stream to unmute.")
+                Text("Enable Client microphone in Nocturne → Sharing and install the microphone input. In Discord or your game, select Nocturne Microphone. Open Controls → Microphone in your stream to unmute.")
                     .font(.caption).foregroundStyle(MoonStyle.secondary)
                 Text("Each stream starts muted. Backgrounding, disconnecting, resizing the stream, or changing audio devices mutes it again. Headphones are recommended; Bluetooth microphone use can reduce playback quality.")
                     .font(.caption).foregroundStyle(MoonStyle.secondary)

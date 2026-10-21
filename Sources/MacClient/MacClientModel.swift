@@ -6,6 +6,8 @@ import NocturneKit
 public final class MacClientModel: ObservableObject {
     @Published public private(set) var pairedServers = PairedServerList()
     @Published public private(set) var session: MacDesktopSession?
+    @Published public private(set) var apps: MacAppsModel?
+    @Published public private(set) var appSessions: [String: MacDesktopSession] = [:]
     @Published public var error: String?
     @Published public var showAddHost = false
     private var loaded = false
@@ -70,9 +72,52 @@ public final class MacClientModel: ObservableObject {
         session = stream
     }
     public func disconnect() { session?.stop(); session = nil }
+    public func browseApps(_ id: String) {
+        do {
+            if apps?.serverID == id { return }
+            guard let paired = pairedServers[id] else { throw NocturneError.disconnected }
+            if identity == nil { identity = try makeIdentity() }
+            guard let identity else { throw NocturneError.disconnected }
+            closeApps()
+            let browser = MacAppsModel(invitation: paired.invitation, identity: identity)
+            browser.onAuthenticated = { [weak self, weak browser] invitation in
+                guard let self, let browser, self.apps === browser else { throw NocturneError.disconnected }
+                var saved = self.pairedServers; saved.pair(invitation); try self.save(saved)
+            }
+            apps = browser; error = nil
+        } catch { self.error = error.localizedDescription }
+    }
+    public func closeApps() { apps?.stop(); apps = nil }
+    public func openAppWindow(_ window: RemoteAppWindow, from browser: MacAppsModel) -> String? {
+        do {
+            guard apps === browser, browser.connection.state == .connected,
+                  browser.windows.contains(window), let invitation = browser.connection.connectedInvitation,
+                  let identity else { throw NocturneError.disconnected }
+            let route = AppWindowRoute(serverID: browser.serverID, applicationID: window.applicationID,
+                windowID: window.id, title: window.title)
+            if appSessions[route.id] != nil { error = nil; return route.id }
+            guard appSessions.values.filter({ $0.serverID == route.serverID }).count < AppStreaming.maximumWindowsPerDevice else {
+                throw NocturneError.remote("Close an app stream before opening another window.")
+            }
+            let stream = MacDesktopSession(invitation: invitation, identity: identity, route: route)
+            stream.onAuthenticated = { [weak self, weak stream] invitation in
+                guard let self, let stream, self.appSessions[route.id] === stream else { throw NocturneError.disconnected }
+                var saved = self.pairedServers; saved.pair(invitation); try self.save(saved)
+            }
+            appSessions[route.id] = stream; error = nil; return route.id
+        } catch { self.error = error.localizedDescription; return nil }
+    }
+    public func disconnectApp(_ id: String) { appSessions.removeValue(forKey: id)?.stop() }
+    public func disconnectAll() {
+        disconnect(); closeApps()
+        let streams = Array(appSessions.values); appSessions = [:]; streams.forEach { $0.stop() }
+    }
     public func forget(_ id: String) {
         do {
-            guard session?.serverID != id else { throw NocturneError.remote("Disconnect this Mac before forgetting it.") }
+            guard session?.serverID != id, apps?.serverID != id,
+                  !appSessions.values.contains(where: { $0.serverID == id }) else {
+                throw NocturneError.remote("Close this Mac’s desktop, apps, and app windows before forgetting it.")
+            }
             guard loaded else { throw NocturneError.remote("Unlock your Keychain and load your saved hosts first.") }
             var saved = pairedServers; saved.remove(id); try save(saved)
         } catch { self.error = error.localizedDescription }

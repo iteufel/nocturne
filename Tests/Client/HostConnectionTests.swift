@@ -183,7 +183,7 @@ final class HostConnectionTests: XCTestCase {
         try await capture("paired-hosts", NavigationStack { PairedHostsView(model: model) })
         try await capture("host-details", NavigationStack { PairedHostDetailView(model: model, hostID: model.pairedServers.activeID!) })
         try await capture("paired-hosts-dark", NavigationStack { PairedHostsView(model: model) }, style: .dark)
-        engine.approved = false; engine.resolutionError = "Screen sharing could not start. Check Nocturne Server on your host, then try again."
+        engine.approved = false; engine.resolutionError = "Screen sharing could not start. Check Nocturne on your host, then try again."
         model.openHost(model.pairedServers.activeID!)
         try await waitUntil { model.hostErrors[model.pairedServers.activeID!] != nil }
         model.error = nil; model.page = .computers

@@ -12,7 +12,7 @@ struct MacComputersView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Another Mac.\nRight here.")
                         .font(.system(size: 38, weight: .semibold, design: .rounded)).tracking(-1.2)
-                    Text("Connect to a Mac running Nocturne Server. Your desktop opens in its own window, with sound, keyboard, and mouse.")
+                    Text("Connect to a Mac running Nocturne. Open its desktop with sound, keyboard, and mouse, or give each app window its own space.")
                         .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if let stream = client.session {
@@ -53,6 +53,9 @@ struct MacComputersView: View {
                                     Button("Connect") { client.connect(paired.id) }
                                         .buttonStyle(PrimaryButtonStyle()).disabled(client.session != nil)
                                         .accessibilityIdentifier("connectMac-\(paired.id)")
+                                    Button("Apps", systemImage: "square.grid.2x2") {
+                                        client.browseApps(paired.id); openWindow(id: "remote-apps")
+                                    }.accessibilityIdentifier("macApps-\(paired.id)")
                                     Menu {
                                         Button("Forget host", role: .destructive) { forgetting = paired }
                                             .disabled(client.session?.serverID == paired.id)
@@ -88,7 +91,7 @@ struct MacAddHostView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Label("Add a Mac", systemImage: "desktopcomputer").font(.title2.weight(.semibold))
-            Text("On the other Mac, open Nocturne Server → Pair a device → Copy pairing code. Paste that code here within five minutes.")
+            Text("On the other Mac, open Nocturne → Pair a device → Copy pairing code. Paste that code here within five minutes.")
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             SecureField("Pairing code", text: $code).textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("macPairingCode")

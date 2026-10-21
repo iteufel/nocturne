@@ -12,7 +12,7 @@ final class ServerDockTests: XCTestCase {
         let applications = NSWorkspace.shared.runningApplications.filter {
             $0.bundleURL?.standardizedFileURL == bundleURL
         }
-        let main = try XCTUnwrap(applications.first { $0.executableURL?.lastPathComponent == "Nocturne Server" })
+        let main = try XCTUnwrap(applications.first { $0.executableURL?.lastPathComponent == "Nocturne" })
         let engine = try XCTUnwrap(applications.first { $0.executableURL?.lastPathComponent == "nocturne-stream-host" },
             "Enable Screen sharing and apply before running this check; a stopped helper cannot verify the regression.")
         XCTAssertEqual(main.activationPolicy, .regular, "The main app must retain its Dock icon and menus")

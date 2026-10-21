@@ -120,7 +120,7 @@ final class ServerModel: ObservableObject {
             do {
                 try Task.checkCancellation()
                 guard generation == epoch else { return }
-                guard let deviceStore else { throw NocturneError.remote("The saved device list could not be loaded. Restart Nocturne Server and try again.") }
+                guard let deviceStore else { throw NocturneError.remote("The saved device list could not be loaded. Restart Nocturne and try again.") }
                 let key = try keyProvider("server-key")
                 guard key.count == 32 else { throw NocturneError.invalidInvitation }
                 secret = key

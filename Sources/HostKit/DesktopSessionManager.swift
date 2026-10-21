@@ -5,9 +5,14 @@ import NocturneKit
 public protocol DesktopCapture: AnyObject {
     var display: StreamDisplaySize { get }
     var displayID: UInt32 { get }
+    var screenLocked: Bool { get }
     func resize(_ viewport: AppWindowViewport) async throws
     func input(_ input: AppWindowInput) throws
     func stop()
+}
+
+public extension DesktopCapture {
+    var screenLocked: Bool { false }
 }
 
 @MainActor
@@ -56,7 +61,7 @@ public final class DesktopSessionManager {
                     capture.stop(); throw NocturneError.disconnected
                 }
                 lease?.capture = capture; lease?.touched = now()
-                reply.sessionID = id; reply.display = capture.display; reply.displayID = capture.displayID
+                reply.sessionID = id; reply.display = capture.display; reply.displayID = capture.displayID; reply.screenLocked = capture.screenLocked
             } catch {
                 if lease?.id == id, lease?.connection == connection { stop() }
                 throw error
@@ -65,6 +70,7 @@ public final class DesktopSessionManager {
             guard let current = lease, current.connection == connection, current.id == packet.sessionID,
                   let capture = current.capture else { throw NocturneError.permissionDenied }
             lease?.touched = now(); reply.sessionID = current.id
+            reply.display = capture.display; reply.displayID = capture.displayID; reply.screenLocked = capture.screenLocked
             if packet.operation == .desktopClose { stop() }
             else if packet.operation == .desktopInput {
                 guard let input = packet.input, input.isValid else { throw NocturneError.invalidFrame }

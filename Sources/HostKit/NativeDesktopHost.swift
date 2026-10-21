@@ -2,32 +2,51 @@ import AppKit
 import ScreenCaptureKit
 import AVFoundation
 import NocturneKit
+import DisplayBridge
 
 @MainActor
 public final class NativeDesktopHost: DesktopHosting {
     public init() {}
     public func displays() async throws -> [RemoteDesktopDisplay] {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        return content.displays.map { display in
-            let screen = NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID }
-            return RemoteDesktopDisplay(id: display.displayID, name: screen?.localizedName ?? "Display",
-                width: display.width, height: display.height, isMain: display.displayID == CGMainDisplayID())
+        // SCShareableContent can be unavailable at loginwindow. Enumerating
+        // displays must also work before the viewer opens the locked desktop.
+        var count: UInt32 = 0
+        guard CGGetActiveDisplayList(0, nil, &count) == .success else { throw NocturneError.disconnected }
+        var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &ids, &count) == .success else { throw NocturneError.disconnected }
+        return ids.prefix(Int(count)).map { id in
+            let screen = NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }
+            return RemoteDesktopDisplay(id: id, name: screen?.localizedName ?? "Display",
+                width: Int(CGDisplayBounds(id).width), height: Int(CGDisplayBounds(id).height), isMain: id == CGMainDisplayID())
         }.sorted { $0.isMain && !$1.isMain }
     }
     public func capture(displayID: UInt32?, viewport: AppWindowViewport,
                         send: @escaping AppWindowSend, ended: @escaping (Error) -> Void) async throws -> DesktopCapture {
         guard CGPreflightScreenCaptureAccess() else {
-            throw NocturneError.remote("Allow Nocturne Server in Screen & System Audio Recording on the host Mac, then reopen the app.")
+            throw NocturneError.remote("Allow Nocturne in Screen & System Audio Recording on the host Mac, then reopen the app.")
         }
         guard AXIsProcessTrusted() else {
-            throw NocturneError.remote("Allow Nocturne Server in Accessibility on the host Mac to control its desktop.")
+            throw NocturneError.remote("Allow Nocturne in Accessibility on the host Mac to control its desktop.")
         }
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let display = content.displays.first(where: { $0.displayID == (displayID ?? CGMainDisplayID()) }) else {
-            throw NocturneError.remote("This display is no longer connected. Refresh the host’s displays and try again.")
-        }
-        let capture = NativeDesktopCapture(source: display, send: send, ended: ended)
-        do { try await capture.start(viewport); return capture }
+        let requested = displayID ?? CGMainDisplayID()
+        let capture = DesktopCaptureSession(viewport: viewport, target: {
+            try DesktopCaptureSession.target(requested: requested, main: CGMainDisplayID(),
+                locked: NDDisplayLayout.isScreenLocked(), available: NDDisplayLayout.isSessionAvailable())
+        }, start: { target, viewport, ended in
+            if target.locked {
+                let capture = LockedDesktopCapture(displayID: target.displayID, send: send)
+                do { try await capture.start(viewport); return capture }
+                catch { capture.stop(); throw error }
+            }
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            guard let display = content.displays.first(where: { $0.displayID == target.displayID }) else {
+                throw NocturneError.remote("This display is no longer connected. Reconnect to refresh the host’s displays.")
+            }
+            let capture = NativeDesktopCapture(source: display, send: send, ended: ended)
+            do { try await capture.start(viewport); return capture }
+            catch { capture.stop(); throw error }
+        }, ended: ended)
+        do { try await capture.begin(); return capture }
         catch { capture.stop(); throw error }
     }
 }

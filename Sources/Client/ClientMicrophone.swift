@@ -61,7 +61,7 @@ final class ClientMicrophone: ObservableObject {
                 try await connection.connect(invitation, restoreTerminalSessions: false)
                 guard self.generation == epoch, !Task.isCancelled else { connection.disconnect(); return }
                 guard connection.capabilities.contains(MicrophoneFormat.capability) else {
-                    throw NocturneError.remote("Enable Client microphone in Nocturne Server → Sharing, then reconnect.")
+                    throw NocturneError.remote("Enable Client microphone in Nocturne → Sharing, then reconnect.")
                 }
                 let reply = try await connection.request(Packet(.microphoneStart), timeout: 5)
                 guard self.generation == epoch, !Task.isCancelled else { connection.disconnect(); return }

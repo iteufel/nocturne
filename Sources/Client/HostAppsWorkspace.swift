@@ -74,7 +74,7 @@ struct HostAppsWorkspace: View {
             if connection.state != .connected {
                 ContentUnavailableView {
                     Label("Your Mac apps", systemImage: "square.grid.2x2")
-                } description: { Text("Connect to Nocturne Server to browse and open your Mac’s apps.") }
+                } description: { Text("Connect to Nocturne to browse and open your Mac’s apps.") }
                 actions: {
                     Button(client.savedServerName == nil ? "Pair your Mac" : "Reconnect to Mac") {
                         if client.savedServerName == nil { client.showAdd = true }
@@ -82,7 +82,7 @@ struct HostAppsWorkspace: View {
                     }.buttonStyle(PrimaryButtonStyle()).disabled(connection.state == .connecting)
                 }
             } else if !connection.capabilities.contains(AppStreaming.capability) {
-                ContentUnavailableView("Update your Mac server", systemImage: "macwindow", description: Text("Install the latest Nocturne Server, then reconnect to open individual app windows."))
+                ContentUnavailableView("Update your Mac server", systemImage: "macwindow", description: Text("Install the latest Nocturne, then reconnect to open individual app windows."))
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
