@@ -21,6 +21,19 @@ function Invoke-Program([string]$File, [string[]]$Arguments) {
     if ($process.ExitCode -ne 0) { throw "$File exited with $($process.ExitCode)." }
     $process.Dispose()
 }
+function Remove-TestDirectory([string]$Path) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    while ([System.IO.Directory]::Exists($Path)) {
+        try { [System.IO.Directory]::Delete($Path, $true); return }
+        catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+            # Inno's final helper can remove children concurrently or briefly
+            # retain its executable after the main uninstaller has exited.
+            if (-not [System.IO.Directory]::Exists($Path)) { return }
+            if ([DateTime]::UtcNow -ge $deadline) { throw }
+            Start-Sleep -Milliseconds 100
+        }
+    }
+}
 $previous = "Nocturne-Windows-$Architecture-UpgradeFixture-Setup"
 & (Join-Path $PSScriptRoot 'build-windows-installer.ps1') -Architecture $Architecture -Version '0.9.0' -OutputName $previous
 $application = $null
@@ -55,14 +68,17 @@ try {
     $command = (Get-ItemProperty 'HKCU:\Software\Classes\nocturne\shell\open\command').'(default)'
     if (-not $command.Contains($executable)) { throw 'The pairing URL handler was not registered.' }
     Invoke-Program (Join-Path $installed 'unins000.exe') @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$(Join-Path $evidence 'uninstall.log')")
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    while ([System.IO.Directory]::Exists($installed) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 100 }
+    if ([System.IO.Directory]::Exists($installed)) { throw 'Uninstall did not finish removing the application directory.' }
     if ((Test-Path $executable) -or (Test-Path $registration)) { throw 'Uninstall left the app or its uninstall registration behind.' }
     if ((Get-FileHash (Join-Path $profile 'workspace.key')).Hash -ne $before -or -not (Test-Path (Join-Path $profile 'preferences.json'))) { throw 'Uninstall removed user data.' }
     if (Get-ItemProperty $runKey -Name 'Nocturne Server' -ErrorAction SilentlyContinue) { throw 'Uninstall left login startup pointing to a removed executable.' }
     'PASS: per-user install; native app startup; upgrade from 0.9.0 with a running app; pairing-key and startup preservation; URL handler; uninstall retaining user data.' | Set-Content (Join-Path $evidence 'result.txt')
 } finally {
     if ($application -and -not $application.HasExited) { $application.Kill(); $application.WaitForExit() }
-    if (Test-Path $testRoot) { Remove-Item $testRoot -Recurse -Force }
-    if (Test-Path $profile) { Remove-Item $profile -Recurse -Force }
+    Remove-TestDirectory $testRoot
+    Remove-TestDirectory $profile
     Remove-Item (Join-Path $release "$previous.exe") -ErrorAction SilentlyContinue
     $checksums = Join-Path $release "SHA256SUMS-$Architecture.txt"
     @(Get-Content $checksums | Where-Object { -not $_.Contains($previous) }) | Set-Content $checksums -Encoding utf8NoBOM
