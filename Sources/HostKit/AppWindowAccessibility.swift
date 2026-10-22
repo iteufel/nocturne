@@ -20,6 +20,7 @@ final class AppWindowAccessibility {
     private let originalPosition: CGPoint
     private var appliedSize: CGSize?
     private var appliedPosition: CGPoint?
+    private(set) var isResizable = true
     private var events = AppWindowEventState()
     init(pid: pid_t, windowID: CGWindowID) throws {
         guard AXIsProcessTrusted() else {
@@ -60,12 +61,38 @@ final class AppWindowAccessibility {
         return point
     }
     func resize(_ viewport: AppWindowViewport) throws -> CGSize {
-        let actual = try Self.resizeToMatch(viewport) { try self.applySize($0) }
-        appliedSize = actual
-        appliedPosition = frame?.origin
+        var settable = DarwinBoolean(false)
+        let status = AXUIElementIsAttributeSettable(element, kAXSizeAttribute as CFString, &settable)
+        if (status == .success && !settable.boolValue) || status == .attributeUnsupported || status == .notImplemented {
+            isResizable = false; return try Self.size(element)
+        }
+        let sizing = try Self.resizeIfPossible(viewport, currentSize: { try Self.size(self.element) }) { try self.applySize($0) }
+        let actual = sizing.size; isResizable = sizing.isResizable
+        if isResizable { appliedSize = actual; appliedPosition = frame?.origin }
         return actual
     }
-    static func resizeToMatch(_ viewport: AppWindowViewport, apply: (CGSize) throws -> CGSize) throws -> CGSize {
+    struct ResizeUnavailable: Error {}
+    static func resizeIfPossible(_ viewport: AppWindowViewport, currentSize: @escaping () throws -> CGSize,
+                                 apply: (CGSize) throws -> CGSize) throws -> (size: CGSize, isResizable: Bool) {
+        let before = try currentSize()
+        var accepted = true
+        let actual = try resizeToMatch(viewport, currentSize: { accepted = false; return try currentSize() }, apply: apply)
+        let matchesRequest = abs(actual.width - CGFloat(viewport.width)) < 1 && abs(actual.height - CGFloat(viewport.height)) < 1
+        // Some apps report a writable AX size but silently ignore the setter.
+        // Treat an unchanged, mismatched window as fixed rather than stretching it.
+        return (actual, accepted && (actual != before || matchesRequest))
+    }
+    static func resizeToMatch(_ viewport: AppWindowViewport, currentSize: (() throws -> CGSize)? = nil,
+                              apply: (CGSize) throws -> CGSize) throws -> CGSize {
+        do { return try resizeSupportedWindow(viewport, apply: apply) }
+        catch is ResizeUnavailable {
+            guard let currentSize else { throw ResizeUnavailable() }
+            let actual = try currentSize()
+            guard actual.width.isFinite, actual.height.isFinite, actual.width > 0, actual.height > 0 else { throw NocturneError.invalidFrame }
+            return actual
+        }
+    }
+    private static func resizeSupportedWindow(_ viewport: AppWindowViewport, apply: (CGSize) throws -> CGSize) throws -> CGSize {
         let requested = CGSize(width: viewport.width, height: viewport.height)
         let actual = try apply(requested)
         guard actual.width > 0, actual.height > 0 else { throw NocturneError.invalidFrame }
@@ -94,8 +121,10 @@ final class AppWindowAccessibility {
                 var position = Self.positionToFit(current.origin, size: requested, visibleFrame: visible)
                 if position != current.origin, let value = AXValueCreate(.cgPoint, &position) {
                     guard AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value) == .success else {
-                        throw NocturneError.remote("This Mac window could not be positioned to fit your screen.")
+                        guard AXIsProcessTrusted() else { throw NocturneError.permissionDenied }
+                        throw ResizeUnavailable()
                     }
+                    appliedPosition = position
                     // Position changes also complete asynchronously. Resizing
                     // against the old origin lets macOS clamp the tall window
                     // to the space below that origin, undoing the move.
@@ -112,7 +141,8 @@ final class AppWindowAccessibility {
         guard let value = AXValueCreate(.cgSize, &size) else { throw NocturneError.invalidFrame }
         let result = AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value)
         guard result == .success else {
-            throw NocturneError.remote("This Mac window cannot be resized. Choose a resizable window in Apps.")
+            guard AXIsProcessTrusted() else { throw NocturneError.permissionDenied }
+            throw ResizeUnavailable()
         }
         // AX setters return before the target app has laid out its window.
         // Reading immediately can report the previous size and reverse the
@@ -152,8 +182,12 @@ final class AppWindowAccessibility {
             // Some apps handle reopen by restoring their usual window size.
             // Keep the active stream's fitted geometry after that activation.
             if let appliedSize, frame?.size != appliedSize {
-                self.appliedSize = try applySize(appliedSize)
-                appliedPosition = frame?.origin
+                do {
+                    self.appliedSize = try applySize(appliedSize); appliedPosition = frame?.origin
+                } catch is ResizeUnavailable {
+                    isResizable = false
+                    _ = try Self.size(element)
+                }
             }
         }
         _ = AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
@@ -176,14 +210,14 @@ final class AppWindowAccessibility {
     }
     func release() {
         for event in events.release(windowID: id) { event.post(tap: .cghidEventTap) }
-        if let appliedSize, let current = try? Self.size(element), current == appliedSize {
-            let restorePosition = (try? Self.position(element)) == appliedPosition
+        let unchangedSize = appliedSize == nil || (try? Self.size(element)) == appliedSize
+        if let appliedSize, (try? Self.size(element)) == appliedSize {
             var original = originalSize
             if let value = AXValueCreate(.cgSize, &original) { _ = AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, value) }
-            if restorePosition {
-                var position = originalPosition
-                if let value = AXValueCreate(.cgPoint, &position) { _ = AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value) }
-            }
+        }
+        if unchangedSize, let appliedPosition, (try? Self.position(element)) == appliedPosition {
+            var position = originalPosition
+            if let value = AXValueCreate(.cgPoint, &position) { _ = AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value) }
         }
     }
 }

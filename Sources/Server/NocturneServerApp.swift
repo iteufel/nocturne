@@ -28,9 +28,6 @@ struct NocturneServerApp: App {
         Window("Mac apps", id: "remote-apps") {
             MacAppsWindow(client: delegate.client).frame(minWidth: 640, minHeight: 460)
         }.defaultSize(width: 880, height: 660).windowToolbarStyle(.unified)
-        WindowGroup("Remote app", id: "remote-app", for: String.self) { $id in
-            MacAppWindow(client: delegate.client, id: id).frame(minWidth: 320, minHeight: 240)
-        }.defaultSize(width: 1_000, height: 700).windowToolbarStyle(.unified)
         Settings {
             ServerSettingsView(model: delegate.model).tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
         }
@@ -57,17 +54,6 @@ private struct MacDesktopWindow: View {
     }
 }
 
-private struct MacAppWindow: View {
-    @ObservedObject var client: MacClientModel
-    let id: String?
-    var body: some View {
-        if let id, let stream = client.appSessions[id] { MacDesktopWorkspace(stream: stream, client: client) }
-        else {
-            ContentUnavailableView("App window disconnected", systemImage: "macwindow", description: Text("Open a window from the host’s Apps browser."))
-        }
-    }
-}
-
 struct ServerMenu: View {
     @ObservedObject var model: ServerModel
     @ObservedObject var client: MacClientModel
@@ -88,7 +74,7 @@ struct ServerMenu: View {
         }
         ForEach(client.appSessions.keys.sorted(), id: \.self) { id in
             if let stream = client.appSessions[id] {
-                Button("Show \(stream.title)") { openWindow(id: "remote-app", value: id); NSApp.activate(ignoringOtherApps: true) }
+                Button("Show \(stream.title)") { client.showAppWindow(id); NSApp.activate(ignoringOtherApps: true) }
             }
         }
         Button("Welcome to Nocturne…") {

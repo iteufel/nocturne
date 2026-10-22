@@ -1,4 +1,13 @@
-# Verification — 21 October 2026
+# Verification — 22 October 2026
+
+## Laptop-sized Mac desktops and compact app viewers (October 22, 2026)
+
+- Mac desktops now default to **Match window**. The viewer prepares the host's virtual desktop at its content size and backing scale, captures the returned display ID, and replaces the video source when the viewport changes. Display heartbeats use a stable lease ID while each replacement capture gets a new video session ID. Closing capture precedes framebuffer replacement and display restoration. Physical display selection remains available explicitly; missing headless support reports setup guidance.
+- Remote apps now use native borderless windows with a 14-point transparent handle area and a 32 × 4-point drag indicator. There is no local title bar or toolbar around the captured app. Context-menu and accessibility actions provide fit, reconnect, full screen, and close. Native AppKit tests verify the absence of frame/title-bar padding, keyboard focus, fixed-app aspect ratio, close callbacks, and fitting large apps within a laptop viewport.
+- Accessibility size attributes that are read-only, reject writes, or silently ignore writes retain their actual window geometry. Resize rejection is recoverable; permission and closed-window errors still propagate. Optional resize-capability metadata lets the Mac viewer preserve fixed-app proportions while scaling. Earlier window metadata remains decodable.
+- The original regressions were reproduced before the fixes: the client sent no `displayPrepare` request and captured physical display 7 instead of prepared display 99; a rejected app resize threw instead of retaining 620 × 440 geometry. Regression coverage now checks Retina-to-standard-scale changes, capture replacement, stable lease IDs, heartbeats, explicit physical fallback, disconnect cleanup order, fixed/ignored resize writes, permission errors, and older metadata.
+- The Mac app builds and passes deep/strict signature verification. All 59 focused display/app-window/client and server-lifecycle checks pass, with five existing opt-in skips. Full suites discovered 109 tests with eight opt-in skips but encountered listener-readiness timeouts in different fixtures, including settings, pairing, discovery, Files, and workspace integration. This listener-start flakiness is also documented in earlier entries; standalone focused reruns pass. Logs are retained in `.build/MacLaptopVerification/`.
+- These checks use real local TLS connections, generated H.264 frames, recording display/capture drivers, and actual AppKit windows for geometry/focus. No physical monitor was disabled or resized, no installed app was replaced, and no real two-Mac adaptive-display or third-party fixed-app session was exercised. Those remain live validation, separate from the passing code/build checks.
 
 ## Unified Mac app name (October 21, 2026)
 

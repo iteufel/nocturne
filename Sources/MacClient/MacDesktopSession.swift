@@ -18,6 +18,8 @@ public final class MacDesktopSession: ObservableObject {
     @Published public private(set) var selectedDisplayID: UInt32?
     @Published public private(set) var display: StreamDisplaySize?
     @Published public private(set) var screenLocked = false
+    @Published public private(set) var matchesWindow = true
+    @Published public private(set) var appWindow: RemoteAppWindow?
     @Published public var muted = false { didSet { audio.muted = muted } }
     var onAuthenticated: ((PairingInvitation) throws -> Void)?
     private let invitation: PairingInvitation
@@ -25,6 +27,7 @@ public final class MacDesktopSession: ObservableObject {
     private var active = false
     private var epoch = UUID()
     private var sessionID: String?
+    private var displayLeaseID: String?
     private var desiredViewport: AppWindowViewport?
     private var appliedViewport: AppWindowViewport?
     private var configureTask: Task<Void, Never>?
@@ -35,9 +38,10 @@ public final class MacDesktopSession: ObservableObject {
     private var assembler = AppWindowVideoAssembler()
     private var observer: AnyCancellable?
 
-    init(invitation: PairingInvitation, identity: WorkspaceIdentity, route: AppWindowRoute? = nil) {
+    init(invitation: PairingInvitation, identity: WorkspaceIdentity, route: AppWindowRoute? = nil, initialWindow: RemoteAppWindow? = nil) {
         self.invitation = invitation; name = invitation.name; self.route = route
         serverID = WorkspaceIdentity.fingerprint(invitation.secret)
+        appWindow = initialWindow
         // Native media travels over this authenticated workspace socket, including
         // through a remote tunnel. It never needs Moonlight's UDP port forwarding.
         connection = WorkspaceConnection(identity: identity, remoteStreaming: false)
@@ -62,21 +66,27 @@ public final class MacDesktopSession: ObservableObject {
         active = false; epoch = UUID()
         configureTask?.cancel(); configureTask = nil; heartbeat?.cancel(); heartbeat = nil
         firstFrameDeadline?.cancel(); firstFrameDeadline = nil; inputTask?.cancel(); inputTask = nil
-        inputs.removeAll(); sessionID = nil; appliedViewport = nil; ready = false; display = nil; screenLocked = false
+        inputs.removeAll(); sessionID = nil; displayLeaseID = nil; appliedViewport = nil; ready = false; display = nil; appWindow = nil; screenLocked = false
         surface.reset(); audio.stop(); assembler.reset(); connection.onDesktopPacket = nil; connection.onAppPacket = nil
         // Closing the authenticated socket releases capture and all held input
         // on the other Mac, independently of this Mac's own host services.
         connection.disconnect()
     }
     public func reconnect() { stop(); activate() }
+    public func matchWindow(_ enabled: Bool) {
+        guard route == nil, matchesWindow != enabled else { return }
+        matchesWindow = enabled
+        if active { reconnect() }
+    }
     public func selectDisplay(_ id: UInt32) {
-        guard route == nil, selectedDisplayID != id, displays.contains(where: { $0.id == id }) else { return }
-        selectedDisplayID = id; reconnect()
+        guard route == nil, matchesWindow || selectedDisplayID != id, displays.contains(where: { $0.id == id }) else { return }
+        matchesWindow = false; selectedDisplayID = id; reconnect()
     }
     public func viewport(_ size: CGSize, scale: CGFloat) {
         guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return }
-        let viewport = AppWindowViewport(width: Int(min(4096, max(240, size.width.rounded()))),
-            height: Int(min(4096, max(160, size.height.rounded()))), scale: min(3, max(1, Double(scale))))
+        let factor = min(1, 4096 / max(size.width, size.height))
+        let viewport = AppWindowViewport(width: Int(min(4096, max(240, (size.width * factor).rounded()))),
+            height: Int(min(4096, max(160, (size.height * factor).rounded()))), scale: min(3, max(1, Double(scale))))
         guard viewport.isValid, viewport != desiredViewport else { return }
         desiredViewport = viewport; configure()
     }
@@ -113,10 +123,43 @@ public final class MacDesktopSession: ObservableObject {
                     try Task.checkCancellation()
                     guard self.epoch == generation else { return }
                     if self.appliedViewport == desired { return }
+                    var captureDisplayID = self.selectedDisplayID
+                    if self.route == nil, self.matchesWindow {
+                        guard let size = StreamDisplaySize.matching(width: Double(desired.width), height: Double(desired.height),
+                            scale: desired.scale, frameRate: desired.frameRate) else {
+                            throw NocturneError.remote("Enlarge this window to match the host desktop to your screen.")
+                        }
+                        // Release capture before replacing its virtual framebuffer.
+                        // Each video source gets a new ID so late frames are ignored.
+                        if let oldID = self.sessionID {
+                            self.surface.releaseInput(); self.inputs.removeAll()
+                            await self.inputTask?.value
+                            self.sessionID = nil; self.ready = false
+                            self.surface.reset(); self.audio.stop(); self.assembler.reset()
+                            self.firstFrameDeadline?.cancel(); self.firstFrameDeadline = nil
+                            var close = Packet(.desktopClose); close.sessionID = oldID
+                            _ = try await self.connection.request(close)
+                        }
+                        let leaseID = self.displayLeaseID ?? UUID().uuidString
+                        guard let preparation = try StreamDisplayPreparation.request(size: size, sessionID: leaseID,
+                            matchesDevice: true, workspaceLinked: true, capabilities: self.connection.capabilities) else {
+                            throw NocturneError.invalidFrame
+                        }
+                        self.status = "Matching the host desktop to this window…"
+                        let prepared = try await self.connection.request(preparation)
+                        try Task.checkCancellation()
+                        guard self.epoch == generation else { return }
+                        guard prepared.sessionID == leaseID, prepared.display == size,
+                              let id = prepared.displayID, id != 0 else {
+                            throw NocturneError.remote("Update Nocturne on the host Mac to match its desktop to this window.")
+                        }
+                        self.displayLeaseID = leaseID; captureDisplayID = id
+                        if self.heartbeat == nil { self.startHeartbeat(generation) }
+                    }
                     var request = Packet(self.operation(self.sessionID == nil ? .desktopOpen : .desktopResize,
                                                        self.sessionID == nil ? .appOpen : .appResize))
                     if self.sessionID == nil { self.sessionID = UUID().uuidString }
-                    request.sessionID = self.sessionID; request.displayID = self.selectedDisplayID; request.viewport = desired
+                    request.sessionID = self.sessionID; request.displayID = captureDisplayID; request.viewport = desired
                     request.applicationID = self.route?.applicationID; request.windowID = self.route?.windowID
                     self.status = "Opening \(self.title)…"
                     let response = try await self.connection.request(request, timeout: 30)
@@ -128,6 +171,7 @@ public final class MacDesktopSession: ObservableObject {
                         guard response.window?.id == route.windowID, response.window?.applicationID == route.applicationID else {
                             throw NocturneError.invalidFrame
                         }
+                        self.appWindow = response.window
                     }
                     self.display = display; self.screenLocked = response.screenLocked ?? false; self.appliedViewport = desired
                     self.status = "Waiting for video…"
@@ -152,12 +196,25 @@ public final class MacDesktopSession: ObservableObject {
             while !Task.isCancelled {
                 do {
                     try await Task.sleep(nanoseconds: 5_000_000_000)
-                    guard let self, self.active, self.epoch == generation, let id = self.sessionID else { return }
-                    var ping = Packet(self.operation(.desktopHeartbeat, .appHeartbeat)); ping.sessionID = id
-                    let reply = try await self.connection.request(ping, timeout: 8)
-                    guard self.epoch == generation else { return }
-                    if let display = reply.display, display.isValidAppWindow { self.display = display }
-                    self.screenLocked = reply.screenLocked ?? false
+                    guard let self, self.active, self.epoch == generation else { return }
+                    if let leaseID = self.displayLeaseID {
+                        var ping = Packet(.displayHeartbeat); ping.sessionID = leaseID
+                        _ = try await self.connection.request(ping, timeout: 8)
+                    }
+                    if let id = self.sessionID {
+                        var ping = Packet(self.operation(.desktopHeartbeat, .appHeartbeat)); ping.sessionID = id
+                        let reply: Packet
+                        do { reply = try await self.connection.request(ping, timeout: 8) }
+                        catch {
+                            // A resize can close this source while its final
+                            // heartbeat is in flight. The display lease is separate.
+                            if self.sessionID != id { continue }
+                            throw error
+                        }
+                        guard self.epoch == generation, self.sessionID == id else { continue }
+                        if let display = reply.display, display.isValidAppWindow { self.display = display }
+                        self.screenLocked = reply.screenLocked ?? false
+                    }
                 } catch {
                     guard !Task.isCancelled, let self, self.epoch == generation else { return }
                     self.fail(error); return

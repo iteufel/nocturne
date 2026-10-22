@@ -340,6 +340,39 @@ final class AppWindowTests: XCTestCase {
         XCTAssertEqual(size.width / size.height, 430.0 / 785.0, accuracy: 0.001,
             "App minimum widths must not turn a portrait stream into a letterboxed square")
     }
+    func testFixedSizeWindowCanStreamWhenTheAppRejectsResizing() throws {
+        let original = CGSize(width: 620, height: 440)
+        do {
+            let size = try AppWindowAccessibility.resizeToMatch(.init(width: 1200, height: 700, scale: 2),
+                currentSize: { original }) { _ in throw AppWindowAccessibility.ResizeUnavailable() }
+            XCTAssertEqual(size, original, "Stream the fixed-size app at its actual aspect ratio")
+        } catch { XCTFail("Opening a non-resizable app must not fail: \(error)") }
+    }
+    func testResizeFallbackReadsCurrentGeometryAndPreservesPermissionErrors() throws {
+        var current = CGSize(width: 400, height: 300), calls = 0
+        let result = try AppWindowAccessibility.resizeToMatch(.init(width: 430, height: 785, scale: 2), currentSize: { current }) { proposed in
+            calls += 1
+            if calls == 2 { throw AppWindowAccessibility.ResizeUnavailable() }
+            current = .init(width: 740, height: proposed.height); return current
+        }
+        XCTAssertEqual(calls, 2); XCTAssertEqual(result, current, "Read the actual window after a partial resize")
+        XCTAssertThrowsError(try AppWindowAccessibility.resizeToMatch(.init(width: 800, height: 600, scale: 1),
+            currentSize: { current }) { _ in throw NocturneError.permissionDenied }) { error in
+                XCTAssertEqual(error as? NocturneError, .permissionDenied)
+            }
+        let legacy = Data(#"{"id":1,"applicationID":"app","title":"Window","width":620,"height":440}"#.utf8)
+        XCTAssertNil(try JSONDecoder().decode(RemoteAppWindow.self, from: legacy).isResizable)
+    }
+    func testAppThatSilentlyIgnoresWritableSizeIsReportedAsFixed() throws {
+        let size = CGSize(width: 620, height: 440)
+        let fixed = try AppWindowAccessibility.resizeIfPossible(.init(width: 1200, height: 700, scale: 2),
+            currentSize: { size }, apply: { _ in size })
+        XCTAssertEqual(fixed.size, size); XCTAssertFalse(fixed.isResizable)
+        var current = size
+        let resizing = try AppWindowAccessibility.resizeIfPossible(.init(width: 800, height: 600, scale: 2),
+            currentSize: { current }, apply: { current = $0; return current })
+        XCTAssertEqual(resizing.size, .init(width: 800, height: 600)); XCTAssertTrue(resizing.isResizable)
+    }
     func testTallPhoneWindowMovesUpBeforeMacOSClampsItsHeight() {
         let visible = CGRect(x: 0, y: 38, width: 5120, height: 1402)
         let position = AppWindowAccessibility.positionToFit(CGPoint(x: 2830, y: 549),
