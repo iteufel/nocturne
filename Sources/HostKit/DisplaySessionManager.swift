@@ -72,7 +72,7 @@ public final class DisplaySessionManager {
                 guard revision == epoch else { throw NocturneError.disconnected }
                 configurationDeadline = nil; lease?.renewed = Date(); scheduleExpiry()
                 size = requested; deviceName = name; lastError = nil
-                reply.display = requested; reply.sessionID = id; onChange?()
+                reply.display = requested; reply.displayID = display; reply.sessionID = id; onChange?()
             } catch {
                 if revision == epoch { release() }; throw error
             }

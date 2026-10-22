@@ -27,7 +27,7 @@ final class NativeAppWindowCapture: NSObject, AppWindowCapture, SCStreamOutput, 
         guard let pixels = viewport.pixels(width: size.width, height: size.height) else { throw NocturneError.invalidFrame }
         display = pixels
         window = RemoteAppWindow(id: window.id, applicationID: window.applicationID, title: window.title,
-                                 width: Int(size.width), height: Int(size.height))
+                                 width: Int(size.width), height: Int(size.height), isResizable: accessibility.isResizable)
         let configuration = SCStreamConfiguration()
         configuration.width = pixels.width; configuration.height = pixels.height
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(pixels.frameRate))

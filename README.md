@@ -22,7 +22,7 @@ For the iPhone/iPad app, see the [build and TestFlight guide](docs/RELEASING.md)
 
 To connect from a Mac, install the updated Mac app on both computers. On the host choose **Pair a device → Copy pairing code**. On the viewing Mac choose **Computers → Add host**, paste the code, and select **Add & connect**. Saved hosts reconnect from Computers.
 
-Choose **Apps** next to a saved Mac to browse applications and open individual windows. To unlock a locked host, open its **Desktop** and enter the Mac password; Nocturne must already be running in that signed-in session.
+The Mac desktop matches its viewer window by default, including Retina resolution. Enable **Headless virtual monitor** in the host's Displays settings. Choose a physical monitor from **Displays** when wanted. **Apps** opens individual windows with a small local drag handle; fixed-size apps stream without needing to resize. To unlock a locked host, open its **Desktop** and enter the Mac password; Nocturne must already be running in that signed-in session.
 
 ## Documentation
 

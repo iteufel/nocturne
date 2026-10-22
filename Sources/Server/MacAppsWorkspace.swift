@@ -31,7 +31,7 @@ private struct MacAppsWorkspace: View {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Apps on \(apps.name)").font(.title.weight(.semibold))
-                    Text("Open an app or choose one of its windows. Resizing the viewer resizes that window on your Mac.")
+                    Text("Open an app or choose one of its windows. Resizable apps follow the viewer; fixed-size apps keep their shape.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 if apps.loading { ProgressView("Loading apps…").frame(maxWidth: .infinity) }
@@ -114,6 +114,6 @@ private struct MacAppsWorkspace: View {
         }
     }
     private func open(_ window: RemoteAppWindow) {
-        if let id = client.openAppWindow(window, from: apps) { openWindow(id: "remote-app", value: id) }
+        if let id = client.openAppWindow(window, from: apps) { client.showAppWindow(id) }
     }
 }

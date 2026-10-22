@@ -155,9 +155,14 @@ private final class HostSession {
         appConnection.close()
         transfers.removeAll(); terminals.detach(connectionID)
         microphone.disconnected(connectionID)
-        displayDisconnected?(connectionID)
         if let appWindows { let id = connectionID; Task { @MainActor in appWindows.disconnected(id) } }
-        if let desktop { let id = connectionID; Task { @MainActor in desktop.disconnected(id) } }
+        if let desktop {
+            let id = connectionID, displayDisconnected = displayDisconnected
+            Task { @MainActor in
+                // Stop native capture before its display lease removes the framebuffer.
+                desktop.disconnected(id); displayDisconnected?(id)
+            }
+        } else { displayDisconnected?(connectionID) }
     }
     private func handle(_ packet: Packet) {
         do {

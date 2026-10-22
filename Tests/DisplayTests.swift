@@ -96,6 +96,7 @@ final class DisplayTests: XCTestCase {
         let connection = UUID(), id = UUID().uuidString
         let reply = try await manager.handle(request(id: id, size: portrait), connection: connection, name: "iPad")
         XCTAssertEqual(reply.display, portrait)
+        XCTAssertEqual(reply.displayID, environment.lastDisplay?.displayID, "Native viewers must capture the prepared framebuffer")
         XCTAssertEqual(captureTargets, [environment.lastDisplay?.displayID].compactMap { $0 })
         XCTAssertTrue(manager.isActive)
         environment.locked = false

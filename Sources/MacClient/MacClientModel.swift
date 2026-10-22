@@ -12,6 +12,7 @@ public final class MacClientModel: ObservableObject {
     @Published public var showAddHost = false
     private var loaded = false
     private var identity: WorkspaceIdentity?
+    private var appWindows: [String: MacAppWindowController] = [:]
     private let read: (String) throws -> Data?
     private let write: (Data, String) throws -> Void
     private let makeIdentity: () throws -> WorkspaceIdentity
@@ -99,7 +100,7 @@ public final class MacClientModel: ObservableObject {
             guard appSessions.values.filter({ $0.serverID == route.serverID }).count < AppStreaming.maximumWindowsPerDevice else {
                 throw NocturneError.remote("Close an app stream before opening another window.")
             }
-            let stream = MacDesktopSession(invitation: invitation, identity: identity, route: route)
+            let stream = MacDesktopSession(invitation: invitation, identity: identity, route: route, initialWindow: window)
             stream.onAuthenticated = { [weak self, weak stream] invitation in
                 guard let self, let stream, self.appSessions[route.id] === stream else { throw NocturneError.disconnected }
                 var saved = self.pairedServers; saved.pair(invitation); try self.save(saved)
@@ -107,10 +108,19 @@ public final class MacClientModel: ObservableObject {
             appSessions[route.id] = stream; error = nil; return route.id
         } catch { self.error = error.localizedDescription; return nil }
     }
-    public func disconnectApp(_ id: String) { appSessions.removeValue(forKey: id)?.stop() }
+    public func showAppWindow(_ id: String) {
+        guard let stream = appSessions[id] else { return }
+        if let window = appWindows[id] { window.present(); return }
+        let window = MacAppWindowController(stream: stream) { [weak self] in self?.disconnectApp(id) }
+        appWindows[id] = window; window.present()
+    }
+    public func disconnectApp(_ id: String) {
+        let window = appWindows.removeValue(forKey: id)
+        appSessions.removeValue(forKey: id)?.stop(); window?.close()
+    }
     public func disconnectAll() {
         disconnect(); closeApps()
-        let streams = Array(appSessions.values); appSessions = [:]; streams.forEach { $0.stop() }
+        for id in Array(appSessions.keys) { disconnectApp(id) }
     }
     public func forget(_ id: String) {
         do {

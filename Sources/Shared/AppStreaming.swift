@@ -55,8 +55,9 @@ public struct RemoteAppWindow: Codable, Identifiable, Equatable, Sendable {
     public let title: String
     public let width: Int
     public let height: Int
-    public init(id: UInt32, applicationID: String, title: String, width: Int, height: Int) {
-        self.id = id; self.applicationID = applicationID; self.title = title; self.width = width; self.height = height
+    public let isResizable: Bool?
+    public init(id: UInt32, applicationID: String, title: String, width: Int, height: Int, isResizable: Bool? = nil) {
+        self.id = id; self.applicationID = applicationID; self.title = title; self.width = width; self.height = height; self.isResizable = isResizable
     }
 }
 

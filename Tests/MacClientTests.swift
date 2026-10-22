@@ -291,6 +291,7 @@ final class MacClientTests: XCTestCase {
         defer { client.disconnectAll() }
         XCTAssertTrue(client.addHost(invitation.url.absoluteString))
         let desktopStream = try XCTUnwrap(client.session)
+        desktopStream.matchWindow(false)
         desktopStream.viewport(CGSize(width: 800, height: 600), scale: 1); desktopStream.activate()
         try await waitFor("desktop authentication") { desktopStream.display != nil || desktopStream.error != nil }
         XCTAssertNil(desktopStream.error)
@@ -356,6 +357,10 @@ final class MacClientTests: XCTestCase {
         XCTAssertTrue(client.addHost(invitation.url.absoluteString)); XCTAssertNil(saved[MacClientModel.account], "Save only after authentication")
         let stream = try XCTUnwrap(client.session)
         stream.viewport(CGSize(width: 800, height: 600), scale: 2); stream.activate()
+        try await waitFor("missing adaptive display guidance") { stream.error != nil }
+        XCTAssertTrue(stream.error?.contains("Headless virtual monitor") == true)
+        XCTAssertTrue(remote.captures.isEmpty, "Do not silently stream an ultrawide monitor when matching is unavailable")
+        stream.selectDisplay(7)
         try await waitFor("native desktop handshake", timeout: 10) { stream.display != nil || stream.error != nil }
         XCTAssertNil(stream.error); XCTAssertEqual(stream.selectedDisplayID, 7)
         XCTAssertEqual(client.pairedServers.servers.count, 1); XCTAssertNotNil(saved[MacClientModel.account]); XCTAssertNil(saved["server-key"])
@@ -385,10 +390,85 @@ final class MacClientTests: XCTestCase {
         XCTAssertEqual(secondConnection.state, .connected, "Closing an outgoing stream must leave host services and other connections running")
         client.connect(try XCTUnwrap(client.pairedServers.servers.first?.id))
         let reconnected = try XCTUnwrap(client.session)
+        reconnected.matchWindow(false)
         reconnected.viewport(CGSize(width: 800, height: 600), scale: 1); reconnected.activate()
         try await waitFor("saved host reconnect", timeout: 10) { reconnected.display != nil || reconnected.error != nil }
         XCTAssertNil(reconnected.error); XCTAssertEqual(remote.captures.count, 3)
         client.disconnect()
+    }
+
+    func testMacViewerPreparesHostResolutionInsteadOfUsingUltrawideDisplay() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
+        let remote = RecordingDesktopHost(), desktop = DesktopSessionManager(host: remote)
+        let host = try WorkspaceServer(folder: root, name: "Ultrawide host", devices: store, desktop: desktop)
+        var preparations: [StreamDisplaySize] = []
+        var leaseIDs: [String] = [], heartbeats = 0, released = 0
+        host.displayCommand = { packet, _, _, completion in
+            var reply = packet.reply(); reply.sessionID = packet.sessionID
+            if packet.operation == .displayPrepare, let size = packet.display {
+                XCTAssertTrue(remote.captures.allSatisfy { $0.stops == 1 }, "Stop capture before replacing its framebuffer")
+                preparations.append(size); leaseIDs.append(packet.sessionID ?? "")
+                reply.display = size; reply.displayID = UInt32(98 + preparations.count)
+            }
+            if packet.operation == .displayHeartbeat { heartbeats += 1 }
+            completion(reply)
+        }
+        host.displayDisconnected = { _ in
+            XCTAssertTrue(remote.captures.allSatisfy { $0.stops == 1 }, "Release native capture before restoring displays")
+            released += 1
+        }
+        var listening = false; host.onStatus = { status, _ in if status == "Ready" { listening = true } }
+        let port = UInt16.random(in: 20_000..<30_000), key = try SecureStore.randomKey()
+        try host.start(secret: key, port: port); defer { host.stop(); desktop.stop() }
+        try await waitFor("listener") { listening }
+        let invitation = try PairingInvitation(host: "127.0.0.1", port: port, name: "Ultrawide host", secret: key, enrollmentToken: store.createInvitation())
+        let stream = MacDesktopSession(invitation: invitation, identity: try MacClientIdentity.generate().workspace(name: "Laptop"))
+        defer { stream.stop() }
+        stream.viewport(CGSize(width: 1200, height: 750), scale: 2); stream.activate()
+        try await waitFor("desktop capture") { stream.display != nil || stream.error != nil }
+        XCTAssertNil(stream.error)
+        XCTAssertEqual(preparations, [.init(width: 2400, height: 1500, frameRate: 60)], "Match the host desktop to the Retina laptop viewport")
+        XCTAssertEqual(remote.captures.first?.displayID, 99, "Capture the prepared desktop instead of a physical ultrawide monitor")
+        stream.viewport(CGSize(width: 900, height: 600), scale: 1)
+        try await waitFor("resized host display") { remote.captures.count == 2 && stream.display != nil || stream.error != nil }
+        XCTAssertNil(stream.error)
+        XCTAssertEqual(preparations.last, .init(width: 900, height: 600, frameRate: 60))
+        XCTAssertEqual(Set(leaseIDs).count, 1, "Retain the display lease while replacing video sources")
+        XCTAssertEqual(remote.captures.last?.displayID, 100)
+        try await waitFor("display heartbeat", timeout: 7) { heartbeats > 0 || stream.error != nil }
+        XCTAssertNil(stream.error); XCTAssertGreaterThan(heartbeats, 0)
+        stream.selectDisplay(7)
+        try await waitFor("physical display opt-in") { remote.captures.count == 3 && stream.display != nil || stream.error != nil }
+        XCTAssertNil(stream.error); XCTAssertFalse(stream.matchesWindow)
+        XCTAssertEqual(remote.captures.last?.displayID, 7); XCTAssertEqual(preparations.count, 2)
+        stream.stop()
+        try await waitFor("all displays released") { released == 2 }
+    }
+
+    func testBorderlessAppViewerHasOnlyHandleAndCanReceiveKeyboardFocus() throws {
+        _ = NSApplication.shared
+        let invitation = try PairingInvitation(host: "127.0.0.1", port: 1, name: "Host", secret: SecureStore.randomKey())
+        let hostWindow = RemoteAppWindow(id: 10, applicationID: "fixed", title: "Fixed utility", width: 620, height: 440, isResizable: false)
+        let route = AppWindowRoute(serverID: "host", applicationID: hostWindow.applicationID, windowID: hostWindow.id, title: hostWindow.title)
+        let stream = MacDesktopSession(invitation: invitation, identity: try MacClientIdentity.generate().workspace(name: "Viewer"), route: route, initialWindow: hostWindow)
+        var closed = 0
+        let controller = MacAppWindowController(stream: stream) { closed += 1 }
+        let window = try XCTUnwrap(controller.window)
+        XCTAssertFalse(window.styleMask.contains(.titled)); XCTAssertNil(window.toolbar)
+        XCTAssertFalse(window.isOpaque); XCTAssertTrue(window.canBecomeKey); XCTAssertTrue(window.canBecomeMain)
+        XCTAssertEqual(window.contentRect(forFrameRect: window.frame), window.frame, "No extra local frame around the captured app")
+        XCTAssertLessThanOrEqual(MacAppWindowController.handleHeight, 16)
+        stream.surface.inputEnabled = true
+        XCTAssertTrue(window.makeFirstResponder(stream.surface)); XCTAssertTrue(window.firstResponder === stream.surface)
+        let resized = controller.windowWillResize(window, to: .init(width: 930, height: 800))
+        XCTAssertEqual(resized.height - MacAppWindowController.handleHeight, 660, accuracy: 0.01)
+        let laptop = MacAppWindowController.fitting(video: .init(width: 2400, height: 1800), inside: .init(width: 1100, height: 700))
+        XCTAssertLessThanOrEqual(laptop.width, 1100); XCTAssertLessThanOrEqual(laptop.height, 700)
+        XCTAssertEqual(laptop.width / (laptop.height - MacAppWindowController.handleHeight), 4.0 / 3, accuracy: 0.001)
+        controller.close(); XCTAssertEqual(closed, 1)
     }
 
     func testUnsupportedHostAndFailedPairingSaveCloseConnectionWithoutReplacingSavedHosts() async throws {

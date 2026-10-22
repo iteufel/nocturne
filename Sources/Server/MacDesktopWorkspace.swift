@@ -53,11 +53,18 @@ struct MacDesktopWorkspace: View {
             ToolbarItem {
                 if stream.route == nil {
                     Menu {
+                        Button {
+                            stream.matchWindow(true)
+                        } label: {
+                            if stream.matchesWindow { Label("Match window", systemImage: "checkmark") }
+                            else { Text("Match window") }
+                        }
+                        Divider()
                         ForEach(stream.displays) { display in
                             Button {
                                 stream.selectDisplay(display.id)
                             } label: {
-                                if display.id == stream.selectedDisplayID { Label(display.name, systemImage: "checkmark") }
+                                if !stream.matchesWindow, display.id == stream.selectedDisplayID { Label(display.name, systemImage: "checkmark") }
                                 else { Text(display.name) }
                             }
                         }
