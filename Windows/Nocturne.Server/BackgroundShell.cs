@@ -16,21 +16,42 @@ internal sealed class BackgroundShell : IDisposable
     private readonly MainWindow window;
     private readonly string channel;
     private readonly HwndSource source;
+    private readonly uint taskbarCreated;
     private readonly CancellationTokenSource lifetime = new();
     private NotifyIcon icon;
     private readonly Task commands;
+    private bool disposed;
+    internal bool TrayRegistered { get; private set; }
+    internal static bool TaskbarAvailable => Native.FindWindow("Shell_TrayWnd", null) != 0;
     private static string PipeName => "Nocturne." + WindowsIdentity.GetCurrent().User!.Value + "." + System.Diagnostics.Process.GetCurrentProcess().SessionId;
     public BackgroundShell(MainWindow window, string? channel = null)
     {
         this.window = window; this.channel = channel ?? PipeName;
-        source = HwndSource.FromHwnd(new WindowInteropHelper(window).EnsureHandle())!; source.AddHook(Messages);
-        var handle = Native.ExtractIcon(0, Environment.ProcessPath!, 0);
+        source = HwndSource.FromHwnd(new WindowInteropHelper(window).EnsureHandle())!;
+        // The process may be dotnet.exe or a test runner. Our assembly contains
+        // the same native icon resources as the published app host.
+        var handle = Native.ExtractIcon(0, typeof(App).Assembly.Location, 0);
+        if (handle is 0 or 1) throw new IOException("The Nocturne application icon could not be loaded.");
         icon = new() { Size = (uint)Marshal.SizeOf<NotifyIcon>(), Window = source.Handle, Id = 1, Flags = 7, Callback = 0x801F, Icon = handle, Tip = "Nocturne · Sharing in the background" };
-        if (!Native.Notify(0, ref icon)) { if (handle != 0) Native.DestroyIcon(handle); throw new IOException("Windows could not create the Nocturne tray icon."); }
+        TrayRegistered = Native.Notify(0, ref icon);
+        if (!TrayRegistered && TaskbarAvailable)
+        {
+            Native.DestroyIcon(handle);
+            throw new IOException($"Windows could not create the Nocturne tray icon with a running taskbar (native structure size {icon.Size}).");
+        }
+        // A signed-in desktop can be usable before Explorer starts, and while
+        // it restarts. The private activation pipe must remain available.
+        taskbarCreated = Native.RegisterMessage("TaskbarCreated");
+        source.AddHook(Messages);
         commands = Task.Run(CommandLoop);
     }
     private nint Messages(nint handle, int message, nint wparam, nint lparam, ref bool handled)
     {
+        if (taskbarCreated != 0 && message == taskbarCreated)
+        {
+            TrayRegistered = Native.Notify(0, ref icon);
+            return 0;
+        }
         if (message != 0x801F) return 0;
         var notification = (int)lparam & 0xffff;
         if (notification is 0x202 or 0x203) window.Reveal();
@@ -80,7 +101,11 @@ internal sealed class BackgroundShell : IDisposable
     }
     public void Dispose()
     {
-        lifetime.Cancel(); Native.Notify(2, ref icon); source.RemoveHook(Messages); if (icon.Icon != 0) Native.DestroyIcon(icon.Icon);
+        if (disposed) return;
+        disposed = true;
+        lifetime.Cancel();
+        if (TrayRegistered) Native.Notify(2, ref icon);
+        source.RemoveHook(Messages); Native.DestroyIcon(icon.Icon);
     }
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct NotifyIcon
@@ -98,6 +123,8 @@ internal sealed class BackgroundShell : IDisposable
         [DllImport("shell32.dll", EntryPoint = "Shell_NotifyIconW", CharSet = CharSet.Unicode)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool Notify(uint command, ref NotifyIcon icon);
         [DllImport("shell32.dll", EntryPoint = "ExtractIconW", CharSet = CharSet.Unicode)] internal static extern nint ExtractIcon(nint instance, string file, uint index);
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool DestroyIcon(nint icon);
+        [DllImport("user32.dll", EntryPoint = "FindWindowW", CharSet = CharSet.Unicode)] internal static extern nint FindWindow(string className, string? windowName);
+        [DllImport("user32.dll", EntryPoint = "RegisterWindowMessageW", CharSet = CharSet.Unicode)] internal static extern uint RegisterMessage(string name);
         [DllImport("kernel32.dll", EntryPoint = "GetNamedPipeServerProcessId", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool ServerProcess(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint process);
     }
 }

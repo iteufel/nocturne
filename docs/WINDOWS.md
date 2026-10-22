@@ -56,6 +56,9 @@ Enable **Settings → Open Nocturne at Windows login** to register the app for t
 current Windows account. Login opens the app in the system tray. Closing the main
 window keeps sharing running; use **Quit Nocturne** in the tray or Settings to stop
 all services and remote windows. Nocturne does not install a system service.
+If Explorer's taskbar is unavailable, hosting and app activation remain available;
+the tray icon registers when Explorer returns. Open Nocturne again to reveal its
+existing window.
 
 Settings also offers System, Light, and Dark appearance. The welcome screens appear
 on first launch and can be replayed without changing sharing settings or pairings.

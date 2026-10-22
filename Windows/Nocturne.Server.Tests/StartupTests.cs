@@ -167,6 +167,8 @@ public sealed class StartupTests
         var channel = "Nocturne-tests-" + Guid.NewGuid();
         stage("Create tray and activation listener");
         using var shell = new BackgroundShell(window, channel);
+        stage($"Tray registered: {shell.TrayRegistered}; taskbar available: {BackgroundShell.TaskbarAvailable}");
+        Assert.True(shell.TrayRegistered || !BackgroundShell.TaskbarAvailable, "The running taskbar did not accept the Nocturne icon.");
         stage("Hide main window while sharing stays available");
         window.KeepAlive = true; window.Close();
         Assert.False(window.IsVisible); Assert.True(model.CanAct);
