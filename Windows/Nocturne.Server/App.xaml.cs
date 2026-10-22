@@ -8,13 +8,18 @@ namespace Nocturne.Server;
 
 public partial class App : Application
 {
+    private readonly bool launchShell;
     private Mutex? instance;
     private BackgroundShell? shell;
     private MainWindow? window;
     private bool ownsInstance;
+    public App() : this(launchShell: true) { }
+    // UI fixtures own their window and profile while loading this App's BAML.
+    internal App(bool launchShell) => this.launchShell = launchShell;
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (!launchShell) return;
         if (e.Args.Length == 2 && e.Args[0] == "--display-watchdog" && int.TryParse(e.Args[1], out var parent) && parent > 0 && parent != Environment.ProcessId)
         {
             try
