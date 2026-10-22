@@ -63,7 +63,7 @@ public partial class App : Application
             await window.InitializeHostAsync();
             if (pairing != null) window.OpenComputerCode(pairing);
             else if (!window.WelcomeCompleted) window.ShowWelcome();
-            else if (e.Args.Contains("--login")) window.Hide();
+            else if (e.Args.Contains("--login") && shell.TrayRegistered) window.Hide();
         }
         catch (Exception error) { MessageBox.Show(error.Message, "Nocturne"); Shutdown(1); }
     }

@@ -53,12 +53,12 @@ reconnect clients afterward. **Discard** restores the saved settings. Disabling
 all sharing services leaves the host stopped.
 
 Enable **Settings → Open Nocturne at Windows login** to register the app for the
-current Windows account. Login opens the app in the system tray. Closing the main
+current Windows account. Login normally opens the app in the system tray. Closing the main
 window keeps sharing running; use **Quit Nocturne** in the tray or Settings to stop
 all services and remote windows. Nocturne does not install a system service.
-If Explorer's taskbar is unavailable, hosting and app activation remain available;
-the tray icon registers when Explorer returns. Open Nocturne again to reveal its
-existing window.
+If Windows cannot register a tray icon, hosting and app activation remain available,
+and login leaves the main window visible. Nocturne retries when Explorer recreates
+the taskbar. Open Nocturne again to reveal its existing window.
 
 Settings also offers System, Light, and Dark appearance. The welcome screens appear
 on first launch and can be replayed without changing sharing settings or pairings.
@@ -269,9 +269,11 @@ The fixture in `Windows/Nocturne.Interop` verifies authentication and reconnects
 in both directions, including Windows receiver commands and fragmented video/audio
 from a real Swift workspace server. The WPF smoke test connects the actual Windows
 receiver over TLS and verifies a decoded native H.264 image on screen. Native CTest
-checks sustained production decoding, occluded-window capture, and native tray
-registration when an Explorer taskbar is available. The test executable is excluded
-from the package. Native UI and codec tests do not prove
+checks sustained production decoding and occluded-window capture. It also probes
+tray registration with the SDK structure and a standard Windows icon; a rejected
+native baseline is reported as unavailable. The WPF test requires registration
+when that baseline succeeds and checks background activation in either case.
+The test executable is excluded from the package. Native UI and codec tests do not prove
 physical GPU capture, a driver's headless modes, audio routing into Discord, secure
 desktop behavior, or visible iPhone-to-Windows playback; those require a Windows PC
 and physical client/device checks.

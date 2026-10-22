@@ -169,9 +169,17 @@ static bool capture_window() {
     return true;
 }
 
+static void tray_capability_report(bool registered, DWORD error, bool taskbar) {
+    std::ofstream report("native-tray.json", std::ios::trunc);
+    report << "{\"registered\":" << (registered ? "true" : "false")
+        << ",\"error\":" << error << ",\"taskbar\":" << (taskbar ? "true" : "false") << "}\n";
+    nocturne::require(report.good(), L"The tray capability report could not be written.");
+}
+
 static bool tray_registration() {
     auto taskbar = FindWindowW(L"Shell_TrayWnd", nullptr);
     if (!taskbar) {
+        tray_capability_report(false, ERROR_SUCCESS, false);
         std::cout << "Tray registration skipped: the desktop has no Explorer taskbar.\n";
         return false;
     }
@@ -186,6 +194,7 @@ static bool tray_registration() {
     SetLastError(ERROR_SUCCESS);
     auto added = Shell_NotifyIconW(NIM_ADD, &icon);
     auto error = GetLastError();
+    tray_capability_report(added != FALSE, error, true);
     DWORD taskbar_process = 0;
     GetWindowThreadProcessId(taskbar, &taskbar_process);
     std::cout << "Native tray: registered=" << added << "; Win32 error=" << error
@@ -193,8 +202,8 @@ static bool tray_registration() {
         << "; icon offset=" << offsetof(NOTIFYICONDATAW, hIcon) << "; tip offset=" << offsetof(NOTIFYICONDATAW, szTip)
         << "; taskbar PID=" << taskbar_process << '\n';
     if (added) Shell_NotifyIconW(NIM_DELETE, &icon);
-    nocturne::require(added != FALSE, L"The Windows notification area rejected a native tray icon.");
-    return true;
+    else std::cout << "Tray unavailable: the Windows notification area rejected the SDK call with a standard Windows icon.\n";
+    return added != FALSE;
 }
 
 int main(int argc, char** argv) {

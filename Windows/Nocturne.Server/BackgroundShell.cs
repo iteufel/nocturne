@@ -22,6 +22,7 @@ internal sealed class BackgroundShell : IDisposable
     private readonly Task commands;
     private bool disposed;
     internal bool TrayRegistered { get; private set; }
+    internal int TrayError { get; private set; }
     internal static bool TaskbarAvailable => Native.FindWindow("Shell_TrayWnd", null) != 0;
     private static string PipeName => "Nocturne." + WindowsIdentity.GetCurrent().User!.Value + "." + System.Diagnostics.Process.GetCurrentProcess().SessionId;
     public BackgroundShell(MainWindow window, string? channel = null)
@@ -33,27 +34,24 @@ internal sealed class BackgroundShell : IDisposable
         var handle = Native.ExtractIcon(0, typeof(App).Assembly.Location, 0);
         if (handle is 0 or 1) throw new IOException("The Nocturne application icon could not be loaded.");
         icon = new() { Size = (uint)Marshal.SizeOf<NotifyIcon>(), Window = source.Handle, Id = 1, Flags = 7, Callback = 0x801F, Icon = handle, Tip = "Nocturne · Sharing in the background" };
-        TrayRegistered = Native.Notify(0, ref icon);
-        var notifyError = Marshal.GetLastPInvokeError();
-        if (!TrayRegistered && TaskbarAvailable)
-        {
-            Native.DestroyIcon(handle);
-            var details = $"Win32 error {notifyError}; structure size {icon.Size}; window valid {Native.IsWindow(source.Handle)}; " +
-                $"window offset {Marshal.OffsetOf<NotifyIcon>(nameof(NotifyIcon.Window))}; icon offset {Marshal.OffsetOf<NotifyIcon>(nameof(NotifyIcon.Icon))}; " +
-                $"tip offset {Marshal.OffsetOf<NotifyIcon>(nameof(NotifyIcon.Tip))}.";
-            throw new IOException("Windows could not create the Nocturne tray icon with a running taskbar.", new System.ComponentModel.Win32Exception(notifyError, details));
-        }
-        // A signed-in desktop can be usable before Explorer starts, and while
-        // it restarts. The private activation pipe must remain available.
+        RegisterIcon();
+        // The notification area can be unavailable even with an Explorer taskbar.
+        // Hosting and the private activation pipe must remain available.
         taskbarCreated = Native.RegisterMessage("TaskbarCreated");
         source.AddHook(Messages);
         commands = Task.Run(CommandLoop);
+    }
+    private void RegisterIcon()
+    {
+        TrayRegistered = Native.Notify(0, ref icon);
+        TrayError = Marshal.GetLastPInvokeError();
     }
     private nint Messages(nint handle, int message, nint wparam, nint lparam, ref bool handled)
     {
         if (taskbarCreated != 0 && message == taskbarCreated)
         {
-            TrayRegistered = Native.Notify(0, ref icon);
+            RegisterIcon();
+            if (!TrayRegistered) window.Reveal();
             return 0;
         }
         if (message != 0x801F) return 0;
@@ -127,7 +125,6 @@ internal sealed class BackgroundShell : IDisposable
         [DllImport("shell32.dll", EntryPoint = "Shell_NotifyIconW", CharSet = CharSet.Unicode, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool Notify(uint command, ref NotifyIcon icon);
         [DllImport("shell32.dll", EntryPoint = "ExtractIconW", CharSet = CharSet.Unicode)] internal static extern nint ExtractIcon(nint instance, string file, uint index);
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool DestroyIcon(nint icon);
-        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool IsWindow(nint window);
         [DllImport("user32.dll", EntryPoint = "FindWindowW", CharSet = CharSet.Unicode)] internal static extern nint FindWindow(string className, string? windowName);
         [DllImport("user32.dll", EntryPoint = "RegisterWindowMessageW", CharSet = CharSet.Unicode)] internal static extern uint RegisterMessage(string name);
         [DllImport("kernel32.dll", EntryPoint = "GetNamedPipeServerProcessId", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool ServerProcess(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint process);

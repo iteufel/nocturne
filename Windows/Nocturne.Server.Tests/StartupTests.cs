@@ -167,8 +167,18 @@ public sealed class StartupTests
         var channel = "Nocturne-tests-" + Guid.NewGuid();
         stage("Create tray and activation listener");
         using var shell = new BackgroundShell(window, channel);
-        stage($"Tray registered: {shell.TrayRegistered}; taskbar available: {BackgroundShell.TaskbarAvailable}");
-        Assert.True(shell.TrayRegistered || !BackgroundShell.TaskbarAvailable, "The running taskbar did not accept the Nocturne icon.");
+        stage($"Tray registered: {shell.TrayRegistered}; taskbar available: {BackgroundShell.TaskbarAvailable}; native error: 0x{shell.TrayError:X8}");
+        var probe = Path.Combine(AppContext.BaseDirectory, "native-tray.json");
+        if (File.Exists(probe))
+        {
+            var report = File.ReadAllText(probe);
+            stage("SDK tray capability: " + report.Trim());
+            using var capability = System.Text.Json.JsonDocument.Parse(report);
+            if (capability.RootElement.GetProperty("registered").GetBoolean())
+                Assert.True(shell.TrayRegistered, $"The SDK tray registration succeeded but the application failed with 0x{shell.TrayError:X8}.");
+        }
+        else Assert.False(Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true", "The native tray capability fixture is missing.");
+        Assert.True(window.IsVisible);
         stage("Hide main window while sharing stays available");
         window.KeepAlive = true; window.Close();
         Assert.False(window.IsVisible); Assert.True(model.CanAct);

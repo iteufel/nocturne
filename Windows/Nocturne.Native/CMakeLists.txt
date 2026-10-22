@@ -12,6 +12,6 @@ target_link_libraries(nocturne-native-tests PRIVATE d3d11 dxgi mfplat mf mfuuid 
 target_compile_options(nocturne-native-tests PRIVATE /W4 /EHsc)
 add_test(NAME NativeWindowsMedia COMMAND nocturne-native-tests)
 add_test(NAME NativeWindowCapture COMMAND nocturne-native-tests --window-capture)
-add_test(NAME NativeTrayRegistration COMMAND nocturne-native-tests --tray)
+add_test(NAME NativeTrayCapability COMMAND nocturne-native-tests --tray)
 set_tests_properties(NativeWindowCapture PROPERTIES SKIP_RETURN_CODE 77)
-set_tests_properties(NativeTrayRegistration PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 15)
+set_tests_properties(NativeTrayCapability PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 15)

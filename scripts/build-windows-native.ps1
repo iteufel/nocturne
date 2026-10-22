@@ -25,6 +25,8 @@ try {
 } finally { $env:RUSTFLAGS = $previousRustFlags }
 New-Item -ItemType Directory -Force $output | Out-Null
 Copy-Item (Join-Path $build 'Release/nocturne_host.dll') $output -Force
-if (-not $SkipTests) { Copy-Item (Join-Path $build 'native-h264-frame.bin') $output -Force }
+if (-not $SkipTests) {
+    foreach ($fixture in @('native-h264-frame.bin', 'native-tray.json')) { Copy-Item (Join-Path $build $fixture) $output -Force }
+}
 Copy-Item (Join-Path $root "remote/target/$target/release/nocturne_remote.dll") $output -Force
 Write-Host "Native Windows libraries: $output"
