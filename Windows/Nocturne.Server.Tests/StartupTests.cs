@@ -31,18 +31,21 @@ public sealed class StartupTests
         var thread = new Thread(() =>
         {
             var profile = Path.Combine(Path.GetTempPath(), "nocturne-ui-" + Guid.NewGuid());
-            App? app = null; MainWindow? window = null; ServerModel? model = null;
+            TestApplication? app = null; MainWindow? window = null; ServerModel? model = null;
             try
             {
                 // Generated BAML URIs already identify the application's assembly.
                 RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
                 Stage("Initialize application");
-                app = new App(); app.InitializeComponent();
+                app = new TestApplication(); app.InitializeComponent();
                 model = new ServerModel(new HostStorage(profile));
                 window = new MainWindow(model);
                 app.MainWindow = window; window.Show();
                 window.Dispatcher.Invoke(() =>
                 {
+                    Assert.True(app.StartupObserved);
+                    Assert.Same(window, app.MainWindow);
+                    Assert.Same(window, Assert.Single(app.Windows.Cast<Window>()));
                     window.UpdateLayout();
                     Assert.True(window.IsLoaded);
                     Assert.Equal("Nocturne", window.Title);
@@ -65,6 +68,8 @@ public sealed class StartupTests
                     VerifyReceiver(window, profile);
                     Stage("Verify background activation");
                     VerifyBackgroundHost(window, model, Stage);
+                    Assert.Same(window, app.MainWindow);
+                    Assert.Same(window, Assert.Single(app.Windows.Cast<Window>()));
                 }, DispatcherPriority.ContextIdle);
             }
             catch (Exception error) { failure = ExceptionDispatchInfo.Capture(error); }
@@ -87,6 +92,18 @@ public sealed class StartupTests
         thread.Start();
         Assert.True(thread.Join(TimeSpan.FromSeconds(60)), "The Windows application did not finish its startup smoke test. Last stage: " + Volatile.Read(ref phase));
         failure?.Throw();
+    }
+
+    private sealed class TestApplication : App
+    {
+        public bool StartupObserved { get; private set; }
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            // WPF queues this callback from the Application constructor, even
+            // without Run(). The fixture owns its window and temporary profile;
+            // production startup would open another host and modal welcome UI.
+            StartupObserved = true;
+        }
     }
 
     [NativeFixtureFact]
