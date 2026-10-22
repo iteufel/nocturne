@@ -9,8 +9,18 @@ Nocturne's original application and integration code is provided under GPL-3.0; 
 
 No proprietary Apple artwork or marketing assets are bundled. The icons and orbit illustration are generated with native drawing code. SF Symbols are rendered through the platform APIs.
 
+The Windows application also uses:
+
+- **Sunshine Windows** — the same GPL-3.0 source tag and commit listed above. Both Windows lite archives are checksum-pinned in `Windows/engine.lock.json`. The Windows app bundles the executable, runtime DLLs, and assets, excluding upstream service/setup launchers. It retains Sunshine's attribution in the logs and supplies this source reference.
+- **Bouncy Castle C#** — BouncyCastle.Cryptography 2.7.0, MIT, https://github.com/bcgit/bc-csharp/tree/release-2.7.0. Implements the existing TLS-PSK workspace transport on Windows.
+- **Inno Setup** — 6.7.3, https://github.com/jrsoftware/issrc/tree/is-6_7_3. Builds the Windows installer; pinned by digest and publisher in `Windows/Installer/toolchain.lock.json`. Installer-engine redistribution terms are available in the upstream license.
+- **QRCoder** — 1.8.1, MIT, https://github.com/codebude/QRCoder. Generates pairing QR codes locally.
+- **.NET 10 / WPF** — MIT and associated third-party notices, https://github.com/dotnet/runtime and https://github.com/dotnet/wpf. Self-contained Windows packages include the runtime. System.Security.Cryptography.ProtectedData 10.0.13 provides Windows DPAPI integration. Exact NuGet dependency graphs are recorded in `Windows/**/packages.lock.json`.
+
+Windows packages include this notice, the project license, the pinned engine manifest, and setup documentation. Binary packaging does not remove the corresponding-source requirements below.
+
 For redistribution, provide this repository plus all corresponding pinned upstream source (including recursive submodules and source for the embedded engine's bundled dependencies) and preserve the applicable notices. The development bootstrap downloads binaries for local builds; it is not a completed source-distribution or App Store release process.
 
 ## Remote transport
 
-The Rust broker and native tunnel use [iroh](https://github.com/n0-computer/iroh) and iroh-relay (MIT OR Apache-2.0), with netwatch, Tokio, rustls, and their dependencies. Exact versions and checksums are recorded in `remote/Cargo.lock`. The transport is statically linked into the apps; the broker is a separate self-hosted executable.
+The Rust broker and native tunnel use [iroh](https://github.com/n0-computer/iroh) and iroh-relay (MIT OR Apache-2.0), with netwatch, Tokio, rustls, and their dependencies. Exact versions and checksums are recorded in `remote/Cargo.lock`. Apple apps statically link the transport; Windows packages include `nocturne_remote.dll`, built from the same source and lock file. The broker is a separate self-hosted executable. Windows capture, codec, and audio modules use operating-system APIs rather than redistributing a separate video codec. Virtual display and audio drivers are installed separately from their publishers and are not bundled by Nocturne.

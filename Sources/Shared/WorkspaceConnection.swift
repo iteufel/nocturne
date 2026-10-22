@@ -7,7 +7,7 @@ import CryptoKit
 public final class WorkspaceConnection: ObservableObject {
     public enum State: Equatable { case disconnected, connecting, connected }
     @Published public private(set) var state: State = .disconnected
-    @Published public private(set) var name = "Your Mac"
+    @Published public private(set) var name = "Your computer"
     @Published public private(set) var capabilities: [String] = []
     @Published public private(set) var lastError: String?
     public var onAppPacket: ((Packet) -> Void)?

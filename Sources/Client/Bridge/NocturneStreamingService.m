@@ -386,7 +386,7 @@ NSNotificationName const NocturneStreamControlsRequestedNotification = @"Nocturn
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.pairingAttempt != attempt) return;
         if (!attempt.qrAuthorized || !self.canPairHost || !self.canPairHost(attempt.hostID)) {
-            [self pairFailed:@"Scan the QR code on your Mac before pairing this computer." attempt:attempt]; return;
+            [self pairFailed:@"Scan the QR code on your computer before pairing this computer." attempt:attempt]; return;
         }
         attempt.pendingServerCertificate = serverCert;
         [self completePairingIfReady:attempt];

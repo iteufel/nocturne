@@ -50,7 +50,7 @@ struct AppWindowWorkspace: View {
                         Menu {
                             Text(stream.connection.name)
                             if let display = stream.display { Text("\(display.width) × \(display.height) · \(display.frameRate) fps") }
-                            Text("Only this Mac window is shared")
+                            Text("Only this app window is shared")
                             Toggle("Fill entire screen", isOn: Binding(get: { client.preferences.fillEntireScreen }, set: client.setFillEntireScreen))
                             Button("Reconnect window", systemImage: "arrow.clockwise") { stream.deactivate(); stream.activate() }
                             Button("Close stream", systemImage: "xmark", role: .destructive) { stream.deactivate(); close() }

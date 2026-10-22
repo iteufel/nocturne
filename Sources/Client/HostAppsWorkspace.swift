@@ -73,16 +73,16 @@ struct HostAppsWorkspace: View {
         Group {
             if connection.state != .connected {
                 ContentUnavailableView {
-                    Label("Your Mac apps", systemImage: "square.grid.2x2")
-                } description: { Text("Connect to Nocturne to browse and open your Mac’s apps.") }
+                    Label("Your computer’s apps", systemImage: "square.grid.2x2")
+                } description: { Text("Connect to Nocturne to browse and open your computer’s apps.") }
                 actions: {
-                    Button(client.savedServerName == nil ? "Pair your Mac" : "Reconnect to Mac") {
+                    Button(client.savedServerName == nil ? "Pair your computer" : "Reconnect to computer") {
                         if client.savedServerName == nil { client.showAdd = true }
                         else { Task { await client.reconnectServer() } }
                     }.buttonStyle(PrimaryButtonStyle()).disabled(connection.state == .connecting)
                 }
             } else if !connection.capabilities.contains(AppStreaming.capability) {
-                ContentUnavailableView("Update your Mac server", systemImage: "macwindow", description: Text("Install the latest Nocturne, then reconnect to open individual app windows."))
+                ContentUnavailableView("Update your host server", systemImage: "macwindow", description: Text("Install the latest Nocturne, then reconnect to open individual app windows."))
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
@@ -90,8 +90,8 @@ struct HostAppsWorkspace: View {
                             Label(connection.name, systemImage: "desktopcomputer").font(.subheadline.weight(.medium)).foregroundStyle(MoonStyle.secondary)
                             Text("Your apps. Their own space.").font(.system(size: 30, weight: .semibold, design: .rounded)).tracking(-0.8)
                             Text(UIApplication.shared.supportsMultipleScenes
-                                 ? "Open a Mac app in its own iPad window. Resize it here and the window on your Mac follows."
-                                 : "Open and control just an app’s window from your Mac.")
+                                 ? "Open an app in its own iPad window. Resize it here and the window on your computer follows."
+                                 : "Open and control just an app’s window from your computer.")
                                 .font(.callout).foregroundStyle(MoonStyle.secondary).frame(maxWidth: 530, alignment: .leading)
                         }
                         if model.loading { ProgressView("Loading apps…").frame(maxWidth: .infinity).padding() }
@@ -99,7 +99,7 @@ struct HostAppsWorkspace: View {
                             Label(error, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(MoonStyle.secondary)
                         }
                         if !model.loading, filtered.isEmpty {
-                            ContentUnavailableView(search.isEmpty ? "No apps found" : "No matching apps", systemImage: "square.grid.2x2", description: Text(search.isEmpty ? "Install an app on your Mac, then refresh this list." : "Try another app name."))
+                            ContentUnavailableView(search.isEmpty ? "No apps found" : "No matching apps", systemImage: "square.grid.2x2", description: Text(search.isEmpty ? "Install an app on your computer, then refresh this list." : "Try another app name."))
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 155, maximum: 220), spacing: 16)], alignment: .leading, spacing: 16) {
                             ForEach(filtered) { app in

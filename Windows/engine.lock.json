@@ -1,0 +1,12 @@
+{
+  "version": "v2026.1018.5342",
+  "sourceCommit": "3d6e1d6008bd4a24906283ab25fcd0becc0a1c07",
+  "x64": {
+    "asset": "Sunshine-Windows-AMD64-lite.zip",
+    "sha256": "5637d74c6f0d80bb133c0d6d4df7c49c663c0f860b4e96efcb9d1d9c207ea649"
+  },
+  "arm64": {
+    "asset": "Sunshine-Windows-ARM64-lite.zip",
+    "sha256": "6a78018e67a11135fa7e9a1a50c1fb928b43e668b80014ff989812783ed6c308"
+  }
+}

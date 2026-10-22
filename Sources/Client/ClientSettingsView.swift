@@ -30,7 +30,7 @@ struct ClientSettingsView: View {
             Section("Picture & sound") {
                 Picker("Resolution", selection: $model.preferences.resolution) { ForEach(["Match device", "720p", "1080p", "1440p", "4K"], id: \.self) { Text($0) } }
                 if model.preferences.resolution == "Match device" {
-                    Text("Matches the Mac desktop to your display and follows rotation and window resizing. Enable Headless virtual monitor in Nocturne’s display settings and pair using its QR code. Video briefly reconnects when the size changes.")
+                    Text("Matches your computer’s desktop to your display and follows rotation and window resizing. Enable Headless virtual monitor in Nocturne’s display settings and pair using its QR code. Video briefly reconnects when the size changes.")
                         .font(.caption).foregroundStyle(MoonStyle.secondary)
                 }
                 Picker("Frame rate", selection: $model.preferences.frameRate) { Text("30 fps").tag(30); Text("60 fps").tag(60); Text("120 fps").tag(120) }
@@ -56,12 +56,12 @@ struct ClientSettingsView: View {
                 inputStatus("Mouse or trackpad", symbol: "computermouse", connected: model.mouseConnected)
                 if model.controllers.isEmpty { inputStatus("Game controller", symbol: "gamecontroller", connected: false) }
                 ForEach(Array(model.controllers.enumerated()), id: \.offset) { _, name in inputStatus(name, symbol: "gamecontroller.fill", connected: true) }
-                Text("Pair Bluetooth accessories in iOS Settings. Nocturne forwards their input to your computer. Mac gamepad emulation requires a compatible host driver.")
+                Text("Pair Bluetooth accessories in iOS Settings. Nocturne forwards their input to your computer. Gamepad emulation requires a compatible host driver.")
                     .font(.caption).foregroundStyle(MoonStyle.secondary)
             }.listRowBackground(MoonStyle.surface)
             Section("Microphone") {
-                Label("Voice chat on your Mac", systemImage: "mic")
-                Text("Enable Client microphone in Nocturne → Sharing and install the microphone input. In Discord or your game, select Nocturne Microphone. Open Controls → Microphone in your stream to unmute.")
+                Label("Voice chat on your computer", systemImage: "mic")
+                Text("Enable Client microphone in Nocturne → Sharing and install the microphone input. In Discord or your game, select your host’s virtual microphone. Open Controls → Microphone in your stream to unmute.")
                     .font(.caption).foregroundStyle(MoonStyle.secondary)
                 Text("Each stream starts muted. Backgrounding, disconnecting, resizing the stream, or changing audio devices mutes it again. Headphones are recommended; Bluetooth microphone use can reduce playback quality.")
                     .font(.caption).foregroundStyle(MoonStyle.secondary)

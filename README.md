@@ -1,15 +1,15 @@
 # Nocturne
 
-Stream your Mac to iPhone, iPad, or another Mac. The Mac app can host your desktop and connect to other Nocturne hosts at the same time.
+Stream your Mac or Windows PC to iPhone, iPad, or another computer, with a native terminal and file transfer alongside your desktop. The desktop app can host your desktop and connect to other Nocturne hosts at the same time.
 
-- Stream your desktop or open individual Mac app windows on iPad or another Mac.
+- Stream your desktop or open individual app windows on iPad, Mac, and Windows.
 - Use touch, a keyboard, a mouse, or a game controller.
-- Keep terminal sessions running on your Mac and access shared files in Apple’s Files app.
+- Keep terminal sessions running on your computer and access shared files in Apple’s Files app.
 - Connect locally or enable remote access for other networks.
-- Pair several Macs and switch between them.
-- Connect Mac to Mac from **Computers**, with desktop video, audio, keyboard, and mouse in a separate window.
+- Pair several computers and switch between them.
+- Connect from **Computers**, with desktop video, audio, keyboard, and mouse in a separate window.
 
-Requires iOS/iPadOS 17+ and an Apple Silicon Mac running macOS 14+. Nocturne includes its streaming engine; no separate Sunshine installation is needed.
+Requires iOS/iPadOS 17+ and either an Apple Silicon Mac running macOS 14+ or a supported Windows PC. Nocturne includes its streaming engine; no separate Sunshine installation is needed.
 
 ## Get started
 
@@ -18,15 +18,18 @@ Requires iOS/iPadOS 17+ and an Apple Silicon Mac running macOS 14+. Nocturne inc
 3. In Nocturne on iPhone or iPad, choose **Add host → Scan QR code** and scan the code shown by **Pair a device** on the Mac.
 4. Choose **Desktop** to stream, or **Apps** to open a Mac app window. Enable optional terminal and file access in the Mac app’s **Sharing** settings.
 
+For Windows, follow the [Windows build and setup guide](docs/WINDOWS.md) for x64/ARM64 installers and portable packages, hosting and computer connections, app windows, remote access, PowerShell, files, and microphone forwarding. Headless monitors and microphone input use compatible Windows virtual-device drivers.
+
 For the iPhone/iPad app, see the [build and TestFlight guide](docs/RELEASING.md) or [build from source](docs/DEVELOPMENT.md).
 
-To connect from a Mac, install the updated Mac app on both computers. On the host choose **Pair a device → Copy pairing code**. On the viewing Mac choose **Computers → Add host**, paste the code, and select **Add & connect**. Saved hosts reconnect from Computers.
+To connect from Mac or Windows, install the updated desktop app. On the host choose **Pair a device → Copy pairing code**. On the viewing computer choose **Computers → Add host**, paste the code, and select **Add & connect**. Saved hosts reconnect from Computers.
 
-Choose **Apps** next to a saved Mac to browse applications and open individual windows. To unlock a locked host, open its **Desktop** and enter the Mac password; Nocturne must already be running in that signed-in session.
+Choose **Apps** next to a saved host to browse applications and open individual windows. To unlock a locked host, open its **Desktop** and enter the Mac password; Nocturne must already be running in that signed-in session.
 
 ## Documentation
 
-- [Usage guide](docs/USAGE.md) — pairing one or more Macs, app windows, displays, input, microphone, terminal, and files.
+- [Usage guide](docs/USAGE.md) — pairing one or more computers, app windows, displays, input, microphone, terminal, and files.
+- [Windows host](docs/WINDOWS.md) — requirements, builds, setup, verification, and limitations.
 - [Remote access](docs/REMOTE_ACCESS.md) — connecting across networks and hosting a broker.
 - [Development](docs/DEVELOPMENT.md) — prerequisites, local builds, signing, and tests.
 - [Releases and TestFlight](docs/RELEASING.md) — automated builds and distribution.

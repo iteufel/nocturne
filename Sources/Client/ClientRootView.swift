@@ -45,7 +45,7 @@ struct ClientRootView: View {
                     .listStyle(.sidebar)
                     .navigationTitle("Nocturne")
                     .safeAreaInset(edge: .bottom, alignment: .leading) {
-                        Label("Your Mac, anywhere at home", systemImage: "moon")
+                        Label("Your computer, anywhere at home", systemImage: "moon")
                             .font(.caption).foregroundStyle(.secondary).padding(20)
                     }
                     .navigationSplitViewColumnWidth(min: 210, ideal: 245, max: 290)
@@ -247,7 +247,7 @@ struct AppLibraryView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     Text("Pick up where\nyou left off.").font(.system(size: 34, weight: .semibold, design: .rounded)).tracking(-1)
                     HStack { StatusPill(label: "Paired", active: true); Text("\(model.preferences.resolution) · \(model.preferences.frameRate) fps").font(.caption).foregroundStyle(MoonStyle.secondary) }
-                    if model.apps.isEmpty { ContentUnavailableView("No apps yet", systemImage: "square.grid.2x2", description: Text("Restart Nocturne on your Mac, then reconnect to load your desktop.")) }
+                    if model.apps.isEmpty { ContentUnavailableView("No apps yet", systemImage: "square.grid.2x2", description: Text("Restart Nocturne on your computer, then reconnect to load your desktop.")) }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 16) {
                         ForEach(model.apps) { app in
                             Button { model.stream(app) } label: {

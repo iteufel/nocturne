@@ -7,6 +7,9 @@ DerivedData/
 xcuserdata/
 build/
 artifacts/
+Windows/**/bin/
+Windows/**/obj/
+TestResults/
 remote/target/
 remote/certs/
 *.p8
