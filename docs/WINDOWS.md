@@ -269,7 +269,9 @@ The fixture in `Windows/Nocturne.Interop` verifies authentication and reconnects
 in both directions, including Windows receiver commands and fragmented video/audio
 from a real Swift workspace server. The WPF smoke test connects the actual Windows
 receiver over TLS and verifies a decoded native H.264 image on screen. Native CTest
-checks sustained production decoding and occluded-window capture. It is excluded from the package. Native UI and codec tests do not prove
+checks sustained production decoding, occluded-window capture, and native tray
+registration when an Explorer taskbar is available. The test executable is excluded
+from the package. Native UI and codec tests do not prove
 physical GPU capture, a driver's headless modes, audio routing into Discord, secure
 desktop behavior, or visible iPhone-to-Windows playback; those require a Windows PC
 and physical client/device checks.

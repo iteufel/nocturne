@@ -13,7 +13,9 @@
 #include <dxgi.h>
 #include <dwmapi.h>
 #include <cwchar>
+#include <cstddef>
 #include <wtsapi32.h>
+#include <shellapi.h>
 #include <winrt/Windows.Graphics.Capture.h>
 
 static void decode(nocturne::EncodedFrame const& frame) {
@@ -167,10 +169,39 @@ static bool capture_window() {
     return true;
 }
 
+static bool tray_registration() {
+    auto taskbar = FindWindowW(L"Shell_TrayWnd", nullptr);
+    if (!taskbar) {
+        std::cout << "Tray registration skipped: the desktop has no Explorer taskbar.\n";
+        return false;
+    }
+    TestWindow window(RGB(32, 32, 32));
+    NOTIFYICONDATAW icon{};
+    icon.cbSize = static_cast<DWORD>(sizeof(icon)); icon.hWnd = window.handle(); icon.uID = 1;
+    icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    icon.uCallbackMessage = WM_APP + 31;
+    icon.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    wcscpy_s(icon.szTip, L"Nocturne tray verification");
+    nocturne::require(icon.hIcon != nullptr, L"The standard Windows icon could not be loaded.");
+    SetLastError(ERROR_SUCCESS);
+    auto added = Shell_NotifyIconW(NIM_ADD, &icon);
+    auto error = GetLastError();
+    DWORD taskbar_process = 0;
+    GetWindowThreadProcessId(taskbar, &taskbar_process);
+    std::cout << "Native tray: registered=" << added << "; Win32 error=" << error
+        << "; structure size=" << sizeof(icon) << "; window offset=" << offsetof(NOTIFYICONDATAW, hWnd)
+        << "; icon offset=" << offsetof(NOTIFYICONDATAW, hIcon) << "; tip offset=" << offsetof(NOTIFYICONDATAW, szTip)
+        << "; taskbar PID=" << taskbar_process << '\n';
+    if (added) Shell_NotifyIconW(NIM_DELETE, &icon);
+    nocturne::require(added != FALSE, L"The Windows notification area rejected a native tray icon.");
+    return true;
+}
+
 int main(int argc, char** argv) {
     try {
         nocturne::apartment();
         if (argc == 2 && strcmp(argv[1], "--window-capture") == 0) return capture_window() ? 0 : 77;
+        if (argc == 2 && strcmp(argv[1], "--tray") == 0) return tray_registration() ? 0 : 77;
         // Run the real BGRA -> NV12 -> H.264 path on both native architectures.
         // This does not depend on a GPU, a virtual driver, or screen contents.
         nocturne::Encoder encoder(640, 480, 30);
