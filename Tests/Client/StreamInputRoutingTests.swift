@@ -101,8 +101,20 @@ final class StreamInputRoutingTests: XCTestCase {
             "A rendered stream must install its hidden-controls gesture")
         let safeFrame = host.view.safeAreaLayoutGuide.layoutFrame
         let videoFrame = video.view.convert(video.view.bounds, to: host.view)
-        XCTAssertEqual(videoFrame, fillEntireScreen ? host.view.bounds : safeFrame,
-            "The embedded video must use the selected bounds, including the native safe-area insets")
+        if fillEntireScreen {
+            XCTAssertEqual(videoFrame, host.view.bounds,
+                "Full-screen video must extend beneath the safe-area insets")
+        } else {
+            XCTAssertEqual(videoFrame.minX, safeFrame.minX)
+            XCTAssertEqual(videoFrame.maxX, safeFrame.maxX)
+            XCTAssertEqual(videoFrame.maxY, safeFrame.maxY)
+            XCTAssertGreaterThan(videoFrame.minY, safeFrame.minY,
+                "Fitted video must reserve space for the persistent stream controls")
+            let controlsPoint = CGPoint(x: safeFrame.minX + 24, y: (safeFrame.minY + videoFrame.minY) / 2)
+            let controlsTarget = try XCTUnwrap(window.hitTest(controlsPoint, with: nil))
+            XCTAssertFalse(controlsTarget === video.view || controlsTarget.isDescendant(of: video.view),
+                "A tap on the persistent controls must not reach the video surface")
+        }
         for point in [CGPoint(x: 512, y: 384), CGPoint(x: 200, y: 150), CGPoint(x: 900, y: 650)] {
             let target = try XCTUnwrap(window.hitTest(point, with: nil))
             XCTAssertTrue(target === video.view || target.isDescendant(of: video.view),

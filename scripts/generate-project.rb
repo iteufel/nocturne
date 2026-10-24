@@ -166,6 +166,12 @@ target.build_configurations.each do |config|
   settings['SWIFT_OBJC_INTERFACE_HEADER_NAME'] = 'Moonlight-Swift.h'
   settings['SWIFT_VERSION'] = '5.0'
   settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
+  # The pinned client names Xcode.app explicitly. CI selects another Xcode,
+  # so importing both toolchains' headers redefines SwiftBridging.
+  settings['HEADER_SEARCH_PATHS'].map! do |path|
+    path.sub('/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include',
+      '$(TOOLCHAIN_DIR)/usr/include')
+  end
   settings['HEADER_SEARCH_PATHS'] << '$(PROJECT_DIR)/../../Sources/Client/Bridge'
   settings['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'DarkAppIcon'
   settings['MARKETING_VERSION'] = '1.0'
