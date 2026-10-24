@@ -519,6 +519,11 @@ NSNotificationName const NocturneStreamControlsRequestedNotification = @"Nocturn
 - (void)setPointerCapture:(BOOL)enabled controller:(UIViewController *)controller {
     if ([controller isKindOfClass:MDStreamController.class]) ((MDStreamController *)controller).pointerCaptureEnabled = enabled;
 }
+- (void)toggleKeyboardForController:(UIViewController *)controller {
+    if ([controller isKindOfClass:MDStreamController.class] && !((MDStreamController *)controller).cleanedUp) {
+        [(MDStreamController *)controller nocturneToggleKeyboard];
+    }
+}
 - (void)stopController:(UIViewController *)controller { if ([controller isKindOfClass:MDStreamController.class]) [(MDStreamController *)controller shutdown]; }
 - (void)stopController:(UIViewController *)controller completion:(void (^)(void))completion {
     [self stopController:controller];

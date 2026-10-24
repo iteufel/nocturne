@@ -47,12 +47,15 @@ NOCTURNE_TEST_APP_WINDOWS=1 swift test --filter AppWindowTests/testNativeWindowC
 bash scripts/test-microphone-driver.sh
 bash scripts/test-stream-audio.sh
 bash scripts/test-stream-video.sh
+python3 scripts/test-stream-capture.py
 NOCTURNE_ENGINE_EXECUTABLE="$PWD/.build/XcodeMac/Build/Products/Debug/Nocturne.app/Contents/MacOS/nocturne-stream-host" swift test
 ```
 
 The command with `NOCTURNE_ENGINE_EXECUTABLE` starts a real engine on its standard ports: stop the Mac app first. It verifies authenticated administration, application-library initialization, individual removal from a two-device roster, persistence across restart, reset, and shutdown. Other tests use real TLS connections, PTYs, and files; they check wrong-key rejection, certificate/signature binding, single-use invitation handling, one-device revocation while another connection and shell remain active, permission revocation, multiple terminal tabs, commands completing while disconnected, reconnect without duplicate output, retained exit output, bounded scrollback, per-device terminal ownership and limits, detached-shell cleanup, bounded framing, transfer integrity, cancellation, traversal/symlink rejection, and no-overwrite races.
 
 `ServerLifecycleTests` and `ServerSettingsTests` cover startup from the saved Sharing toggles, pending edits, Apply/Discard, restart cancellation, login-item approval and registration errors, independent sharing capabilities, and offline video revocation. They use isolated preferences, temporary files, real TLS listeners on test ports, and a failing child executable to verify automatic screen-sharing recovery while a workspace stays connected. Login-item registration is substituted; these tests do not change your Login Items, capture your screen, or verify an actual logout/login.
+
+`test-stream-capture.py` needs the pinned engine source fetched by a Mac build, or `NOCTURNE_ENGINE_SOURCE=/path/to/Sunshine`. It generates the production CMake overlays and checks rejected capture outputs and encoder probes, reconnects, and display changes under AddressSanitizer and UBSan. On macOS it also runs the actual callback registration and delivery methods with manual reference counting against a simulated AVFoundation queue, checking callback lifetime and teardown. It never captures a real screen. The C++ checks also run on Linux with CMake and a C++17 compiler. `--baseline` reproduces the pinned engine's nil-semaphore failure.
 
 To verify Dock behavior, launch the built Mac app, enable **Sharing → Screen sharing**, and apply, then run:
 

@@ -70,6 +70,7 @@ public struct Packet: Codable {
     public var applicationID: String? = nil
     public var applications: [RemoteApplication]? = nil
     public var windows: [RemoteAppWindow]? = nil
+    public var windowsError: String? = nil
     public var window: RemoteAppWindow? = nil
     public var windowID: UInt32? = nil
     public var viewport: AppWindowViewport? = nil
