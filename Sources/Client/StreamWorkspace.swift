@@ -75,6 +75,24 @@ struct StreamWorkspace: View {
             .onChange(of: displayScale) { _, scale in model.streamViewport(layout.video.size, scale: scale, session: session) }
         }
         .background(Color.black.ignoresSafeArea())
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack {
+                Button(session.videoReady ? "Disconnect stream" : "Cancel connection", systemImage: "xmark") { model.endStream() }
+                    .accessibilityIdentifier("closeDesktopStream")
+                Spacer()
+                Button("Keyboard", systemImage: "keyboard") {
+                    if let controller = session.controller { model.engine.toggleKeyboard(controller: controller) }
+                }
+                .disabled(!session.videoReady)
+                .accessibilityIdentifier("desktopKeyboard")
+                Button("Stream controls", systemImage: "slider.horizontal.3") { openControls() }
+            }
+            .labelStyle(.iconOnly).buttonStyle(NocturneGlassButtonStyle())
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .background(.regularMaterial)
+        }
+        // Typing must not negotiate another display size and tear down its input view.
+        .ignoresSafeArea(.keyboard)
         .background { StreamControlsGesture(enabled: !workspace.showControls) { openControls() }.allowsHitTesting(false) }
         .onReceive(model.microphone.$error.dropFirst()) { error in
             if error != nil { openControls() }

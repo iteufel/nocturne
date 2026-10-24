@@ -185,6 +185,8 @@ jobs:
         run: scripts/build.sh mac
       - name: Test locked-screen capture with sanitizers
         run: bash scripts/test-stream-lock-screen.sh
+      - name: Test capture rejection and callback lifecycle with sanitizers
+        run: python3 scripts/test-stream-capture.py
 
   testflight:
     name: Release iOS to TestFlight

@@ -50,7 +50,7 @@ public final class MacAppsModel: ObservableObject {
                       reply.eof != nil, next > offset || reply.eof == true else { throw NocturneError.invalidFrame }
                 apps.append(contentsOf: page)
                 guard apps.count <= 10_000 else { throw NocturneError.invalidFrame }
-                if offset == 0 { windows = reply.windows ?? [] }
+                if offset == 0 { windows = reply.windows ?? []; error = reply.windowsError }
                 if reply.eof == true { break }; offset = next
             }
             guard Set(apps.map(\.id)).count == apps.count else { throw NocturneError.invalidFrame }

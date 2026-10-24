@@ -32,10 +32,14 @@ private final class RecordingAppHost: AppWindowHosting {
     var pauseCapture: CheckedContinuation<Void, Never>?
     var delayCapture = false
     var failCapture = false
+    var failWindows = false
     func applications() -> [RemoteApplication] { (0..<130).map { .init(id: "app\($0)", name: "App \($0)") } }
     func icon(applicationID: String) -> Data { Data([1, 2, 3]) }
-    func windows(applicationID: String?) -> [RemoteAppWindow] { (1...8).map { .init(id: UInt32($0), applicationID: "app", title: "Window \($0)", width: 800, height: 600) } }
-    func launch(applicationID: String) -> [RemoteAppWindow] { windows(applicationID: applicationID) }
+    func windows(applicationID: String?) throws -> [RemoteAppWindow] {
+        if failWindows { throw NocturneError.remote("Unlock this Mac to browse windows.") }
+        return (1...8).map { .init(id: UInt32($0), applicationID: "app", title: "Window \($0)", width: 800, height: 600) }
+    }
+    func launch(applicationID: String) throws -> [RemoteAppWindow] { try windows(applicationID: applicationID) }
     func capture(applicationID: String, windowID: UInt32, viewport: AppWindowViewport, send: @escaping AppWindowSend, ended: @escaping (Error) -> Void) async throws -> AppWindowCapture {
         if failCapture { throw NocturneError.permissionDenied }
         let capture = RecordingAppCapture(windowID: windowID, send: send); captures.append(capture)
@@ -227,6 +231,22 @@ final class AppWindowTests: XCTestCase {
         XCTAssertEqual(host.captures.first?.stops, 1)
         await rejected { try await manager.handle(open(2), connection: UUID(), device: "iPad", isConnected: { false }, send: send) }
         XCTAssertEqual(host.captures.count, 1)
+    }
+    func testWindowEnumerationFailurePreservesPagedCatalogAndReportsRecovery() async throws {
+        let host = RecordingAppHost(); host.failWindows = true
+        let manager = AppWindowSessionManager(host: host), connection = UUID()
+        let first = try await manager.handle(Packet(.appList), connection: connection, device: "iPhone", send: send)
+        let decoded = try JSONDecoder().decode(Packet.self, from: JSONEncoder().encode(first))
+        XCTAssertEqual(decoded.applications?.count, 64)
+        XCTAssertEqual(decoded.windows, [])
+        XCTAssertEqual(decoded.windowsError, "Unlock this Mac to browse windows.")
+        var next = Packet(.appList); next.offset = first.offset
+        let second = try await manager.handle(next, connection: connection, device: "iPhone", send: send)
+        XCTAssertEqual(second.applications?.count, 64)
+        host.failWindows = false
+        let refreshed = try await manager.handle(Packet(.appList), connection: connection, device: "iPhone", send: send)
+        XCTAssertNil(refreshed.windowsError)
+        XCTAssertEqual(refreshed.windows?.count, 8)
     }
     func testCatalogPagingAndUntrustedViewportVideoInputValidation() async throws {
         let manager = AppWindowSessionManager(host: RecordingAppHost()), connection = UUID()

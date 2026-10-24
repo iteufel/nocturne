@@ -149,6 +149,51 @@ final class HostConnectionTests: XCTestCase {
         XCTAssertEqual(model.hostStatus(paired), "Screen sharing needs attention")
         XCTAssertFalse(model.showAdd)
     }
+    func testStalledStreamTimesOutAndReportsHostError() async throws {
+        let workspace = try TestWorkspace()
+        let (model, engine) = try model(for: workspace.invitation, linked: true)
+        defer { model.suspend(); workspace.stop() }
+        let paired = try XCTUnwrap(model.pairedServers.active)
+        let current = StreamSession(host: engine.host, app: StreamingApp(["id": "desktop", "name": "Desktop"]), preferences: model.preferences)
+        model.session = current
+        model.startStreamDeadline(current, timeout: 1_000_000)
+        await current.connectionDeadline?.value
+        XCTAssertNil(model.session)
+        XCTAssertNotNil(model.hostErrors[paired.id])
+        XCTAssertNil(current.connectionDeadline)
+        XCTAssertFalse(model.busy)
+    }
+    func testReadyStreamCancelsStartupDeadline() async throws {
+        let workspace = try TestWorkspace()
+        let (model, engine) = try model(for: workspace.invitation, linked: true)
+        defer { model.suspend(); workspace.stop() }
+        let current = StreamSession(host: engine.host, app: StreamingApp(["id": "desktop", "name": "Desktop"]), preferences: model.preferences)
+        let controller = UIViewController(); current.controller = controller
+        model.session = current
+        model.startStreamDeadline(current, timeout: 1_000_000)
+        let deadline = current.connectionDeadline
+        engine.streamStarted?(controller)
+        await deadline?.value
+        XCTAssertTrue(model.session === current)
+        XCTAssertTrue(current.videoReady)
+        XCTAssertNil(current.connectionDeadline)
+        XCTAssertNil(model.error)
+    }
+    func testCancelledStartupDeadlineCannotCloseANewerSession() async throws {
+        let workspace = try TestWorkspace()
+        let (model, engine) = try model(for: workspace.invitation, linked: true)
+        defer { model.suspend(); workspace.stop() }
+        let app = StreamingApp(["id": "desktop", "name": "Desktop"])
+        let old = StreamSession(host: engine.host, app: app, preferences: model.preferences)
+        model.session = old; model.startStreamDeadline(old, timeout: 1_000_000)
+        let deadline = old.connectionDeadline
+        model.endStream()
+        let replacement = StreamSession(host: engine.host, app: app, preferences: model.preferences)
+        model.session = replacement
+        await deadline?.value
+        XCTAssertTrue(model.session === replacement)
+        XCTAssertNil(model.error)
+    }
     func testHostManagementPresentation() async throws {
         guard ProcessInfo.processInfo.environment["NOCTURNE_HOST_UI_REVIEW"] == "1" else {
             throw XCTSkip("Opt-in rendered host-management review")

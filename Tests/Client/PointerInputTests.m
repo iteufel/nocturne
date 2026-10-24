@@ -121,6 +121,19 @@
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 150 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{ [released fulfill]; });
     [self waitForExpectations:@[released] timeout:2];
 }
+- (void)testKeyboardButtonUsesTheStreamTextFieldAndCanToggleRepeatedly {
+    RecordingStreamView *view = [self viewWithAbsoluteTouch:YES];
+    UITextField *field = [view valueForKey:@"keyInputField"];
+    for (int attempt = 0; attempt < 3; attempt++) {
+        [view nocturneToggleKeyboard];
+        XCTAssertTrue([[view valueForKey:@"isInputingText"] boolValue]);
+        XCTAssertEqualObjects(field.text, @"0");
+        XCTAssertNotNil(field.inputAccessoryView);
+        XCTAssertEqual([field actionsForTarget:view forControlEvent:UIControlEventEditingChanged].count, 1u);
+        [view nocturneToggleKeyboard];
+        XCTAssertFalse([[view valueForKey:@"isInputingText"] boolValue]);
+    }
+}
 - (void)testDirectTapPositionsCursorAndClicks {
     RecordingStreamView *view = [self viewWithAbsoluteTouch:YES];
     PointerTestTouch *touch = [PointerTestTouch new]; touch.inputTimestamp = 1;

@@ -36,3 +36,5 @@
 }
 
 - (void)nocturneFocusInput { [_streamView becomeFirstResponder]; }
+
+- (void)nocturneToggleKeyboard { [_streamView nocturneToggleKeyboard]; }

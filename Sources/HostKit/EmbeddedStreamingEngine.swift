@@ -55,7 +55,11 @@ public final class EmbeddedStreamingEngine {
         child.terminationHandler = { [weak self] child in
             Task { @MainActor in
                 guard let self, self.generation == epoch else { return }
-                self.onUnexpectedExit?("The streaming engine stopped (code \(child.terminationStatus)). Review the server log.")
+                // Recovery starts a new process and truncates its console output.
+                // Keep the failed process's logs before notifying the supervisor.
+                self.preserveCrashLogs()
+                let reason = child.terminationReason == .uncaughtSignal ? "signal" : "code"
+                self.onUnexpectedExit?("The streaming engine stopped (\(reason) \(child.terminationStatus)). Diagnostic logs: \(self.directory.path)/engine-crash.log and console-crash.log.")
             }
         }
         process = child
@@ -107,6 +111,22 @@ public final class EmbeddedStreamingEngine {
             child.waitUntilExit()
         }
         try? logHandle?.close(); logHandle = nil
+    }
+
+    private func preserveCrashLogs() {
+        for name in ["engine", "console"] {
+            let source = directory.appendingPathComponent("\(name).log")
+            let destination = directory.appendingPathComponent("\(name)-crash.log")
+            // Diagnostics must not load an unbounded log into the app's memory.
+            guard let handle = try? FileHandle(forReadingFrom: source) else { continue }
+            defer { try? handle.close() }
+            guard let length = try? handle.seekToEnd() else { continue }
+            let limit: UInt64 = 1_048_576
+            do { try handle.seek(toOffset: length > limit ? length - limit : 0) }
+            catch { continue }
+            guard let data = try? handle.read(upToCount: Int(limit)) else { continue }
+            try? Self.writePrivate(data, to: destination)
+        }
     }
 
     private func pendingPairings() async throws -> [StreamPairingRequest] {
