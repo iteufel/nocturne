@@ -64,7 +64,7 @@ struct temp_retain_av_img_t {
 #define CVPixelBufferGetHeight(buffer) 1080
 #define CVPixelBufferGetBytesPerRow(buffer) (1920 * 4)
 #define BOOST_LOG(level) std::cerr
-enum class capture_e { ok, reinit };
+enum class capture_e { ok, reinit, capture_error };
 using push_captured_image_cb_t = std::function<bool(std::shared_ptr<img_t>, bool)>;
 using pull_free_image_cb_t = std::function<bool(std::shared_ptr<img_t> &)>;
 struct display_t {

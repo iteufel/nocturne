@@ -36,6 +36,7 @@ final class StreamSession: ObservableObject, Identifiable {
     var desiredSize: StreamDisplaySize?
     var reconfigure: Task<Void, Never>?
     var heartbeat: Task<Void, Never>?
+    var connectionDeadline: Task<Void, Never>?
     var hasDisplayLease = false
     init(host: StreamingHost, app: StreamingApp, preferences: StreamPreferences) {
         self.host = host; self.app = app; self.preferences = preferences
@@ -158,6 +159,7 @@ final class ClientModel: ObservableObject {
         engine.streamStarted = { [weak self] controller in
             guard let self, let current = self.session, current.controller === controller else { return }
             current.videoReady = true
+            current.connectionDeadline?.cancel(); current.connectionDeadline = nil
         }
         engine.streamFailed = { [weak self] controller, message in
             guard let self, self.session?.controller === controller else { return }
@@ -361,7 +363,19 @@ final class ClientModel: ObservableObject {
             do { try await Task.sleep(nanoseconds: 350_000_000) } catch { return }
             defer { self.pendingStream = nil }
             guard self.selectedHost?.id == host.id else { return }
-            self.session = StreamSession(host: host, app: app, preferences: p)
+            let current = StreamSession(host: host, app: app, preferences: p)
+            self.session = current
+            self.startStreamDeadline(current)
+        }
+    }
+    // Allow the display protocol's 60-second preparation budget plus video startup.
+    func startStreamDeadline(_ current: StreamSession, timeout: UInt64 = 90_000_000_000) {
+        guard session === current, current.connectionDeadline == nil else { return }
+        current.connectionDeadline = Task { [weak self, weak current] in
+            do { try await Task.sleep(nanoseconds: timeout) } catch { return }
+            guard let self, let current, self.session === current, !current.videoReady else { return }
+            self.failHostSetup("Screen sharing did not start in time. Check screen capture on your Mac and your network, then reconnect.")
+            self.endStream()
         }
     }
     func streamViewport(_ size: CGSize, scale: CGFloat, session current: StreamSession) {
@@ -391,6 +405,7 @@ final class ClientModel: ObservableObject {
                 current.status = current.size == nil ? "Preparing your display…" : "Matching your display…"
                 if let old = current.controller {
                     microphone.stop(); current.videoReady = false
+                    startStreamDeadline(current)
                     current.controller = nil
                     await stopVideo(old)
                 }
@@ -418,6 +433,8 @@ final class ClientModel: ObservableObject {
                     guard let self, let current, self.session === current else { return }; self.endStream()
                 }) else { throw NocturneError.remote("Pair with this computer again before starting a stream.") }
                 current.size = requested; current.controller = controller
+                current.connectionDeadline?.cancel(); current.connectionDeadline = nil
+                startStreamDeadline(current, timeout: 30_000_000_000)
                 if current.desiredSize == requested { return }
             }
         } catch {
@@ -450,6 +467,7 @@ final class ClientModel: ObservableObject {
         pendingStream?.cancel(); pendingStream = nil
         guard let current = session else { return }
         session = nil; current.reconfigure?.cancel(); current.heartbeat?.cancel(); current.heartbeat = nil
+        current.connectionDeadline?.cancel(); current.connectionDeadline = nil
         if let controller = current.controller { engine.stopController(controller) }
         closingStream = Task { [weak self] in
             guard let self else { return }

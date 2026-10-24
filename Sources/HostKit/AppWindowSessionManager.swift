@@ -54,7 +54,15 @@ public final class AppWindowSessionManager {
             guard offset >= 0, offset <= apps.count else { throw NocturneError.invalidFrame }
             let end = min(apps.count, Int(offset) + 64)
             reply.applications = Array(apps[Int(offset)..<end]); reply.offset = Int64(end); reply.eof = end == apps.count
-            if offset == 0 { reply.windows = try await host.windows(applicationID: nil) }
+            if offset == 0 {
+                // Installed apps remain useful when window enumeration is unavailable
+                // (for example while locked or awaiting Screen Recording permission).
+                do { reply.windows = try await host.windows(applicationID: nil) }
+                catch {
+                    if error is CancellationError { throw error }
+                    reply.windows = []; reply.windowsError = error.localizedDescription
+                }
+            }
         case .appIcon:
             guard let id = packet.applicationID else { throw NocturneError.invalidFrame }
             reply.data = try host.icon(applicationID: id)

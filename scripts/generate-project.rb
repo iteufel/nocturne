@@ -73,7 +73,9 @@ overlay(target, group, 'Stream/Connection.m') do |source|
   source = replace_once(source, "    // Start playback\n    SDL_PauseAudioDevice(audioDevice, 0);", "    // Playback starts after StreamAudioPlayback primes the jitter cushion.")
   # Loopback is the remote QUIC proxy: retain WAN packet sizing and stream behavior.
   source = replace_once(source, 'if ([Utils isActiveNetworkVPN]) {', 'if ([Utils isActiveNetworkVPN] || [config.host isEqualToString:@"127.0.0.1"]) {')
-  source = replace_once(source, "-(void) terminate\n{", "-(void) terminate { [self nocturneTerminateWithCompletion:nil]; }\n\n-(void)nocturneTerminateWithCompletion:(void (^)(void))completion\n{")
+  source = replace_once(source, "-(void) terminate\n{", "-(void) terminate { [self nocturneTerminateWithCompletion:nil]; }\n\n-(void)nocturneTerminateWithCompletion:(void (^)(void))completion\n{\n    [self cancel];")
+  # A stop may win before the queued Connection operation has entered main().
+  source = replace_once(source, "    [initLock lock];\n    LiStartConnection(", "    [initLock lock];\n    if (self.cancelled) { [initLock unlock]; return; }\n    LiStartConnection(")
   replace_once(source, "        LiStopConnection();\n        [initLock unlock];", "        LiStopConnection();\n        [initLock unlock];\n        if (completion) dispatch_async(dispatch_get_main_queue(), completion);")
 end
 overlay(target, group, 'Stream/StreamManager.m') do |source|
@@ -96,6 +98,7 @@ overlay(target, group, 'Input/StreamView.m') do |source|
   source = replace_once(source, '    NSInteger lastMouseButtonMask;', "    NSInteger lastMouseButtonMask;\n    NSMapTable<UITouch *, NSNumber *> *nocturneMouseTouches;\n    NSMutableSet<UITouch *> *nocturneActiveTouches;\n    NSHashTable<UITouch *> *nocturneIgnoredTouches;")
   source = replace_once(source, '    NSMutableSet* keysDown;', "    NSMutableSet* keysDown;\n    NSMutableDictionary<NSNumber *, UIPress *> *nocturnePressedKeys;\n    BOOL nocturneControlsKeyDown;")
   source = replace_section(source, '- (void)pressesBegan:', '- (void)touchesEnded:', File.read('Sources/Client/Bridge/StreamKeyboardInput.inc'))
+  source = replace_section(source, '        if ([[event allTouches] count] == 3) {', '- (UIBarButtonItem *)createButtonWithImageNamed:', "        if ([[event allTouches] count] == 3) [self nocturneToggleKeyboard];\n    }\n}\n\n")
   source = replace_section(source, '- (BOOL)handleMouseButtonEvent:', '- (void)touchesMoved:', '')
   raise 'Upstream mouse routing changed; review the overlay.' unless source.scan('if ([GCMouse current] != nil)').length == 2
   source = source.gsub('if ([GCMouse current] != nil)', 'if (NocturneUsesRelativeMouse(self))')
