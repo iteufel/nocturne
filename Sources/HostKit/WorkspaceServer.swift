@@ -27,6 +27,8 @@ public final class WorkspaceServer {
     public let folder: SharedFolder
     private let queue = DispatchQueue(label: "nocturne.host", qos: .userInitiated)
     private var listener: NWListener?
+    /// Available after readiness, including when port zero requests an OS-assigned port.
+    var listeningPort: UInt16? { queue.sync { listener?.port?.rawValue } }
     private var listenerCancelled: DispatchSemaphore?
     private var sessions: [UUID: HostSession] = [:]
     private let terminals = TerminalRegistry()

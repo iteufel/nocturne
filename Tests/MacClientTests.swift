@@ -89,6 +89,13 @@ final class MacClientTests: XCTestCase {
         while !predicate(), Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
         guard predicate() else { XCTFail("Timed out: " + message); throw NocturneError.timeout }
     }
+    private func startListener(_ host: WorkspaceServer, secret: Data) async throws -> UInt16 {
+        var listening = false
+        host.onStatus = { status, _ in if status == "Ready" { listening = true } }
+        try host.start(secret: secret, port: 0)
+        try await waitFor("listener") { listening }
+        return try XCTUnwrap(host.listeningPort)
+    }
     private func rejected(_ action: () async throws -> Packet, file: StaticString = #filePath, line: UInt = #line) async {
         do { _ = try await action(); XCTFail("Unauthorized desktop command succeeded", file: file, line: line) } catch {}
     }
@@ -277,10 +284,9 @@ final class MacClientTests: XCTestCase {
         let remote = RecordingDesktopHost(), desktop = DesktopSessionManager(host: remote)
         let appHost = MacAppHost(), apps = AppWindowSessionManager(host: appHost)
         let host = try WorkspaceServer(folder: root, name: "Host", devices: store, appWindows: apps, desktop: desktop)
-        var listening = false; host.onStatus = { status, _ in if status == "Ready" { listening = true } }
-        let secret = try SecureStore.randomKey(), port = UInt16.random(in: 52_000..<59_000)
-        try host.start(secret: secret, port: port); defer { host.stop(); desktop.stop(); apps.stop() }
-        try await waitFor("listener") { listening }
+        defer { host.stop(); desktop.stop(); apps.stop() }
+        let secret = try SecureStore.randomKey()
+        let port = try await startListener(host, secret: secret)
         let invitation = try PairingInvitation(host: "127.0.0.1", port: port, name: "Host", secret: secret, enrollmentToken: store.createInvitation())
         let identity = try MacClientIdentity.generate().workspace(name: "Viewer")
         var saved: [String: Data] = [:]
@@ -346,10 +352,9 @@ final class MacClientTests: XCTestCase {
         let deviceStore = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
         let remote = RecordingDesktopHost(), desktop = DesktopSessionManager(host: remote)
         let host = try WorkspaceServer(folder: root, name: "Other Mac", devices: deviceStore, desktop: desktop)
-        var listening = false; host.onStatus = { status, _ in if status == "Ready" { listening = true } }
-        let secret = try SecureStore.randomKey(), port = UInt16.random(in: 52_000..<59_000)
-        try host.start(secret: secret, port: port); defer { host.stop(); desktop.stop() }
-        try await waitFor("listener") { listening }
+        defer { host.stop(); desktop.stop() }
+        let secret = try SecureStore.randomKey()
+        let port = try await startListener(host, secret: secret)
         let invitation = try PairingInvitation(host: "127.0.0.1", port: port, name: "Other Mac", secret: secret, enrollmentToken: deviceStore.createInvitation())
         let identity = try MacClientIdentity.generate().workspace(name: "Client Mac")
         var saved: [String: Data] = [:]
@@ -420,10 +425,9 @@ final class MacClientTests: XCTestCase {
             XCTAssertTrue(remote.captures.allSatisfy { $0.stops == 1 }, "Release native capture before restoring displays")
             released += 1
         }
-        var listening = false; host.onStatus = { status, _ in if status == "Ready" { listening = true } }
-        let port = UInt16.random(in: 20_000..<30_000), key = try SecureStore.randomKey()
-        try host.start(secret: key, port: port); defer { host.stop(); desktop.stop() }
-        try await waitFor("listener") { listening }
+        defer { host.stop(); desktop.stop() }
+        let key = try SecureStore.randomKey()
+        let port = try await startListener(host, secret: key)
         let invitation = try PairingInvitation(host: "127.0.0.1", port: port, name: "Ultrawide host", secret: key, enrollmentToken: store.createInvitation())
         let stream = MacDesktopSession(invitation: invitation, identity: try MacClientIdentity.generate().workspace(name: "Laptop"))
         defer { stream.stop() }
@@ -471,6 +475,33 @@ final class MacClientTests: XCTestCase {
         controller.close(); XCTAssertEqual(closed, 1)
     }
 
+    func testOSAssignedListenerPortsKeepAuthenticatedServersIndependent() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstStore = try WorkspaceDeviceStore(url: root.appendingPathComponent("first/devices.json"))
+        let secondStore = try WorkspaceDeviceStore(url: root.appendingPathComponent("second/devices.json"))
+        let first = try WorkspaceServer(folder: root.appendingPathComponent("first/shared"), name: "First", devices: firstStore)
+        let second = try WorkspaceServer(folder: root.appendingPathComponent("second/shared"), name: "Second", devices: secondStore)
+        defer { first.stop(); second.stop() }
+        XCTAssertNil(first.listeningPort)
+        let firstKey = try SecureStore.randomKey(), secondKey = try SecureStore.randomKey()
+        let firstPort = try await startListener(first, secret: firstKey)
+        let secondPort = try await startListener(second, secret: secondKey)
+        XCTAssertNotEqual(firstPort, 0); XCTAssertNotEqual(secondPort, 0)
+        XCTAssertNotEqual(firstPort, secondPort, "A live listener's port must remain reserved")
+        let identity = try MacClientIdentity.generate().workspace(name: "Viewer")
+        let firstClient = WorkspaceConnection(identity: identity), secondClient = WorkspaceConnection(identity: identity)
+        defer { firstClient.disconnect(); secondClient.disconnect() }
+        try await firstClient.connect(PairingInvitation(host: "127.0.0.1", port: firstPort, name: "First", secret: firstKey,
+            enrollmentToken: firstStore.createInvitation()))
+        try await secondClient.connect(PairingInvitation(host: "127.0.0.1", port: secondPort, name: "Second", secret: secondKey,
+            enrollmentToken: secondStore.createInvitation()))
+        XCTAssertEqual(firstClient.name, "First"); XCTAssertEqual(secondClient.name, "Second")
+        first.stop(); XCTAssertNil(first.listeningPort)
+        _ = try await secondClient.request(Packet(.ping))
+        XCTAssertEqual(secondClient.state, .connected)
+    }
+
     func testUnsupportedHostAndFailedPairingSaveCloseConnectionWithoutReplacingSavedHosts() async throws {
         for failSave in [false, true] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -479,10 +510,9 @@ final class MacClientTests: XCTestCase {
             let store = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
             let remote = RecordingDesktopHost(), desktop = DesktopSessionManager(host: remote)
             let host = try WorkspaceServer(folder: root, name: "Host", devices: store, desktop: failSave ? desktop : nil)
-            var listening = false; host.onStatus = { status, _ in if status == "Ready" { listening = true } }
-            let secret = try SecureStore.randomKey(), port = UInt16.random(in: 52_000..<59_000)
-            try host.start(secret: secret, port: port); defer { host.stop(); desktop.stop() }
-            try await waitFor("listener") { listening }
+            defer { host.stop(); desktop.stop() }
+            let secret = try SecureStore.randomKey()
+            let port = try await startListener(host, secret: secret)
             let invitation = try PairingInvitation(host: "127.0.0.1", port: port, name: "Host", secret: secret, enrollmentToken: store.createInvitation())
             let identity = try MacClientIdentity.generate().workspace(name: "Mac")
             var existing = PairedServerList()
