@@ -4,7 +4,7 @@ Build and test Nocturne locally. For signed releases and TestFlight automation, 
 
 ## Build
 
-Targets iOS 17+ and macOS 14+ on an Apple Silicon Mac. Build with Rust 1.91+ (rustup) and Xcode 26 or newer (iOS 26/macOS 26 SDKs) and Ruby's `xcodeproj` gem. Development here uses Xcode 27 and iOS 27 simulators.
+Targets iOS 17+ and macOS 14+ on an Apple Silicon Mac. Build with Rust 1.91+ (rustup), Xcode 27.1 or newer and Ruby's `xcodeproj` gem. The Duo bar integration uses public iOS 27.1 SDK APIs behind runtime availability checks.
 
 ```sh
 gem install xcodeproj -v 1.27.0
@@ -38,6 +38,10 @@ Chat protocol fixtures run with `swift test --filter ChatTests`. They exercise r
 Developer workspace tests run with `swift test --filter 'DeveloperWorkspaceTests|ForgeTests|ChatTests'`. Temporary real repositories cover staging/unstaging, unusual paths, renames, branch comparisons, isolated worktree creation and stale/symlink-safe edits. The authenticated server test verifies thread-directory binding and permission/active-turn guards. `DeveloperClientTests` in the simulator exercises model/worktree/changes/PR flows over real TLS with deterministic media-free forge responses. PR edits are tested with structured payloads and stale-write rejection without modifying real PRs.
 
 Workspace network fixtures bind port `0`, wait for readiness and read `listeningPort`. This avoids collisions with other fixtures and system ephemeral connections; the application's configured listening port is unaffected.
+
+`ChatNavigationTests` covers provider/Mac preference isolation, snooze expiration, draft persistence, exact slash-command routing and bounded PR-agent context. Repository tests commit in disposable checkouts, reject stale index previews, preserve unstaged files and push only to a temporary local bare repository. Forge creation/activity tests use adapters with structured fixture replies; live forge checks only read actual PRs, comments and diffs. Regenerating the Xcode projects must preserve the microphone description and audio background mode needed by Codex voice.
+
+On a Duo vertical-bar scene, `DeveloperClientTests/testNativeChatCanvasScreenshot` also verifies that the actual `ClientRootView` keeps its navigation-managed bar visible and registers the conversation/PR mode actions there. This regression fails when chat hides the system bar and draws an inset duplicate rail. Check screenshots and interactions in cover, open and rotated poses as well; a passing protocol suite alone does not establish correct Duo bar placement.
 
 `NOCTURNE_TEST_CODEX_MODELS=1 swift test --filter ChatTests/testInstalledCodexModelSelectionWithoutInference` tests the installed Codex catalog and settings update on an ephemeral thread without inference. Live forge checks are read-only and require existing Mac CLI authentication:
 

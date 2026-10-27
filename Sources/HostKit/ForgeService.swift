@@ -71,7 +71,7 @@ final class ForgeService {
         if body != nil { args += ["--input", "-"] }
         return try await command("gh", args, input: try body.map { try JSONSerialization.data(withJSONObject: $0) })
     }
-    private func azure(_ resource: String, number: Int? = nil, extraRoute: [String] = [], query: [String] = [], body: [String: Any]? = nil, area: String = "git") async throws -> Any {
+    private func azure(_ resource: String, number: Int? = nil, extraRoute: [String] = [], query: [String] = [], body: [String: Any]? = nil, area: String = "git", method: String = "PATCH") async throws -> Any {
         var args = ["devops", "invoke", "--organization", organizationURL, "--area", area, "--resource", resource,
             "--api-version", "7.1", "--route-parameters", "project=\(repository.project ?? "")"]
         if area == "git" { args.append("repositoryId=\(repository.name)") }
@@ -84,7 +84,7 @@ final class ForgeService {
             let data = try JSONSerialization.data(withJSONObject: body)
             try data.write(to: temporary, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporary.path)
-            args += ["--http-method", "PATCH", "--in-file", temporary.path]
+            args += ["--http-method", method, "--in-file", temporary.path]
         }
         args += ["--only-show-errors", "--output", "json"]
         return try json(await command("az", args))
@@ -161,21 +161,71 @@ final class ForgeService {
         return try await detail(number)
     }
     static func revision(_ request: PullRequestInfo) -> String { request.revision }
+    func create(title: String, body: String, source: String, target: String) async throws -> PullRequestInfo {
+        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.utf8.count <= 400, body.utf8.count <= 60_000,
+              !source.isEmpty, !target.isEmpty, source != target, source.utf8.count < 256, target.utf8.count < 256 else { throw NocturneError.invalidFrame }
+        let raw: Any
+        if repository.kind == .github {
+            raw = try json(await gh(ghPath + "/pulls", method: "POST", body: ["title": title, "body": body, "head": (headOwner ?? repository.organization) + ":" + source, "base": target]))
+        } else {
+            raw = try await azure("pullRequests", body: ["title": title, "description": body, "sourceRefName": "refs/heads/" + source, "targetRefName": "refs/heads/" + target], method: "POST")
+        }
+        guard let object = raw as? [String: Any] else { throw NocturneError.invalidFrame }
+        return try decode(object)
+    }
+    func activity(_ number: Int) async throws -> [PullRequestActivity] {
+        guard number > 0 else { throw NocturneError.invalidFrame }
+        var result: [PullRequestActivity] = []
+        if repository.kind == .github {
+            let rows = values(try json(await gh(ghPath + "/issues/\(number)/comments", fields: ["per_page=50", "sort=created", "direction=desc"])))
+            result += rows.compactMap { row in
+                guard let id = row["id"] as? Int else { return nil }
+                return PullRequestActivity(id: "comment-\(id)", author: (row["user"] as? [String: Any])?["login"] as? String ?? "", text: String((row["body"] as? String ?? "").prefix(8000)), createdAt: row["created_at"] as? String)
+            }
+            let reviews = values(try json(await gh(ghPath + "/pulls/\(number)/reviews", fields: ["per_page=50"])))
+            result += reviews.compactMap { row in
+                guard let id = row["id"] as? Int else { return nil }
+                let state = (row["state"] as? String ?? "Review").replacingOccurrences(of: "_", with: " ").capitalized
+                return PullRequestActivity(id: "review-\(id)", author: (row["user"] as? [String: Any])?["login"] as? String ?? "", text: state + "\n" + String((row["body"] as? String ?? "").prefix(8000)), createdAt: row["submitted_at"] as? String)
+            }
+        } else {
+            for thread in values(try await azure("pullRequestThreads", number: number)).prefix(100) {
+                let context = thread["threadContext"] as? [String: Any]
+                for row in (thread["comments"] as? [[String: Any]] ?? []).prefix(50) where row["isDeleted"] as? Bool != true {
+                    guard let id = row["id"] as? Int else { continue }
+                    result.append(PullRequestActivity(id: "\(thread["id"] ?? "thread")-\(id)", author: (row["author"] as? [String: Any])?["displayName"] as? String ?? "", text: String((row["content"] as? String ?? "").prefix(8000)), createdAt: row["publishedDate"] as? String, path: context?["filePath"] as? String))
+                }
+            }
+        }
+        // Keep comments within the workspace frame, including JSON escaping.
+        var bytes = 0
+        return result.sorted { ($0.createdAt ?? "") < ($1.createdAt ?? "") }.filter { row in
+            bytes += row.text.utf8.count + row.author.utf8.count + 256; return bytes < 100_000
+        }
+    }
     private func decode(_ raw: [String: Any], checks: [String] = [], reviewers: [String]? = nil) throws -> PullRequestInfo {
         if repository.kind == .github {
             guard let number = raw["number"] as? Int, let title = raw["title"] as? String else { throw NocturneError.invalidFrame }
-            return PullRequestInfo(number: number, title: title, body: raw["body"] as? String ?? "", author: (raw["user"] as? [String: Any])?["login"] as? String ?? "",
+            var info = PullRequestInfo(number: number, title: title, body: raw["body"] as? String ?? "", author: (raw["user"] as? [String: Any])?["login"] as? String ?? "",
                 state: raw["merged_at"] is String ? "merged" : raw["state"] as? String ?? "open", draft: raw["draft"] as? Bool ?? false,
                 source: (raw["head"] as? [String: Any])?["ref"] as? String ?? "", target: (raw["base"] as? [String: Any])?["ref"] as? String ?? "",
                 url: raw["html_url"] as? String ?? repository.webURL + "/pull/\(number)", updatedAt: raw["updated_at"] as? String,
                 reviewers: reviewers ?? (raw["requested_reviewers"] as? [[String: Any]] ?? []).compactMap { $0["login"] as? String }, checks: checks)
+            info.labels = (raw["labels"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+            info.additions = raw["additions"] as? Int; info.deletions = raw["deletions"] as? Int; info.fileCount = raw["changed_files"] as? Int
+            info.mergeable = raw["mergeable"] as? Bool; info.authorID = (raw["user"] as? [String: Any])?["login"] as? String
+            return info
         }
         guard let number = raw["pullRequestId"] as? Int, let title = raw["title"] as? String else { throw NocturneError.invalidFrame }
-        return PullRequestInfo(number: number, title: title, body: raw["description"] as? String ?? "", author: (raw["createdBy"] as? [String: Any])?["displayName"] as? String ?? "",
+        var info = PullRequestInfo(number: number, title: title, body: raw["description"] as? String ?? "", author: (raw["createdBy"] as? [String: Any])?["displayName"] as? String ?? "",
             state: raw["status"] as? String ?? "active", draft: raw["isDraft"] as? Bool ?? false,
             source: (raw["sourceRefName"] as? String ?? "").replacingOccurrences(of: "refs/heads/", with: ""), target: (raw["targetRefName"] as? String ?? "").replacingOccurrences(of: "refs/heads/", with: ""),
             url: repository.webURL + "/pullrequest/\(number)", updatedAt: raw["closedDate"] as? String ?? raw["creationDate"] as? String,
             reviewers: (raw["reviewers"] as? [[String: Any]] ?? []).map { ($0["displayName"] as? String ?? "Reviewer") + " · " + ([10: "Approved", 5: "Approved with suggestions", 0: "Waiting", -5: "Waiting for author", -10: "Rejected"][$0["vote"] as? Int ?? 0] ?? "Pending") }, checks: checks)
+        info.labels = (raw["labels"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+        info.mergeable = (raw["mergeStatus"] as? String).map { $0 == "succeeded" ? true : $0 == "conflicts" ? false : nil } ?? nil
+        info.authorID = (raw["createdBy"] as? [String: Any])?["uniqueName"] as? String
+        return info
     }
     func files(_ number: Int, page: Int) async throws -> ([GitChange], Bool) {
         guard number > 0, (1...100).contains(page) else { throw NocturneError.invalidFrame }

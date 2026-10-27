@@ -66,6 +66,21 @@ final class ForgeTests: XCTestCase {
         _ = try await provider.list(branch: "feature/a", page: 1)
         XCTAssertTrue(fixture.calls.first?.arguments.contains("head=fork-owner:feature/a") == true)
     }
+    func testCreationAndActivityUseRealForgeRoutesAndStructuredPayloads() async throws {
+        for kind in [ForgeRepository.Kind.github, .azureDevOps] {
+            let fixture = ForgeFixture(kind)
+            let provider = ForgeService(repository: fixture.repository, directory: FileManager.default.temporaryDirectory, run: fixture.run, headOwner: "fork")
+            let created = try await provider.create(title: "Literal `title` $(never-run)", body: "One\n\n**Two**", source: "feature/a", target: "main")
+            XCTAssertEqual(created.number, 7)
+            XCTAssertEqual(fixture.bodyJSON?[kind == .github ? "head" : "sourceRefName"], kind == .github ? "fork:feature/a" : "refs/heads/feature/a")
+            XCTAssertEqual(fixture.bodyJSON?[kind == .github ? "base" : "targetRefName"], kind == .github ? "main" : "refs/heads/main")
+            XCTAssertTrue(fixture.calls.contains { $0.arguments.contains("POST") })
+            let activity = try await provider.activity(7)
+            XCTAssertTrue(activity.contains { $0.text.contains("Please test cancellation") })
+            XCTAssertEqual(Set(activity.map(\.id)).count, activity.count)
+            if kind == .azureDevOps { XCTAssertTrue(fixture.bodyFileWasPrivate); XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.bodyFilePath ?? "")) }
+        }
+    }
     func testInstalledGitHubAndAzureDevOpsReadOnly() async throws {
         guard ProcessInfo.processInfo.environment["NOCTURNE_TEST_FORGES"] == "1" else { throw XCTSkip("Opt-in read-only forge integration with existing Mac logins.") }
         let paths = [ProcessInfo.processInfo.environment["NOCTURNE_TEST_GITHUB_REPO"], ProcessInfo.processInfo.environment["NOCTURNE_TEST_AZURE_REPO"]]
@@ -78,6 +93,8 @@ final class ForgeTests: XCTestCase {
             let first = try XCTUnwrap(rows.0.first, "Use a repository with at least one PR for the live check")
             let detail = try await provider.detail(first.number); XCTAssertEqual(detail.number, first.number)
             let files = try await provider.files(first.number, page: 1)
+            let activity = try await provider.activity(first.number)
+            XCTAssertEqual(Set(activity.map(\.id)).count, activity.count)
             if let file = files.0.first { let patch = try await provider.diff(first.number, path: file.path, previousPath: file.previousPath, changeType: file.indexStatus); XCTAssertEqual(patch.path, file.path) }
             print("Verified \(state.forge?.kind.rawValue ?? "forge"): PR listing, detail, changed files and diff")
         }
@@ -91,6 +108,7 @@ private final class ForgeFixture: @unchecked Sendable {
     var title = "Fixture PR", body = "Initial body"
     var fail = false, bodyFileWasPrivate = false
     var bodyFilePath: String?
+    var bodyJSON: [String: String]?
     init(_ kind: ForgeRepository.Kind) {
         repository = ForgeRepository(kind: kind, host: kind == .github ? "github.com" : "dev.azure.com", organization: "acme", project: kind == .github ? nil : "Project One", name: "repo", webURL: kind == .github ? "https://github.com/acme/repo" : "https://dev.azure.com/acme/Project%20One/_git/repo")
     }
@@ -103,11 +121,13 @@ private final class ForgeFixture: @unchecked Sendable {
         if fail { return DeveloperCommandResult(data: Data(), error: "HTTP 401 unauthorized", code: 1, truncated: false) }
         var result: Any
         if repository.kind == .github {
-            if args.contains("PATCH"), let input, let values = try JSONSerialization.jsonObject(with: input) as? [String: String] { title = values["title"]!; body = values["body"]! }
+            if args.contains("PATCH") || args.contains("POST"), let input, let values = try JSONSerialization.jsonObject(with: input) as? [String: String] { bodyJSON = values; title = values["title"]!; body = values["body"]! }
             let path = args.first { $0.hasPrefix("repos/") } ?? ""
             if path.hasSuffix("check-runs") { result = ["check_runs": [["name": "unit", "conclusion": "success"]]] }
             else if path.hasSuffix("/files") { result = [["filename": "notes.txt", "status": "modified", "patch": "@@ -1 +1 @@\n-before\n+after"]] }
-            else if path.hasSuffix("/pulls") { result = [github] }
+            else if path.hasSuffix("/comments") { result = [["id": 1, "user": ["login": "reviewer"], "body": "Please test cancellation", "created_at": "2026-10-27T19:00:00Z"]] }
+            else if path.hasSuffix("/reviews") { result = [["id": 2, "user": ["login": "reviewer"], "state": "APPROVED", "body": "Looks good", "submitted_at": "2026-10-27T19:02:00Z"]] }
+            else if path.hasSuffix("/pulls") { result = args.contains("POST") ? github : [github] }
             else { result = github }
         } else {
             let resource = args[args.firstIndex(of: "--resource")! + 1]
@@ -116,6 +136,7 @@ private final class ForgeFixture: @unchecked Sendable {
                 let attributes = try FileManager.default.attributesOfItem(atPath: file)
                 bodyFileWasPrivate = (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600
                 let values = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: file))) as! [String: String]
+                bodyJSON = values
                 title = values["title"]!; body = values["description"]!
             }
             switch resource {
@@ -123,8 +144,9 @@ private final class ForgeFixture: @unchecked Sendable {
             case "pullRequestIterations": result = ["value": [["id": 2, "commonRefCommit": ["commitId": "base"], "sourceRefCommit": ["commitId": "head"]]]]
             case "pullRequestIterationChanges": result = ["changeEntries": [["item": ["path": "/notes.txt"], "changeType": "edit"]], "nextSkip": 0]
             case "items": result = ["content": args.contains("versionDescriptor.version=base") ? "before\n" : "after\n", "contentMetadata": ["isBinary": false]]
+            case "pullRequestThreads": result = ["value": [["id": 1, "threadContext": ["filePath": "/notes.txt"], "comments": [["id": 2, "author": ["displayName": "Reviewer"], "content": "Please test cancellation", "publishedDate": "2026-10-27T19:00:00Z"]]]]]
             default:
-                if args.contains("pullRequestId=7") { result = azure }
+                if args.contains("pullRequestId=7") || args.contains("POST") { result = azure }
                 else { result = ["value": [azure]] }
             }
         }

@@ -3,6 +3,7 @@ import CryptoKit
 
 public enum DeveloperProtocol {
     public static let capability = "developer-workspace-v1"
+    public static let actionsCapability = "developer-actions-v1"
     public static let maximumTextBytes = 120_000
 }
 
@@ -65,6 +66,7 @@ public struct RepositorySnapshot: Codable, Equatable {
     public let base: String?
     public let branches: [String]
     public var remotes: [String] = []
+    public var indexRevision: String?
     public let worktrees: [GitWorktree]
     public let changes: [GitChange]
     public let forge: ForgeRepository?
@@ -98,13 +100,19 @@ public struct PullRequestInfo: Codable, Equatable, Identifiable {
     public let updatedAt: String?
     public let reviewers: [String]
     public let checks: [String]
+    public var labels: [String]?
+    public var additions: Int?
+    public var deletions: Int?
+    public var fileCount: Int?
+    public var mergeable: Bool?
+    public var authorID: String?
     public init(number: Int, title: String, body: String, author: String, state: String, draft: Bool, source: String, target: String, url: String, updatedAt: String? = nil, reviewers: [String] = [], checks: [String] = []) {
         self.number = number; self.title = title; self.body = body; self.author = author; self.state = state; self.draft = draft
         self.source = source; self.target = target; self.url = url; self.updatedAt = updatedAt; self.reviewers = reviewers; self.checks = checks
     }
 }
 public struct RepositoryRequest: Codable {
-    public enum Action: String, Codable { case status, diff, readFile, saveFile, stage, unstage, createWorktree, pullRequests, pullRequest, editPullRequest, pullRequestFiles, pullRequestDiff }
+    public enum Action: String, Codable { case status, diff, readFile, saveFile, stage, unstage, createWorktree, pullRequests, pullRequest, editPullRequest, pullRequestFiles, pullRequestDiff, pullRequestActivity, commit, push, createPullRequest }
     public let action: Action
     public var path: String?
     public var previousPath: String?
@@ -130,5 +138,17 @@ public struct RepositoryResponse: Codable {
     public var pullRequest: PullRequestInfo?
     public var changes: [GitChange]?
     public var hasMore = false
+    public var activity: [PullRequestActivity]?
     public init() {}
+}
+
+public struct PullRequestActivity: Codable, Equatable, Identifiable {
+    public let id: String
+    public let author: String
+    public let text: String
+    public let createdAt: String?
+    public let path: String?
+    public init(id: String, author: String, text: String, createdAt: String? = nil, path: String? = nil) {
+        self.id = id; self.author = author; self.text = text; self.createdAt = createdAt; self.path = path
+    }
 }

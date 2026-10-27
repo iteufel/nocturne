@@ -428,6 +428,8 @@ final class ChatTests: XCTestCase {
         await project.openWorktree(tree)
         XCTAssertNil(chat.error)
         XCTAssertEqual(chat.selected?.directory, tree.path)
+        await chat.newConversation(inheritProject: true)
+        XCTAssertEqual(chat.selected?.directory, tree.path, "New threads must stay in the selected project checkout")
         XCTAssertNil(project.snapshot, "Old checkout state must be cleared when opening the worktree chat")
         await project.refresh(); XCTAssertEqual(project.snapshot?.branch, "feature/new")
         server.updatePermissions(.init())

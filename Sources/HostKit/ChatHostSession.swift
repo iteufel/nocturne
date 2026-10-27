@@ -79,7 +79,7 @@ public final class ChatHostSession {
               request.cursor == nil || request.cursor!.utf8.count <= 4_096 else { throw NocturneError.invalidFrame }
         if packet.operation == .chatRepository {
             guard let repositoryRequest = packet.repositoryRequest, let session = request.sessionID, !repositoryBusy else { throw NocturneError.remote("Wait for the project action to finish.") }
-            let writes: Set<RepositoryRequest.Action> = [.saveFile, .stage, .unstage, .createWorktree, .editPullRequest]
+            let writes: Set<RepositoryRequest.Action> = [.saveFile, .stage, .unstage, .createWorktree, .editPullRequest, .commit, .push, .createPullRequest]
             guard !writes.contains(repositoryRequest.action) || (activeSession == nil && voiceID == nil && !loading) else {
                 throw NocturneError.remote("Finish the agent reply or voice call before changing the project.")
             }
@@ -161,6 +161,8 @@ public final class ChatHostSession {
                 let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
                 guard try await repository.worktrees().contains(where: { $0.path == canonical.path && !$0.prunable }) else { throw NocturneError.invalidPath }
                 directory = canonical
+            } else if let source = request.sessionID {
+                directory = try await provider.workingDirectory(for: source)
             }
             reply.chatSession = try await provider.create(in: directory)
         case .chatOptions:
@@ -222,11 +224,19 @@ public final class ChatHostSession {
         case .createWorktree:
             guard let branch = request.branch, let base = request.base else { throw NocturneError.invalidFrame }
             result.worktree = try await service.createWorktree(branch: branch, base: base)
+        case .commit:
+            guard let text = request.text else { throw NocturneError.invalidFrame }
+            try await service.commit(message: text, revision: request.revision)
+            result.snapshot = try await service.snapshot(remoteName: request.remote)
+        case .push:
+            guard let remote = request.remote, let branch = request.branch else { throw NocturneError.invalidFrame }
+            try await service.push(remote: remote, branch: branch, head: request.revision)
+            result.snapshot = try await service.snapshot(remoteName: remote)
         default:
             let snapshot = try await service.snapshot(remoteName: request.remote)
             guard let forge = snapshot.forge else { throw NocturneError.remote("Choose a GitHub or Azure DevOps remote for this repository.") }
             var headOwner: String?
-            if forge.kind == .github, request.action == .pullRequests, !request.allBranches {
+            if forge.kind == .github, [.pullRequests, .createPullRequest].contains(request.action), !request.allBranches {
                 let origin = try await service.git(["remote", "get-url", "origin"], accepts: [0, 2, 128])
                 if let source = ForgeService.parseRemote(origin.text), source.kind == .github, source.host == forge.host { headOwner = source.organization }
             }
@@ -237,6 +247,14 @@ public final class ChatHostSession {
                 result.pullRequests = list.0; result.hasMore = list.1
             case .pullRequest:
                 guard let id = request.number else { throw NocturneError.invalidFrame }; result.pullRequest = try await provider.detail(id)
+            case .pullRequestActivity:
+                guard let id = request.number else { throw NocturneError.invalidFrame }; result.activity = try await provider.activity(id)
+            case .createPullRequest:
+                guard let title = request.title, let base = request.base, let branch = request.branch,
+                      snapshot.branch == branch, snapshot.branches.contains(base), branch != "Detached HEAD" else { throw NocturneError.invalidFrame }
+                let prefix = (request.remote ?? "origin") + "/"
+                let target = base.hasPrefix(prefix) ? String(base.dropFirst(prefix.count)) : base
+                result.pullRequest = try await provider.create(title: title, body: request.text ?? "", source: branch, target: target)
             case .editPullRequest:
                 guard let id = request.number, let title = request.title, let body = request.text else { throw NocturneError.invalidFrame }
                 result.pullRequest = try await provider.edit(id, title: title, body: body, expectedRevision: request.revision)

@@ -22,6 +22,7 @@ struct DeveloperContextBar: View {
 
 struct ChatConfigurationBar: View {
     @ObservedObject var model: ChatWorkspaceModel
+    var inline = false
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -35,6 +36,7 @@ struct ChatConfigurationBar: View {
                             Label(option.choices.first(where: { $0.value == option.value })?.name ?? option.name,
                                 systemImage: option.category == "thought_level" ? "brain" : "cpu")
                                 .font(.caption).lineLimit(1)
+                                .foregroundStyle(option.category == "thought_level" ? ChatStyle.secondary : Color.primary)
                         }.accessibilityLabel(option.name).accessibilityIdentifier("chatOption-" + option.id)
                     }
                     if model.configuring { ProgressView().controlSize(.mini) }
@@ -46,7 +48,7 @@ struct ChatConfigurationBar: View {
                     Button("Retry settings") { Task { await model.refreshOptions() } }.font(.caption2).disabled(model.loading || model.responding)
                 }
             }
-        }.padding(.horizontal, 16).padding(.top, model.options.isEmpty && model.optionsError == nil ? 0 : 10)
+        }.padding(.horizontal, inline ? 0 : 16).padding(.top, inline || (model.options.isEmpty && model.optionsError == nil) ? 0 : 10)
     }
 }
 
@@ -158,7 +160,7 @@ struct DeveloperProjectPane: View {
     }
 }
 
-private struct DeveloperChangeRow: View {
+struct DeveloperChangeRow: View {
     let file: GitChange
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -214,7 +216,7 @@ struct DeveloperWorktreesView: View {
     }
 }
 
-private struct DeveloperFileView: View {
+struct DeveloperFileView: View {
     @ObservedObject var model: DeveloperWorkspaceModel
     let file: GitChange
     let pullRequest: Int?
@@ -257,7 +259,7 @@ private struct DeveloperFileView: View {
     }
 }
 
-private struct DeveloperDiffText: View {
+struct DeveloperDiffText: View {
     let content: RepositoryText
     var body: some View {
         VStack(spacing: 0) {
@@ -275,7 +277,7 @@ private struct DeveloperDiffText: View {
     }
 }
 
-private struct DeveloperPullRequestView: View {
+struct DeveloperPullRequestView: View {
     @ObservedObject var model: DeveloperWorkspaceModel
     @Environment(\.dismiss) private var dismiss
     @State private var editing = false

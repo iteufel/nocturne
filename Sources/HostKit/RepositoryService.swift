@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import NocturneKit
 
 @MainActor
@@ -46,7 +47,27 @@ final class RepositoryService {
         var snapshot = RepositorySnapshot(root: root.path, branch: branch.isEmpty ? "Detached HEAD" : branch,
             head: head.isEmpty ? nil : head, base: base, branches: Array(refs.prefix(500)), worktrees: try await treesReply,
             changes: Array(changes.prefix(500)), forge: ForgeService.parseRemote(remoteURL), truncated: changes.count > 500 || refs.count > 500)
-        snapshot.remotes = remotes; return snapshot
+        snapshot.remotes = remotes; snapshot.indexRevision = try await indexRevision(); return snapshot
+    }
+    func indexRevision() async throws -> String {
+        let head = try await git(["rev-parse", "--verify", "HEAD"], accepts: [0, 128])
+        let branch = try await git(["symbolic-ref", "--short", "-q", "HEAD"], accepts: [0, 1])
+        let staged = try await git(["diff", "--cached", "--no-ext-diff", "--no-textconv", "--raw", "--abbrev=40", "-z"])
+        guard !staged.truncated else { throw NocturneError.remote("The staged change list is too large to commit here.") }
+        return SHA256.hash(data: head.data + branch.data + staged.data).map { String(format: "%02x", $0) }.joined()
+    }
+    func commit(message: String, revision: String?) async throws {
+        guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, message.utf8.count <= 16_384,
+              revision == (try await indexRevision()) else { throw NocturneError.remote("Staged files or the branch changed. Refresh and review the commit again.") }
+        let staged = try await git(["diff", "--cached", "--quiet"], accepts: [0, 1])
+        guard staged.code == 1 else { throw NocturneError.remote("Stage the files you want to commit first.") }
+        _ = try await git(["commit", "--message", message])
+    }
+    func push(remote: String, branch: String, head: String?) async throws {
+        let snapshot = try await snapshot(remoteName: remote)
+        guard snapshot.remotes.contains(remote), !remote.hasPrefix("-"), snapshot.branch == branch,
+              snapshot.head != nil, snapshot.head == head, branch != "Detached HEAD" else { throw NocturneError.remote("The branch changed. Refresh before pushing.") }
+        _ = try await git(["push", "--set-upstream", "--", remote, "HEAD:refs/heads/" + branch])
     }
     private func baseReference(_ requested: String?, branches: [String]) async throws -> String? {
         if let requested { guard branches.contains(requested) else { throw NocturneError.invalidFrame }; return requested }

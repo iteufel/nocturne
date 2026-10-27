@@ -274,7 +274,8 @@ info['NSLocalNetworkUsageDescription'] = 'Find your computers and connect direct
 info['NSBluetoothAlwaysUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
 info['NSBluetoothPeripheralUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
 info['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Nocturne Server on your Mac.'
-info['NSMicrophoneUsageDescription'] = 'Send your microphone to your paired Mac for voice chat in Discord and games when you unmute a stream.'
+info['NSMicrophoneUsageDescription'] = 'Talk with Codex in live voice chats, or send your microphone to your paired Mac for Discord and games when you unmute a stream.'
+info['UIBackgroundModes'] = ['audio']
 info['UIApplicationSceneManifest'] = {
   'UIApplicationSupportsMultipleScenes' => true,
   'UISceneConfigurations' => {'UIWindowSceneSessionRoleApplication' => [

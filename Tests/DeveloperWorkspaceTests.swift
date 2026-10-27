@@ -113,4 +113,31 @@ final class DeveloperWorkspaceTests: XCTestCase {
         let service = try await RepositoryService.open(directory)
         XCTAssertEqual(service.root.path, directory.resolvingSymlinksInPath().path)
     }
+    func testReviewedCommitRejectsStaleIndexAndPreservesUnstagedWork() async throws {
+        let service = try await repository()
+        try "staged\n".write(to: directory.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+        try await service.stage("notes.txt", undo: false)
+        let before = try await service.snapshot(scope: .staged)
+        try "unrelated\n".write(to: directory.appendingPathComponent("other.txt"), atomically: true, encoding: .utf8)
+        try await service.stage("other.txt", undo: false)
+        do { try await service.commit(message: "Stale", revision: before.indexRevision); XCTFail("Stale staged files were committed") } catch {}
+        try await service.stage("other.txt", undo: true)
+        let reviewed = try await service.snapshot(scope: .staged)
+        try "unstaged edit\n".write(to: directory.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+        try await service.commit(message: "Literal `title` $(not-a-command)", revision: reviewed.indexRevision)
+        let committed = try await git(["show", "HEAD:notes.txt"])
+        XCTAssertEqual(committed, "staged\n")
+        XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("notes.txt"), encoding: .utf8), "unstaged edit\n")
+        XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("other.txt"), encoding: .utf8), "unrelated\n")
+    }
+    func testPushUsesReviewedBranchAndNeverForces() async throws {
+        let service = try await repository()
+        let remote = directory.appendingPathComponent("remote.git")
+        _ = try await git(["init", "--bare", remote.path]); _ = try await git(["remote", "add", "origin", remote.path])
+        let reviewed = try await service.snapshot()
+        do { try await service.push(remote: "origin", branch: "other", head: reviewed.head); XCTFail("Pushed a different branch") } catch {}
+        try await service.push(remote: "origin", branch: reviewed.branch, head: reviewed.head)
+        let remoteHead = try await git(["--git-dir", remote.path, "rev-parse", "refs/heads/main"])
+        XCTAssertEqual(remoteHead.trimmingCharacters(in: .newlines), reviewed.head)
+    }
 }

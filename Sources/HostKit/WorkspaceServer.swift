@@ -196,6 +196,7 @@ private final class HostSession {
                     result.capabilities?.append(ChatProtocol.capability)
                     result.capabilities?.append(ChatVoice.capability)
                     result.capabilities?.append(DeveloperProtocol.capability)
+                    result.capabilities?.append(DeveloperProtocol.actionsCapability)
                 }
             case .ping: break
             case .chatProviders, .chatList, .chatLoad, .chatNew, .chatPrompt, .chatCancel, .chatPermission, .chatOptions, .chatConfigure, .chatRepository,
