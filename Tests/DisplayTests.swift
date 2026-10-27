@@ -272,13 +272,14 @@ final class DisplayTests: XCTestCase {
             }
         }
         server.displayDisconnected = { connection in Task { @MainActor in connectedManager.disconnected(connection) } }
-        let key = try SecureStore.randomKey(), port = UInt16.random(in: 52_000..<60_000)
+        let key = try SecureStore.randomKey()
         let ready = expectation(description: "Display listener ready"); var signalled = false
         server.onStatus = { status, _ in if status == "Ready", !signalled { signalled = true; ready.fulfill() } }
         let identity = try TestDeviceIdentity(), first = WorkspaceConnection(identity: try TestDeviceIdentity().identity())
         let second = WorkspaceConnection(identity: identity.identity())
         defer { first.disconnect(); second.disconnect(); server.stop(); try? FileManager.default.removeItem(at: root) }
-        try server.start(secret: key, port: port); await fulfillment(of: [ready], timeout: 5)
+        try server.start(secret: key, port: 0); await fulfillment(of: [ready], timeout: 5)
+        let port = try XCTUnwrap(server.listeningPort)
         func enroll(_ client: WorkspaceConnection) async throws {
             try await client.connect(PairingInvitation(host: "127.0.0.1", port: port, name: "Mac", secret: key, enrollmentToken: store.createInvitation()))
         }

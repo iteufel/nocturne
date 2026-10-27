@@ -48,6 +48,7 @@ struct ClientRootView: View {
                 switch page {
                 case .computers: ComputersView(model: model)
                 case .hostApps: HostAppsWorkspace(client: model, model: model.hostApps, connection: model.server)
+                case .chats: ChatWorkspace(model: model.chats, connection: model.server, voice: model.voice, connect: { Task { await model.reconnectServer() } })
                 case .terminal: TerminalWorkspace(connection: model.server, connect: { Task { await model.reconnectServer() } })
                 case .files: FilesWorkspace(connection: model.server, connect: { model.showAdd = true })
                 case .settings: ClientSettingsView(model: model)

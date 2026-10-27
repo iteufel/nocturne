@@ -87,7 +87,7 @@ final class DeviceRevocationIntegrationTests: XCTestCase {
         let server = try WorkspaceServer(folder: root.appendingPathComponent("shared"), name: "Mac", devices: store)
         let identity = try TestDeviceIdentity(), client = WorkspaceConnection(identity: identity.identity())
         defer { client.disconnect(); server.stop() }
-        let secret = try SecureStore.randomKey(), port = UInt16.random(in: 52_000..<60_000)
+        let secret = try SecureStore.randomKey()
         var approvals = 0
         server.pairStream = { challenge, name, address, id, completion in
             Task { @MainActor in
@@ -95,7 +95,8 @@ final class DeviceRevocationIntegrationTests: XCTestCase {
                 approvals += 1; completion(nil)
             }
         }
-        try await start(server, secret: secret, port: port, stage: "QR pairing server")
+        try await start(server, secret: secret, port: 0, stage: "QR pairing server")
+        let port = try XCTUnwrap(server.listeningPort)
         let transportOnly = try PairingInvitation(host: "127.0.0.1", port: port, name: "Mac", secret: secret)
         do { try await client.connect(transportOnly); XCTFail("A transport key enrolled a device without QR authorization") } catch {}
         XCTAssertEqual(approvals, 0); XCTAssertTrue(store.devices.isEmpty)
@@ -119,10 +120,11 @@ final class DeviceRevocationIntegrationTests: XCTestCase {
         let storeURL = root.appendingPathComponent("devices.json")
         let store = try WorkspaceDeviceStore(url: storeURL)
         let first = try TestDeviceIdentity(), second = try TestDeviceIdentity()
-        let secret = try SecureStore.randomKey(), port = UInt16.random(in: 52_000..<60_000)
+        let secret = try SecureStore.randomKey()
         var server = try WorkspaceServer(folder: root.appendingPathComponent("shared"), name: "Mac", devices: store, permissions: .init(terminal: true, files: true))
         defer { server.stop() }
-        try await start(server, secret: secret, port: port, stage: "initial start")
+        try await start(server, secret: secret, port: 0, stage: "initial start")
+        let port = try XCTUnwrap(server.listeningPort)
         let a = WorkspaceConnection(identity: first.identity()), a2 = WorkspaceConnection(identity: first.identity()), b = WorkspaceConnection(identity: second.identity())
         defer { a.disconnect(); a2.disconnect(); b.disconnect() }
         let firstLink = try PairingInvitation(host: "127.0.0.1", port: port, name: "Mac", secret: secret, enrollmentToken: store.createInvitation())

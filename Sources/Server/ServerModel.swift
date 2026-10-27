@@ -22,6 +22,10 @@ final class ServerModel: ObservableObject {
     var changingDevices: Bool { removingDevice != nil || resettingPairing }
     @Published var terminalEnabled = UserDefaults.standard.bool(forKey: "allowTerminal") { didSet { updatePermissions() } }
     @Published var filesEnabled = UserDefaults.standard.bool(forKey: "allowFiles") { didSet { updatePermissions() } }
+    @Published var chatsEnabled = UserDefaults.standard.bool(forKey: "allowChats") { didSet { updatePermissions() } }
+    let codexAccount = CodexAccountController()
+    @Published private(set) var chatAgents = UserDefaults.standard.data(forKey: "chatAgents")
+        .flatMap { try? JSONDecoder().decode([ChatAgentConfiguration].self, from: $0) } ?? ChatAgentConfiguration.defaults
     @Published var microphoneEnabled = UserDefaults.standard.bool(forKey: "allowMicrophone") { didSet { updatePermissions() } }
     @Published private(set) var microphoneInstalled = VirtualMicrophone.isInstalled
     @Published private(set) var installingMicrophone = false
@@ -130,7 +134,7 @@ final class ServerModel: ObservableObject {
                     guard generation == epoch, !Task.isCancelled else { tunnel.stop(); return }
                     remoteTunnel = tunnel
                 }
-                let host = try WorkspaceServer(folder: sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: terminalEnabled, files: filesEnabled, microphone: microphoneEnabled), appWindows: appWindows)
+                let host = try WorkspaceServer(folder: sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: terminalEnabled, files: filesEnabled, microphone: microphoneEnabled, chats: chatsEnabled), appWindows: appWindows, chatAgents: chatAgents)
                 if let tunnel = remoteTunnel {
                     host.authorizeRemoteDevice = { [weak tunnel] port, device in
                         guard let tunnel else { throw NocturneError.disconnected }
@@ -304,7 +308,24 @@ final class ServerModel: ObservableObject {
     private func updatePermissions() {
         UserDefaults.standard.set(terminalEnabled, forKey: "allowTerminal"); UserDefaults.standard.set(filesEnabled, forKey: "allowFiles")
         UserDefaults.standard.set(microphoneEnabled, forKey: "allowMicrophone")
-        server?.updatePermissions(.init(terminal: terminalEnabled, files: filesEnabled, microphone: microphoneEnabled))
+        UserDefaults.standard.set(chatsEnabled, forKey: "allowChats")
+        server?.updatePermissions(.init(terminal: terminalEnabled, files: filesEnabled, microphone: microphoneEnabled, chats: chatsEnabled))
+    }
+    func saveChatAgent(_ agent: ChatAgentConfiguration) throws {
+        try agent.validate()
+        var agents = chatAgents
+        if let index = agents.firstIndex(where: { $0.id == agent.id }) { agents[index] = agent } else { agents.append(agent) }
+        guard agents.count <= 24 else { throw NocturneError.remote("Configure up to 24 chat providers.") }
+        try persistChatAgents(agents)
+    }
+    func removeChatAgent(_ id: String) {
+        guard !["codex", "claude"].contains(id) else { return }
+        do { try persistChatAgents(chatAgents.filter { $0.id != id }) } catch { self.error = error.localizedDescription }
+    }
+    private func persistChatAgents(_ agents: [ChatAgentConfiguration]) throws {
+        let data = try JSONEncoder().encode(agents)
+        UserDefaults.standard.set(data, forKey: "chatAgents"); chatAgents = agents
+        server?.updateChatAgents(agents)
     }
     func installMicrophone() {
         guard !installingMicrophone else { return }

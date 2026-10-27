@@ -296,10 +296,11 @@ final class AppWindowIntegrationTests: XCTestCase {
         let host = RecordingAppHost(), windows = AppWindowSessionManager(host: host)
         let server = try WorkspaceServer(folder: root.appendingPathComponent("shared"), name: "Mac", devices: store, appWindows: windows)
         defer { server.stop(); windows.stop() }
-        let secret = try SecureStore.randomKey(), port = UInt16.random(in: 52_000..<60_000)
+        let secret = try SecureStore.randomKey()
         let listening = expectation(description: "Listening"); var started = false
         server.onStatus = { status, _ in if status == "Ready", !started { started = true; listening.fulfill() } }
-        try server.start(secret: secret, port: port); await fulfillment(of: [listening], timeout: 5)
+        try server.start(secret: secret, port: 0); await fulfillment(of: [listening], timeout: 5)
+        let port = try XCTUnwrap(server.listeningPort)
         let rejected = expectation(description: "Unauthenticated app access rejected")
         let raw = SecureChannel(connection: NWConnection(host: "127.0.0.1", port: .init(rawValue: port)!, using: SecureTransport.parameters(secret: secret)))
         raw.onReady = { raw.send(Packet(.appLaunch)) }

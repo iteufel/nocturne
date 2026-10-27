@@ -42,9 +42,12 @@ final class FilesProviderIntegrationTests: XCTestCase {
         let ready = expectation(description: "Files test host ready")
         var announced = false
         server.onStatus = { status, _ in if status == "Ready", !announced { announced = true; ready.fulfill() } }
-        let secret = try SecureStore.randomKey(), port = UInt16.random(in: 52_000..<60_000)
-        try server.start(secret: secret, port: port)
+        let secret = try SecureStore.randomKey()
+        var prepared = false
+        defer { if !prepared { server.stop(); try? FileManager.default.removeItem(at: root) } }
+        try server.start(secret: secret, port: 0)
         await fulfillment(of: [ready], timeout: 5)
+        let port = try XCTUnwrap(server.listeningPort)
         let device = try TestDeviceIdentity()
         let invitation = try PairingInvitation(host: "127.0.0.1", port: port, name: "Files Test Mac", secret: secret, enrollmentToken: devices.createInvitation())
         let application = WorkspaceConnection(identity: device.identity())
@@ -54,6 +57,7 @@ final class FilesProviderIntegrationTests: XCTestCase {
         let domain = NSFileProviderDomain(identifier: .init(account.domainIdentifier), displayName: invitation.name)
         let snapshotsURL = root.appendingPathComponent("provider/snapshots.json")
         let provider = HostFileProvider(domain: domain, snapshots: FileProviderSnapshots(url: snapshotsURL)) { account }
+        prepared = true
         return Fixture(root: root, server: server, devices: devices, account: account, provider: provider,
             snapshotsURL: snapshotsURL, application: application)
     }

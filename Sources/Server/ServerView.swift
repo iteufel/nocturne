@@ -3,6 +3,114 @@ import CoreImage.CIFilterBuiltins
 import NocturneKit
 import NocturneHostKit
 
+private struct ChatProviderSettingsView: View {
+    @ObservedObject var model: ServerModel
+    @State private var editing: ChatAgentConfiguration?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Toggle(isOn: $model.chatsEnabled) {
+                FeatureRow(icon: "bubble.left.and.bubble.right", title: "Agent chats",
+                    subtitle: "Let paired devices read and continue conversations with Codex, Claude Code, and your other agents. Agents can use files and tools on this Mac.")
+            }.toggleStyle(.switch)
+            Divider()
+            Text("Chat providers").font(.headline)
+            ForEach(model.chatAgents) { agent in
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(agent.name).font(.subheadline.weight(.medium))
+                        Text(agent.transport == .codex ? "Codex App Server" : "Agent Client Protocol").font(.caption).foregroundStyle(MoonStyle.secondary)
+                    }
+                    Spacer()
+                    Button("Edit…") { editing = agent }.buttonStyle(NocturneGlassButtonStyle())
+                    if !["codex", "claude"].contains(agent.id) {
+                        Button("Remove", systemImage: "minus.circle", role: .destructive) { model.removeChatAgent(agent.id) }.labelStyle(.iconOnly)
+                    }
+                }
+            }
+            Button("Add ACP provider…", systemImage: "plus") {
+                editing = ChatAgentConfiguration(name: "", executable: "")
+            }.buttonStyle(NocturneGlassButtonStyle())
+            Text("Install and sign in to each agent on this Mac. Codex uses your existing Codex history and login. Claude Code needs claude-agent-acp. Saving providers stops active replies; refresh Chats on your device afterward.")
+                .font(.caption).foregroundStyle(MoonStyle.secondary)
+            Divider()
+            CodexVoiceSignInView(account: model.codexAccount,
+                configuration: model.chatAgents.first { $0.transport == .codex }, directory: model.sharedFolder)
+        }
+        .sheet(item: $editing) { agent in
+            ChatAgentEditor(agent: agent) { try model.saveChatAgent($0) }
+        }
+    }
+}
+
+private struct CodexVoiceSignInView: View {
+    @ObservedObject var account: CodexAccountController
+    let configuration: ChatAgentConfiguration?
+    let directory: URL
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Codex live voice", systemImage: "waveform").font(.headline)
+            Text("Talk to Codex using your ChatGPT sign-in. Codex manages the connection and sign-in on this Mac.")
+                .font(.caption).foregroundStyle(MoonStyle.secondary)
+            Label(account.status, systemImage: account.signedIn ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
+                .font(.caption)
+            HStack {
+                if account.awaitingLogin {
+                    Button("Cancel sign-in") { Task { await account.cancelLogin() } }
+                } else {
+                    if !account.signedIn {
+                        Button("Sign in with ChatGPT") {
+                            Task { await account.login(configuration: configuration, directory: directory) { NSWorkspace.shared.open($0) } }
+                        }
+                    }
+                    Button("Check sign-in") { Task { await account.refresh(configuration: configuration, directory: directory) } }
+                }
+            }.disabled(account.busy)
+            if let error = account.error { Text(error).font(.caption).foregroundStyle(.orange) }
+        }
+        .task { await account.refresh(configuration: configuration, directory: directory) }
+        .onChange(of: configuration) { _, next in Task { await account.refresh(configuration: next, directory: directory) } }
+        .onDisappear { account.close() }
+    }
+}
+
+private struct ChatAgentEditor: View {
+    @State var agent: ChatAgentConfiguration
+    let save: (ChatAgentConfiguration) throws -> Void
+    @State private var arguments = ""
+    @State private var error: String?
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(agent.name.isEmpty ? "Add chat provider" : "Edit \(agent.name)").font(.title2.weight(.semibold))
+            Form {
+                TextField("Name", text: $agent.name)
+                TextField("Executable", text: $agent.executable).autocorrectionDisabled()
+                TextField("Working directory", text: $agent.directory).autocorrectionDisabled()
+                Text("Leave the directory empty to start new chats in your shared folder. Existing chats keep their project directory.")
+                    .font(.caption).foregroundStyle(.secondary)
+                LabeledContent("Arguments") {
+                    TextEditor(text: $arguments).font(.system(.caption, design: .monospaced)).frame(height: 95)
+                }
+                Text("One argument per line. Enter an executable name or full path, without shell quotes. Custom providers must speak ACP v1 over stdio.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let error { Text(error).font(.caption).foregroundStyle(.orange) }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    agent.name = agent.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    agent.executable = agent.executable.trimmingCharacters(in: .whitespacesAndNewlines)
+                    agent.arguments = arguments.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+                    if agent.arguments.last == "" { agent.arguments.removeLast() }
+                    do { try save(agent); dismiss() } catch { self.error = error.localizedDescription }
+                }.keyboardShortcut(.defaultAction)
+            }
+        }.padding(24).frame(width: 540).background { NocturneBackdrop() }
+            .onAppear { arguments = agent.arguments.joined(separator: "\n") }
+    }
+}
+
 struct ServerView: View {
     @ObservedObject var model: ServerModel
     @State private var reset = false
@@ -141,6 +249,7 @@ struct ServerView: View {
                     Text("Changing the folder restarts the server and disconnects current sessions.").font(.caption2).foregroundStyle(MoonStyle.secondary)
                 }
             }
+            MoonPanel { ChatProviderSettingsView(model: model) }
             MoonPanel {
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle(isOn: $model.microphoneEnabled) {

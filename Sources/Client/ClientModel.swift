@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 import GameController
 import Combine
 import NocturneKit
@@ -42,10 +43,10 @@ final class StreamSession: ObservableObject, Identifiable {
     }
 }
 enum ClientPage: String, CaseIterable, Identifiable {
-    case computers = "Computers", hostApps = "Apps", terminal = "Terminal", files = "Files", settings = "Settings"
+    case computers = "Computers", hostApps = "Apps", chats = "Chats", terminal = "Terminal", files = "Files", settings = "Settings"
     var id: String { rawValue }
     var symbol: String {
-        switch self { case .computers: return "desktopcomputer"; case .hostApps: return "square.grid.2x2"; case .terminal: return "terminal"; case .files: return "folder"; case .settings: return "slider.horizontal.3" }
+        switch self { case .computers: return "desktopcomputer"; case .hostApps: return "square.grid.2x2"; case .chats: return "bubble.left.and.bubble.right"; case .terminal: return "terminal"; case .files: return "folder"; case .settings: return "slider.horizontal.3" }
     }
 }
 
@@ -55,6 +56,8 @@ final class ClientModel: ObservableObject {
     let engine = NocturneStreamingService()
     let server: WorkspaceConnection
     let hostApps: HostAppsModel
+    let chats: ChatWorkspaceModel
+    let voice: ClientVoiceChat
     let microphone = ClientMicrophone()
     let filesIntegration = FilesIntegration()
     @Published var hosts: [StreamingHost] = []
@@ -83,12 +86,17 @@ final class ClientModel: ObservableObject {
     private var serverPairingGeneration = UUID()
     private var inputObservers: [NSObjectProtocol] = []
     private var workspaceObserver: AnyCancellable?
-    init() {
+    private var voiceLifecycleObserver: AnyCancellable?
+    private var workspaceSuspended = false
+    init(voiceAudio: VoiceAudioDevice? = nil, voicePermission: (() async -> Bool)? = nil) {
         let streamingEngine = engine
         server = WorkspaceConnection(identity: WorkspaceIdentity(certificate: streamingEngine.workspaceCertificate(),
             name: UIDevice.current.name) { streamingEngine.signWorkspaceChallenge($0) })
         hostApps = HostAppsModel(connection: server)
+        chats = ChatWorkspaceModel(connection: server)
+        voice = ClientVoiceChat(chat: chats, audio: voiceAudio, requestPermission: voicePermission ?? { await AVAudioApplication.requestRecordPermission() })
         preferences = UserDefaults.standard.data(forKey: "streamPreferences").flatMap { try? JSONDecoder().decode(StreamPreferences.self, from: $0) } ?? .init()
+        voice.beforeStart = { [weak self] in self?.microphone.stop() }
         savedServerName = UserDefaults.standard.string(forKey: "serverName")
         engine.hostsChanged = { [weak self] hosts in self?.hosts = hosts.map(StreamingHost.init) }
         engine.appsChanged = { [weak self] hostID, apps in
@@ -141,8 +149,16 @@ final class ClientModel: ObservableObject {
                 if let id = self.linkedHostID { self.engine.clearTemporaryAddress(id) }
             }
         }
+        voiceLifecycleObserver = chats.$voiceEngaged.dropFirst().sink { [weak self] engaged in
+            guard !engaged else { return }
+            Task { @MainActor in
+                guard let self, self.workspaceSuspended, !self.voice.engaged else { return }
+                self.suspendWorkspace()
+            }
+        }
     }
     func start() {
+        workspaceSuspended = false
         filesIntegration.refresh()
         if session == nil { engine.start() }; refreshInputs()
         guard networkTask == nil else { return }
@@ -171,10 +187,14 @@ final class ClientModel: ObservableObject {
         pendingStreamAddress = nil
     }
     func suspend() {
-        networkTask?.cancel(); networkTask = nil; cancelReconnect()
+        workspaceSuspended = true
         endStream()
         engine.cancelPairing(); busy = false
         engine.pause()
+        if !voice.active { voice.stop(); suspendWorkspace() }
+    }
+    private func suspendWorkspace() {
+        networkTask?.cancel(); networkTask = nil; cancelReconnect()
         // The Mac retains the PTYs. Only the transport belongs to this scene.
         server.disconnect()
     }
@@ -302,6 +322,7 @@ final class ClientModel: ObservableObject {
             guard let self else { return }
             await current.reconfigure?.value
             if let controller = current.controller { await self.stopVideo(controller); current.controller = nil }
+            self.voice.resumeAudioAfterStream()
             if current.hasDisplayLease, self.server.state == .connected {
                 var release = Packet(.displayRelease); release.sessionID = current.id.uuidString
                 _ = try? await self.server.request(release)
@@ -314,6 +335,7 @@ final class ClientModel: ObservableObject {
             && server.capabilities.contains(MicrophoneFormat.capability)
     }
     func toggleMicrophone() {
+        voice.stop()
         if microphone.active || microphone.starting { microphone.stop(); return }
         guard canUseMicrophone else { return }
         do {

@@ -131,6 +131,7 @@ target.resources_build_phase.add_file_reference(icons)
 target.resources_build_phase.add_file_reference(group.new_file('../../Resources/PrivacyInfo.xcprivacy'))
 kit = package(client, '../..'); terminal = package(client, '../SwiftTerm')
 product(client, target, kit, 'NocturneKit'); product(client, target, terminal, 'SwiftTerm')
+product(client, target, kit, 'NocturneVoice')
 target.build_configurations.each do |config|
   settings = config.build_settings
   settings['PRODUCT_NAME'] = 'Nocturne'

@@ -16,6 +16,9 @@ public enum Operation: String, Codable {
     case displayPrepare, displayHeartbeat, displayRelease
     case microphoneStart, microphoneAudio, microphoneStop
     case appList, appIcon, appLaunch, appOpen, appResize, appInput, appHeartbeat, appClose, appVideo, appEnded
+    case chatProviders, chatList, chatLoad, chatNew, chatPrompt, chatCancel, chatPermission, chatEvent
+    case chatOptions, chatConfigure, chatRepository
+    case chatVoiceStart, chatVoiceHeartbeat, chatVoiceStop, chatVoiceEvent
 }
 
 public struct RemoteTerminal: Codable, Identifiable, Equatable {
@@ -73,6 +76,16 @@ public struct Packet: Codable {
     public var viewport: AppWindowViewport? = nil
     public var input: AppWindowInput? = nil
     public var video: AppWindowVideoFrame? = nil
+    public var chatRequest: ChatRequest? = nil
+    public var chatProviders: [ChatProvider]? = nil
+    public var chatPage: ChatSessionPage? = nil
+    public var chatHistory: ChatHistoryPage? = nil
+    public var chatSession: ChatSessionInfo? = nil
+    public var chatEvent: ChatEvent? = nil
+    public var chatOptions: [ChatConfigOption]? = nil
+    public var repositoryRequest: RepositoryRequest? = nil
+    public var repositoryResponse: RepositoryResponse? = nil
+    public var chatVoiceEvent: ChatVoiceEvent? = nil
     public init(_ operation: Operation, id: String = UUID().uuidString) { self.operation = operation; self.id = id }
     public func reply(error: String? = nil) -> Packet {
         var result = Packet(operation, id: id); result.error = error; return result

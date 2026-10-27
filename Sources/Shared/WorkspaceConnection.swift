@@ -11,6 +11,8 @@ public final class WorkspaceConnection: ObservableObject {
     @Published public private(set) var capabilities: [String] = []
     @Published public private(set) var lastError: String?
     public var onAppPacket: ((Packet) -> Void)?
+    public let chatEvents = PassthroughSubject<ChatEvent, Never>()
+    public let chatVoiceEvents = PassthroughSubject<ChatVoiceEvent, Never>()
     @Published public private(set) var terminals: [TerminalTab] = []
     @Published public private(set) var terminalID: String?
     /// Authenticated pairing with a refreshed LAN address; remote proxy addresses are never saved.
@@ -206,6 +208,14 @@ public final class WorkspaceConnection: ObservableObject {
         if terminalID == id { terminalID = terminals.isEmpty ? nil : terminals[min(index, terminals.count - 1)].id }
     }
     private func received(_ packet: Packet) {
+        if packet.operation == .chatVoiceEvent {
+            if let event = packet.chatVoiceEvent { chatVoiceEvents.send(event) }
+            return
+        }
+        if packet.operation == .chatEvent {
+            if let event = packet.chatEvent { chatEvents.send(event) }
+            return
+        }
         if packet.operation == .appVideo || packet.operation == .appEnded {
             onAppPacket?(packet); return
         }

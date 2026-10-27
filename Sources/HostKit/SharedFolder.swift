@@ -1,6 +1,7 @@
 import Foundation
 import Darwin
 import NocturneKit
+import CryptoKit
 
 /// Descriptor-relative access prevents traversal and symlink races within the shared root.
 public final class SharedFolder {
@@ -58,6 +59,54 @@ public final class SharedFolder {
         guard fd >= 0 else { throw Self.posixError() }
         return IncomingTransfer(folder: self, path: path, temporary: temporary, fd: fd, expectedSize: size)
     }
+    func editableText(_ path: String) throws -> RepositoryText {
+        try RepositoryService.validatePath(path)
+        let (parent, name) = try parentOf(path); defer { Darwin.close(parent) }
+        let fd = openat(parent, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { throw Self.posixError() }; defer { Darwin.close(fd) }
+        let data = try editContents(fd)
+        guard let text = String(data: data, encoding: .utf8), !data.contains(0) else { throw NocturneError.remote("This file is binary. Open it on your Mac to edit it.") }
+        return RepositoryText(path: path, text: text, revision: Self.editDigest(data))
+    }
+    func replaceText(_ path: String, text: String, revision: String) throws -> RepositoryText {
+        try RepositoryService.validatePath(path)
+        let data = Data(text.utf8)
+        guard data.count <= DeveloperProtocol.maximumTextBytes, !data.contains(0) else { throw NocturneError.remote("Edit text files smaller than 120 KB.") }
+        let (parent, name) = try parentOf(path); defer { Darwin.close(parent) }
+        let original = openat(parent, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard original >= 0 else { throw Self.posixError() }; defer { Darwin.close(original) }
+        var info = stat(); guard fstat(original, &info) == 0 else { throw Self.posixError() }
+        guard Self.editDigest(try editContents(original)) == revision else { throw NocturneError.remote("The file changed on your Mac. Reload it before saving.") }
+        let temporary = ".nocturne-edit-" + UUID().uuidString
+        let output = openat(parent, temporary, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard output >= 0 else { throw Self.posixError() }
+        defer { Darwin.close(output); unlinkat(parent, temporary, 0) }
+        try data.withUnsafeBytes { bytes in
+            var offset = 0
+            while offset < bytes.count {
+                let count = Darwin.write(output, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+                if count < 0 && errno == EINTR { continue }
+                guard count > 0 else { throw Self.posixError() }; offset += count
+            }
+        }
+        guard fchmod(output, info.st_mode & 0o777) == 0, fsync(output) == 0 else { throw Self.posixError() }
+        var current = stat()
+        guard fstatat(parent, name, &current, AT_SYMLINK_NOFOLLOW) == 0,
+              current.st_ino == info.st_ino, current.st_dev == info.st_dev,
+              Self.editDigest(try editContents(original)) == revision else { throw NocturneError.remote("The file changed on your Mac. Reload it before saving.") }
+        guard renameat(parent, temporary, parent, name) == 0 else { throw Self.posixError() }
+        return RepositoryText(path: path, text: text, revision: Self.editDigest(data))
+    }
+    private func editContents(_ fd: Int32) throws -> Data {
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+              info.st_size >= 0, info.st_size <= DeveloperProtocol.maximumTextBytes else { throw NocturneError.remote("Edit regular text files smaller than 120 KB.") }
+        var data = Data(count: Int(info.st_size))
+        let count = data.withUnsafeMutableBytes { bytes in pread(fd, bytes.baseAddress, bytes.count, 0) }
+        guard count == data.count else { throw NocturneError.remote("The file changed while loading. Reload and try again.") }
+        return data
+    }
+    private static func editDigest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     fileprivate func commit(_ transfer: IncomingTransfer) throws {
         let (parent, name) = try parentOf(transfer.path); defer { Darwin.close(parent) }
         guard renameatx_np(root, transfer.temporary, parent, name, UInt32(RENAME_EXCL)) == 0 else { throw Self.posixError() }

@@ -41,18 +41,19 @@ final class RemoteAccessTests: XCTestCase {
         let key = try SecureStore.randomKey(), identity = try TestDeviceIdentity()
         let devices = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
         let host = try WorkspaceServer(folder: root.appendingPathComponent("files"), name: "Online Mac", devices: devices, permissions: .init(terminal: true, files: true))
-        let port = UInt16.random(in: 52_000..<58_000)
-        let tunnel = try await RemoteTunnel.host(brokerURL: brokerURL, endpointKey: SecureStore.randomKey(), port: port)
-        defer { host.stop(); tunnel.stop() }
-        host.authorizeRemoteDevice = { try tunnel.authorize(sourcePort: $0, deviceID: $1) }
+        defer { host.stop() }
         let ready = expectation(description: "Workspace ready")
         var signalled = false
         host.onStatus = { status, _ in if status == "Ready", !signalled { signalled = true; ready.fulfill() } }
-        try host.start(secret: key, port: port)
+        try host.start(secret: key, port: 0)
         await fulfillment(of: [ready], timeout: 5)
+        let port = try XCTUnwrap(host.listeningPort)
+        let tunnel = try await RemoteTunnel.host(brokerURL: brokerURL, endpointKey: SecureStore.randomKey(), port: port)
+        defer { tunnel.stop() }
+        host.authorizeRemoteDevice = { try tunnel.authorize(sourcePort: $0, deviceID: $1) }
         let access = try RemoteAccess(brokerURL: brokerURL, endpointID: tunnel.endpointID)
         // A stale LAN port forces the real Rust/Swift fallback without binding game ports.
-        let invitation = try PairingInvitation(host: "127.0.0.1", port: port + 1, name: "Online Mac", secret: key, enrollmentToken: devices.createInvitation(), remoteAccess: access)
+        let invitation = try PairingInvitation(host: "127.0.0.1", port: port == 1 ? 2 : 1, name: "Online Mac", secret: key, enrollmentToken: devices.createInvitation(), remoteAccess: access)
         let client = WorkspaceConnection(identity: identity.identity(), remoteStreaming: false)
         defer { client.disconnect() }
         try await client.connect(invitation)

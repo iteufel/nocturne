@@ -5,6 +5,9 @@ Stream your Mac to iPhone and iPad, with a native terminal and file transfer alo
 - Stream your desktop or open individual Mac app windows on iPad.
 - Use touch, a keyboard, a mouse, or a game controller.
 - Keep terminal sessions running on your Mac and access shared files in Apple’s Files app.
+- Read and continue Codex conversations, or switch to Claude Code and other ACP agents on your Mac.
+- Choose models/reasoning, open worktree chats, review agent/Git diffs, edit changed files, and view/edit GitHub or Azure DevOps pull requests.
+- Talk with Codex over WebRTC using your ChatGPT sign-in, with spoken replies, transcripts, microphone controls, and background audio.
 - Connect locally or enable remote access for other networks.
 
 Requires iOS/iPadOS 17+ and an Apple Silicon Mac running macOS 14+. Nocturne Server includes its streaming engine; no separate Sunshine installation is needed.

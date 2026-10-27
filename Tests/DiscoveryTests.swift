@@ -14,18 +14,18 @@ final class DiscoveryTests: XCTestCase {
         let host = try WorkspaceServer(folder: root.appendingPathComponent("files"), name: name, devices: devices, permissions: .init(terminal: true, files: true))
         let otherDevices = try WorkspaceDeviceStore(url: root.appendingPathComponent("other.json"))
         let other = try WorkspaceServer(folder: root.appendingPathComponent("other"), name: name, devices: otherDevices)
-        let port = UInt16.random(in: 52_000..<59_000)
-        try await start(host, key: key, port: port)
         defer { host.stop(); other.stop() }
+        try await start(host, key: key, port: 0)
+        let port = try XCTUnwrap(host.listeningPort)
         // Duplicate display names are deliberately ambiguous; only the key-derived ID matches.
-        try await start(other, key: SecureStore.randomKey(), port: port + 1)
+        try await start(other, key: SecureStore.randomKey(), port: 0)
         let client = WorkspaceConnection(identity: identity.identity()); defer { client.disconnect() }
         try await client.connect(PairingInvitation(host: "127.0.0.1", port: port, name: name, secret: key, enrollmentToken: devices.createInvitation()))
         let tab = try await client.openTerminal()
         client.disconnect()
 
         // Represents an existing Keychain record after changing networks. No fresh QR/token.
-        let saved = try PairingInvitation(host: "192.0.2.123", port: port + 2, name: "Old Mac name", secret: key)
+        let saved = try PairingInvitation(host: "192.0.2.123", port: port == 1 ? 2 : 1, name: "Old Mac name", secret: key)
         let restored = try JSONDecoder().decode(PairingInvitation.self, from: JSONEncoder().encode(saved))
         try await client.connect(restored, rediscover: true)
         XCTAssertEqual(client.state, .connected)
@@ -52,8 +52,9 @@ final class DiscoveryTests: XCTestCase {
         let key = try SecureStore.randomKey(), identity = try TestDeviceIdentity()
         let devices = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
         let host = try WorkspaceServer(folder: root.appendingPathComponent("files"), name: "Fallback Mac", devices: devices)
-        let port = UInt16.random(in: 52_000..<60_000)
-        try await start(host, key: key, port: port); defer { host.stop() }
+        defer { host.stop() }
+        try await start(host, key: key, port: 0)
+        let port = try XCTUnwrap(host.listeningPort)
         let client = WorkspaceConnection(identity: identity.identity()); defer { client.disconnect() }
         try await client.connect(PairingInvitation(host: "127.0.0.1", port: port, name: "Mac", secret: key, enrollmentToken: devices.createInvitation()))
         XCTAssertEqual(client.connectedInvitation?.port, port)
@@ -120,8 +121,9 @@ final class DiscoveryTests: XCTestCase {
         let key = try SecureStore.randomKey()
         let devices = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
         let host = try WorkspaceServer(folder: root.appendingPathComponent("files"), name: "Private Mac", devices: devices)
-        let port = UInt16.random(in: 52_000..<60_000)
-        try await start(host, key: key, port: port); defer { host.stop() }
+        defer { host.stop() }
+        try await start(host, key: key, port: 0)
+        let port = try XCTUnwrap(host.listeningPort)
         let discovery = WorkspaceDiscovery()
         let endpoint = await discovery.find(secret: key)
         XCTAssertNotNil(endpoint)

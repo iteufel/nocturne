@@ -33,6 +33,31 @@ The Mac product is `.build/XcodeMac/Build/Products/Debug/Nocturne Server.app`; t
 
 ## Tests
 
+Chat protocol fixtures run with `swift test --filter ChatTests`. They exercise real stdio processes, Codex legacy and paginated history, ACP replay and capability negotiation, streaming, approvals, cancellation, and authenticated chat revocation. The optional `NOCTURNE_TEST_CODEX=1 swift test --filter ChatTests/testInstalledCodexHistoryReadOnly` checks the installed Codex's local history without starting or resuming an inference turn.
+
+Developer workspace tests run with `swift test --filter 'DeveloperWorkspaceTests|ForgeTests|ChatTests'`. Temporary real repositories cover staging/unstaging, unusual paths, renames, branch comparisons, isolated worktree creation and stale/symlink-safe edits. The authenticated server test verifies thread-directory binding and permission/active-turn guards. `DeveloperClientTests` in the simulator exercises model/worktree/changes/PR flows over real TLS with deterministic media-free forge responses. PR edits are tested with structured payloads and stale-write rejection without modifying real PRs.
+
+Workspace network fixtures bind port `0`, wait for readiness and read `listeningPort`. This avoids collisions with other fixtures and system ephemeral connections; the application's configured listening port is unaffected.
+
+`NOCTURNE_TEST_CODEX_MODELS=1 swift test --filter ChatTests/testInstalledCodexModelSelectionWithoutInference` tests the installed Codex catalog and settings update on an ephemeral thread without inference. Live forge checks are read-only and require existing Mac CLI authentication:
+
+```sh
+NOCTURNE_TEST_FORGES=1 \
+NOCTURNE_TEST_GITHUB_REPO=/path/to/github/checkout \
+NOCTURNE_TEST_AZURE_REPO=/path/to/azure/checkout \
+swift test --filter ForgeTests/testInstalledGitHubAndAzureDevOpsReadOnly
+```
+
+On 2026-10-27 both GitHub and Azure DevOps Cloud checks passed for PR listing, details, changed files and a real file diff. Closed PRs are included so a repository without an open PR can still be validated. Azure DevOps Server compatibility is not established by the cloud check.
+
+Voice signaling and diagnostic checks run with `swift test --filter VoiceAudioTests`. The iOS `VoiceChatClientTests` use a real authenticated TLS fixture and an injected media peer to verify offer/answer routing, media readiness, mute, stale leases, failure cleanup, background continuity, cancellation, the real `ClientModel.suspend()` path and native controls. These fixture tests do not call an AI service or record a microphone.
+
+`NOCTURNE_TEST_CODEX_WEBRTC=1 swift test --filter ChatTests/testInstalledCodexWebRTCWithChatGPTSignIn` generates a real native WebRTC offer and opens an ephemeral thread through the installed Codex App Server. It requires a Codex-managed ChatGPT login, strips Platform-key environment variables, and checks the actual v3 SDP-answer notification. It fails on authentication/access/protocol errors rather than skipping or switching to an API key. It stops before enabling microphone capture. `NOCTURNE_TEST_CODEX_VOICE=1 swift test --filter ChatTests/testInstalledCodexVoiceCatalogReadOnly` checks the voice catalog without inference.
+
+Run `python3 scripts/check-codex-webrtc.py --report /tmp/nocturne-webrtc-verification.json` for the real audio/agent check. It needs macOS `say`, `ffmpeg` and Python `aiortc==1.13.0` (install that optional test dependency in a temporary virtual environment). It creates a disposable directory and ephemeral thread, sends synthetic microphone speech, checks the actual file-read output and spoken answer, then closes the call. It exits nonzero on incomplete evidence. Reports contain no OAuth tokens, SDP or authentication headers.
+
+On 2026-10-27, this harness with **Codex 0.164.0**, `account/read → chatgpt`, no `OPENAI_API_KEY`/`CODEX_API_KEY`/`AZURE_OPENAI_API_KEY`, and Nocturne's own client identity successfully negotiated v3. The inherited development-environment identity override was explicitly removed. Synthetic speech asked Codex to read a disposable file; the backing agent executed the read, returned **427**, and the voice agent spoke that number. The successful run received 1,098 audio frames, including 349 audible frames, with 1,216 sent and 1,102 received RTP packets. The unconfigured WebRTC v1 attempt was rejected with `invalid_quicksilver_alpha_header`; source inspection identified the required v3 setting. No request identity or attestation was forged. Native iPhone microphone/speaker quality and physical locked-screen operation remain separate device checks.
+
 ```sh
 swift test
 NOCTURNE_TEST_APP_WINDOWS=1 swift test --filter AppWindowTests/testNativeWindowCaptureAndResize
