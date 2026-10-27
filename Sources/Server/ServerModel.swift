@@ -145,7 +145,10 @@ final class ServerModel: ObservableObject {
                     guard generation == epoch, !Task.isCancelled else { tunnel.stop(); return }
                     remoteTunnel = tunnel
                 }
-                let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: configuration.terminal, files: configuration.files, microphone: configuration.microphone, chats: configuration.chats), appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil, chatAgents: chatAgents)
+                // Chat grants can be revoked immediately while startup is pending.
+                let permissions = HostPermissions(terminal: configuration.terminal, files: configuration.files,
+                    microphone: configuration.microphone, chats: appliedSettings.chats)
+                let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: permissions, appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil, chatAgents: chatAgents)
                 if let tunnel = remoteTunnel {
                     host.authorizeRemoteDevice = { [weak tunnel] port, device in
                         guard let tunnel else { throw NocturneError.disconnected }

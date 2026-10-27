@@ -172,6 +172,18 @@ final class ServerLifecycleTests: XCTestCase {
         try await waitFor("chat access revoked") { client.state == .disconnected }
     }
 
+    func testChatRevocationDuringStartupDoesNotRestoreCapturedPermission() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        fixture.model.chatsEnabled = true
+        fixture.model.chatsEnabled = false
+        try await waitFor("terminal-only listener after chat revocation") { fixture.model.running }
+        let client = WorkspaceConnection(identity: try TestDeviceIdentity().identity())
+        defer { client.disconnect() }
+        try await client.connect(fixture.invitation())
+        XCTAssertTrue(client.capabilities.contains("terminal"))
+        XCTAssertFalse(client.capabilities.contains(ChatProtocol.capability), "A pending startup must use the current chat grant after revocation")
+    }
+
     func testDraftEditsDoNotAffectLiveServicesAndApplyRestartsWithSavedSettings() async throws {
         let fixture = try Fixture(); defer { fixture.cleanup() }
         let model = fixture.model
