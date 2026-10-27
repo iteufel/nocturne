@@ -33,7 +33,9 @@ struct ClientRootView: View {
     }
     private var workspace: some View {
         GeometryReader { geometry in
-            if horizontalSizeClass == .regular && WorkspaceLayout.resolve(width: geometry.size.width) == .expanded {
+            if model.page == .chats {
+                navigation(for: .chats)
+            } else if horizontalSizeClass == .regular && WorkspaceLayout.resolve(width: geometry.size.width) == .expanded {
                 NavigationSplitView {
                     List(selection: Binding<ClientPage?>(get: { model.page }, set: { if let page = $0 { model.page = page } })) {
                         Section("Workspace") {
@@ -66,6 +68,7 @@ struct ClientRootView: View {
                 switch page {
                 case .computers: ComputersView(model: model)
                 case .hostApps: HostAppsWorkspace(client: model, model: model.hostApps, connection: model.server)
+                case .chats: ChatWorkspace(model: model.chats, connection: model.server, voice: model.voice, connect: { Task { await model.reconnectServer() } }, exit: { model.page = .computers })
                 case .terminal: TerminalWorkspace(connection: model.server, connect: { Task { await model.reconnectServer() } })
                 case .files: FilesWorkspace(connection: model.server, connect: { Task { await model.reconnectServer() } })
                 case .settings: ClientSettingsView(model: model, showOnboarding: { replayOnboarding = true })

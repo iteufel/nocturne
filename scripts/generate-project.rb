@@ -154,6 +154,7 @@ target.resources_build_phase.add_file_reference(icons)
 target.resources_build_phase.add_file_reference(group.new_file('../../Resources/PrivacyInfo.xcprivacy'))
 kit = package(client, '../..'); terminal = package(client, '../SwiftTerm')
 product(client, target, kit, 'NocturneKit'); product(client, target, terminal, 'SwiftTerm')
+product(client, target, kit, 'NocturneVoice')
 target.build_configurations.each do |config|
   settings = config.build_settings
   settings['PRODUCT_NAME'] = 'Nocturne'
@@ -306,7 +307,8 @@ info['NSLocalNetworkUsageDescription'] = 'Find your computers and connect direct
 info['NSBluetoothAlwaysUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
 info['NSBluetoothPeripheralUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
 info['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Nocturne on your Mac.'
-info['NSMicrophoneUsageDescription'] = 'Send your microphone to your paired Mac for voice chat in Discord and games when you unmute a stream.'
+info['NSMicrophoneUsageDescription'] = 'Talk with Codex in live voice chats, or send your microphone to your paired Mac for Discord and games when you unmute a stream.'
+info['UIBackgroundModes'] = ['audio']
 info['UIApplicationSceneManifest'] = {
   'UIApplicationSupportsMultipleScenes' => true,
   'UISceneConfigurations' => {'UIWindowSceneSessionRoleApplication' => [

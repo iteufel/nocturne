@@ -119,7 +119,7 @@ private struct StreamToolsPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker("Tool", selection: $tool) { Text("Terminal").tag(0); Text("Files").tag(1) }.pickerStyle(.segmented)
+                Picker("Tool", selection: $tool) { Text("Terminal").tag(0); Text("Files").tag(1); Text("Chats").tag(2) }.pickerStyle(.segmented)
                 Button("Hide tools", systemImage: "xmark") { showTools = false }
                     .labelStyle(.iconOnly).buttonStyle(NocturneGlassButtonStyle())
             }.padding(12)
@@ -139,8 +139,10 @@ private struct StreamToolsPanel: View {
                 if model.savedServerName != nil { Task { await model.reconnectServer() } }
                 else { model.endStream(); model.showAdd = true }
             })
-        } else {
+        } else if tool == 1 {
             FilesWorkspace(connection: connection, connect: { model.endStream(); model.showAdd = true })
+        } else {
+            ChatWorkspace(model: model.chats, connection: connection, voice: model.voice, connect: { Task { await model.reconnectServer() } })
         }
     }
 }
@@ -192,6 +194,7 @@ struct StreamControlsMenu: View {
                 Section {
                     Button("Terminal", systemImage: "terminal") { tool = 0; showTools = true; dismiss() }
                     Button("Files", systemImage: "folder") { tool = 1; showTools = true; dismiss() }
+                    Button("Chats", systemImage: "bubble.left.and.bubble.right") { tool = 2; showTools = true; dismiss() }
                     if showTools { Button("Hide tools", systemImage: "sidebar.right") { showTools = false; dismiss() } }
                 }
                 Section {

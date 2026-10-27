@@ -7,14 +7,17 @@ let package = Package(
     products: [
         .library(name: "NocturneKit", targets: ["NocturneKit"]),
         .library(name: "NocturneHostKit", targets: ["NocturneHostKit"]),
+        .library(name: "NocturneVoice", targets: ["NocturneVoice"]),
         .library(name: "NocturneMacClient", targets: ["NocturneMacClient"])
     ],
+    dependencies: [.package(url: "https://github.com/stasel/WebRTC.git", exact: "155.0.0")],
     targets: [
         .binaryTarget(name: "NocturneRemote", path: "Vendor/NocturneRemote.xcframework"),
         .target(name: "NocturneKit", dependencies: ["NocturneRemote"], path: "Sources/Shared",
             linkerSettings: [.linkedFramework("SystemConfiguration"), .linkedFramework("Security"),
                 .linkedFramework("CoreWLAN", .when(platforms: [.macOS])), .linkedLibrary("resolv")]),
         .target(name: "NocturneFiles", dependencies: ["NocturneKit"], path: "Sources/FileProvider"),
+        .target(name: "NocturneVoice", dependencies: ["NocturneKit", .product(name: "WebRTC", package: "WebRTC")], path: "Sources/Voice"),
         .target(name: "PTYBridge", path: "Sources/PTYBridge", publicHeadersPath: "include"),
         .target(name: "DisplayBridge", path: "Sources/DisplayBridge", publicHeadersPath: "include",
             cSettings: [.unsafeFlags(["-fobjc-arc"])], linkerSettings: [.linkedFramework("CoreGraphics"), .linkedFramework("Foundation")]),
@@ -24,6 +27,6 @@ let package = Package(
         // Compile the app model for host lifecycle integration tests without launching the UI.
         .target(name: "NocturneServerModel", dependencies: ["NocturneKit", "NocturneHostKit"], path: "Sources/Server",
             exclude: ["NocturneServerApp.swift", "ServerView.swift", "ServerOnboardingView.swift", "MacComputersView.swift", "MacDesktopWorkspace.swift", "MacAppsWorkspace.swift"]),
-        .testTarget(name: "NocturneKitTests", dependencies: ["NocturneKit", "NocturneHostKit", "NocturneFiles", "NocturneServerModel", "NocturneMacClient"], path: "Tests", exclude: ["Client"])
+        .testTarget(name: "NocturneKitTests", dependencies: ["NocturneKit", "NocturneHostKit", "NocturneFiles", "NocturneVoice", "NocturneServerModel", "NocturneMacClient"], path: "Tests", exclude: ["Client"])
     ]
 )

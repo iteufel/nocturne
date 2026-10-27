@@ -105,15 +105,15 @@ final class WorkspaceIntegrationTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let key = try SecureStore.randomKey()
-        let port = UInt16.random(in: 52_000..<60_000)
         let devices = try WorkspaceDeviceStore(url: root.appendingPathComponent("state/devices.json"))
         let server = try WorkspaceServer(folder: root.appendingPathComponent("shared"), name: "Integration Mac", devices: devices, permissions: .init(terminal: true, files: true))
         defer { server.stop() }
         let listening = expectation(description: "Listener ready")
         var signalled = false
         server.onStatus = { status, _ in if status == "Ready", !signalled { signalled = true; listening.fulfill() } }
-        try server.start(secret: key, port: port)
+        try server.start(secret: key, port: 0)
         await fulfillment(of: [listening], timeout: 5)
+        let port = try XCTUnwrap(server.listeningPort)
         let client = WorkspaceConnection(identity: try TestDeviceIdentity().identity()); defer { client.disconnect() }
         try await client.connect(PairingInvitation(host: "127.0.0.1", port: port, name: "Mac", secret: key, enrollmentToken: devices.createInvitation()))
         XCTAssertEqual(client.state, .connected); XCTAssertEqual(client.name, "Integration Mac")
@@ -157,12 +157,12 @@ final class WorkspaceIntegrationTests: XCTestCase {
         let devices = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
         let server = try WorkspaceServer(folder: root.appendingPathComponent("shared"), name: "Mac", devices: devices)
         defer { server.stop() }
-        let port = UInt16.random(in: 52_000..<60_000)
         let ready = expectation(description: "Listener ready")
         var signalled = false
         server.onStatus = { status, _ in if status == "Ready", !signalled { signalled = true; ready.fulfill() } }
-        try server.start(secret: Data(repeating: 1, count: 32), port: port)
+        try server.start(secret: Data(repeating: 1, count: 32), port: 0)
         await fulfillment(of: [ready], timeout: 5)
+        let port = try XCTUnwrap(server.listeningPort)
         let client = WorkspaceConnection(identity: try TestDeviceIdentity().identity()); defer { client.disconnect() }
         do {
             try await client.connect(PairingInvitation(host: "127.0.0.1", port: port, name: "Mac", secret: Data(repeating: 2, count: 32)))

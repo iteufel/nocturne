@@ -102,10 +102,11 @@ final class MicrophoneIntegrationTests: XCTestCase {
         let server = try WorkspaceServer(folder: root.appendingPathComponent("shared"), name: "Mac", devices: devices,
             permissions: .init(terminal: true), microphoneOutput: output)
         defer { server.stop() }
-        let secret = try SecureStore.randomKey(), port = UInt16.random(in: 52_000..<60_000)
+        let secret = try SecureStore.randomKey()
         let listening = expectation(description: "Listening"); var ready = false
         server.onStatus = { status, _ in if status == "Ready", !ready { ready = true; listening.fulfill() } }
-        try server.start(secret: secret, port: port); await fulfillment(of: [listening], timeout: 5)
+        try server.start(secret: secret, port: 0); await fulfillment(of: [listening], timeout: 5)
+        let port = try XCTUnwrap(server.listeningPort)
 
         // Possession of the TLS key alone must not permit audio injection.
         let rejected = expectation(description: "Unauthenticated microphone rejected")

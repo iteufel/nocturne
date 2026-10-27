@@ -8,19 +8,21 @@ public struct ServerSettings: Equatable {
     public var terminal: Bool
     public var files: Bool
     public var microphone: Bool
+    public var chats: Bool
     public var sharedFolder: URL
     public var display: String
     public var headlessDisplay: Bool
     public var disablePhysicalDisplays: Bool
     public var remoteAccess: Bool
     public var brokerURL: String
-    public var hasEnabledServices: Bool { screenSharing || terminal || files || microphone }
+    public var hasEnabledServices: Bool { screenSharing || terminal || files || microphone || chats }
 
     public init(defaults: UserDefaults = .standard) {
         screenSharing = defaults.object(forKey: "allowScreenSharing") == nil || defaults.bool(forKey: "allowScreenSharing")
         terminal = defaults.bool(forKey: "allowTerminal")
         files = defaults.bool(forKey: "allowFiles")
         microphone = defaults.bool(forKey: "allowMicrophone")
+        chats = defaults.bool(forKey: "allowChats")
         sharedFolder = defaults.string(forKey: "sharedFolder").map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Nocturne Shared", isDirectory: true)
         let displays = DisplaySettings(defaults: defaults)
@@ -45,6 +47,7 @@ public struct ServerSettings: Equatable {
         defaults.set(terminal, forKey: "allowTerminal")
         defaults.set(files, forKey: "allowFiles")
         defaults.set(microphone, forKey: "allowMicrophone")
+        defaults.set(chats, forKey: "allowChats")
         defaults.set(sharedFolder.path, forKey: "sharedFolder")
         defaults.set(display, forKey: "streamDisplay")
         defaults.set(headlessDisplay, forKey: "headlessDisplayEnabled")

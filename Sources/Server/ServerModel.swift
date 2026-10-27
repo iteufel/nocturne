@@ -37,8 +37,21 @@ final class ServerModel: ObservableObject {
     @Published var invitation: PairingInvitation?
     @Published private(set) var resettingPairing = false
     var changingDevices: Bool { removingDevice != nil || resettingPairing }
+    let codexAccount = CodexAccountController()
+    @Published private(set) var chatAgents: [ChatAgentConfiguration]
     @Published var settings: ServerSettings
     @Published private(set) var appliedSettings: ServerSettings
+    var chatsEnabled: Bool {
+        get { settings.chats }
+        set {
+            settings.chats = newValue; appliedSettings.chats = newValue
+            defaults.set(newValue, forKey: "allowChats")
+            server?.updatePermissions(.init(terminal: appliedSettings.terminal, files: appliedSettings.files,
+                microphone: appliedSettings.microphone, chats: newValue))
+            if newValue { startEnabledServices() }
+            else if !appliedSettings.hasEnabledServices { stop() }
+        }
+    }
     var hasSettingsChanges: Bool { settings != appliedSettings }
     @Published private(set) var loginApprovalRequired = false
     @Published private(set) var screenSharingStatus = "Stopped"
@@ -73,6 +86,7 @@ final class ServerModel: ObservableObject {
              let key = try SecureStore.randomKey(); try SecureStore.write(key, account: account); return key
          }) {
         self.defaults = defaults; self.loginItem = loginItem; self.keyProvider = keyProvider; self.port = port
+        chatAgents = defaults.data(forKey: "chatAgents").flatMap { try? JSONDecoder().decode([ChatAgentConfiguration].self, from: $0) } ?? ChatAgentConfiguration.defaults
         self.engineExecutable = engineExecutable ?? Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/nocturne-stream-host")
         var saved = ServerSettings(defaults: defaults)
         let loginStatus = loginItem.status()
@@ -131,7 +145,10 @@ final class ServerModel: ObservableObject {
                     guard generation == epoch, !Task.isCancelled else { tunnel.stop(); return }
                     remoteTunnel = tunnel
                 }
-                let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: configuration.terminal, files: configuration.files, microphone: configuration.microphone), appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil)
+                // Chat grants can be revoked immediately while startup is pending.
+                let permissions = HostPermissions(terminal: configuration.terminal, files: configuration.files,
+                    microphone: configuration.microphone, chats: appliedSettings.chats)
+                let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: permissions, appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil, chatAgents: chatAgents)
                 if let tunnel = remoteTunnel {
                     host.authorizeRemoteDevice = { [weak tunnel] port, device in
                         guard let tunnel else { throw NocturneError.disconnected }
@@ -319,6 +336,22 @@ final class ServerModel: ObservableObject {
     func revealLog() { NSWorkspace.shared.activateFileViewerSelecting([engine.logURL]) }
     func openPrivacy(_ pane: String) {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_" + pane) { NSWorkspace.shared.open(url) }
+    }
+    func saveChatAgent(_ agent: ChatAgentConfiguration) throws {
+        try agent.validate()
+        var agents = chatAgents
+        if let index = agents.firstIndex(where: { $0.id == agent.id }) { agents[index] = agent } else { agents.append(agent) }
+        guard agents.count <= 24 else { throw NocturneError.remote("Configure up to 24 chat providers.") }
+        try persistChatAgents(agents)
+    }
+    func removeChatAgent(_ id: String) {
+        guard !["codex", "claude"].contains(id) else { return }
+        do { try persistChatAgents(chatAgents.filter { $0.id != id }) } catch { self.error = error.localizedDescription }
+    }
+    private func persistChatAgents(_ agents: [ChatAgentConfiguration]) throws {
+        let data = try JSONEncoder().encode(agents)
+        defaults.set(data, forKey: "chatAgents"); chatAgents = agents
+        server?.updateChatAgents(agents)
     }
     func startEnabledServices() { if appliedSettings.hasEnabledServices { start() } }
     func refreshLoginItem() {

@@ -16,13 +16,14 @@ final class TerminalPersistenceTests: XCTestCase {
     private func start() async throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("Nocturne-terminal-" + UUID().uuidString)
         store = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
-        key = try SecureStore.randomKey(); port = UInt16.random(in: 52_000..<60_000)
+        key = try SecureStore.randomKey(); port = 0
         server = try WorkspaceServer(folder: root.appendingPathComponent("shared"), name: "Mac", devices: store, permissions: .init(terminal: true))
         let ready = expectation(description: "Listener ready"); var signalled = false
         server.onStatus = { status, _ in if status == "Ready", !signalled { signalled = true; ready.fulfill() } }
         server.onDevices = { [weak self] devices in self?.connectedDevices = Set(devices.map(\.id)) }
         try server.start(secret: key, port: port)
         await fulfillment(of: [ready], timeout: 5)
+        port = try XCTUnwrap(server.listeningPort)
     }
     private func cleanUp() {
         clients.forEach { $0.disconnect() }; clients = []; server?.stop()

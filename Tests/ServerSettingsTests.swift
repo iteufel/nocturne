@@ -12,9 +12,11 @@ final class ServerSettingsTests: XCTestCase {
         defaults.set("42", forKey: "streamDisplay")
         defaults.set(true, forKey: "allowTerminal")
         defaults.set(true, forKey: "allowFiles")
+        defaults.set(true, forKey: "allowChats")
         let settings = ServerSettings(defaults: defaults)
         XCTAssertTrue(settings.screenSharing)
         XCTAssertTrue(settings.terminal); XCTAssertTrue(settings.files)
+        XCTAssertTrue(settings.chats)
         XCTAssertEqual(settings.display, "42"); XCTAssertFalse(settings.headlessDisplay)
         var draft = settings
         draft.screenSharing = false
@@ -146,6 +148,40 @@ final class ServerLifecycleTests: XCTestCase {
         model.applySettings()
         try await waitFor("terminal sharing startup") { model.running }
         XCTAssertNil(model.error); XCTAssertFalse(model.engine.isRunning)
+    }
+
+    func testChatOnlySharingStartsAndRevokesWithoutApplyingOtherDraftPermissions() async throws {
+        let fixture = try Fixture(terminal: false); defer { fixture.cleanup() }
+        let model = fixture.model
+        model.settings.files = true
+        model.chatsEnabled = true
+        try await waitFor("chat-only listener") { model.running }
+        XCTAssertTrue(model.appliedSettings.chats)
+        XCTAssertFalse(model.appliedSettings.files, "Enabling chat must not apply unrelated sharing drafts")
+        XCTAssertTrue(fixture.defaults.bool(forKey: "allowChats"))
+        XCTAssertFalse(fixture.defaults.bool(forKey: "allowFiles"))
+        let client = WorkspaceConnection(identity: try TestDeviceIdentity().identity())
+        defer { client.disconnect() }
+        try await client.connect(fixture.invitation())
+        XCTAssertTrue(client.capabilities.contains(ChatProtocol.capability))
+        XCTAssertFalse(client.capabilities.contains("files"))
+        XCTAssertFalse(client.capabilities.contains("streaming"))
+        model.chatsEnabled = false
+        XCTAssertFalse(model.active, "Revoking the last applied service stops the listener")
+        XCTAssertFalse(fixture.defaults.bool(forKey: "allowChats"))
+        try await waitFor("chat access revoked") { client.state == .disconnected }
+    }
+
+    func testChatRevocationDuringStartupDoesNotRestoreCapturedPermission() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        fixture.model.chatsEnabled = true
+        fixture.model.chatsEnabled = false
+        try await waitFor("terminal-only listener after chat revocation") { fixture.model.running }
+        let client = WorkspaceConnection(identity: try TestDeviceIdentity().identity())
+        defer { client.disconnect() }
+        try await client.connect(fixture.invitation())
+        XCTAssertTrue(client.capabilities.contains("terminal"))
+        XCTAssertFalse(client.capabilities.contains(ChatProtocol.capability), "A pending startup must use the current chat grant after revocation")
     }
 
     func testDraftEditsDoNotAffectLiveServicesAndApplyRestartsWithSavedSettings() async throws {
