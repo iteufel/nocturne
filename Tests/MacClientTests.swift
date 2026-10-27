@@ -50,12 +50,19 @@ private final class MacAppCapture: AppWindowCapture {
     var inputs: [AppWindowInput] = []
     var resizes: [AppWindowViewport] = []
     var stops = 0
+    var delayResize = false
+    var pendingResize: CheckedContinuation<Void, Never>?
     let send: AppWindowSend
     let ended: (Error) -> Void
     init(window: RemoteAppWindow, send: @escaping AppWindowSend, ended: @escaping (Error) -> Void) {
         self.window = window; self.send = send; self.ended = ended
     }
-    func resize(_ viewport: AppWindowViewport) { resizes.append(viewport) }
+    func resize(_ viewport: AppWindowViewport) async {
+        resizes.append(viewport)
+        if delayResize { await withCheckedContinuation { pendingResize = $0 }; pendingResize = nil }
+        window = .init(id: window.id, applicationID: window.applicationID, title: window.title,
+                       width: viewport.width, height: viewport.height, isResizable: true)
+    }
     func input(_ input: AppWindowInput) { inputs.append(input) }
     func stop() { stops += 1 }
 }
@@ -452,7 +459,7 @@ final class MacClientTests: XCTestCase {
         try await waitFor("all displays released") { released == 2 }
     }
 
-    func testBorderlessAppViewerHasOnlyHandleAndCanReceiveKeyboardFocus() throws {
+    func testAppViewerHasNativeTitleBarResizeFrameAndCanReceiveKeyboardFocus() throws {
         _ = NSApplication.shared
         let invitation = try PairingInvitation(host: "127.0.0.1", port: 1, name: "Host", secret: SecureStore.randomKey())
         let hostWindow = RemoteAppWindow(id: 10, applicationID: "fixed", title: "Fixed utility", width: 620, height: 440, isResizable: false)
@@ -461,18 +468,71 @@ final class MacClientTests: XCTestCase {
         var closed = 0
         let controller = MacAppWindowController(stream: stream) { closed += 1 }
         let window = try XCTUnwrap(controller.window)
-        XCTAssertFalse(window.styleMask.contains(.titled)); XCTAssertNil(window.toolbar)
-        XCTAssertFalse(window.isOpaque); XCTAssertTrue(window.canBecomeKey); XCTAssertTrue(window.canBecomeMain)
-        XCTAssertEqual(window.contentRect(forFrameRect: window.frame), window.frame, "No extra local frame around the captured app")
-        XCTAssertLessThanOrEqual(MacAppWindowController.handleHeight, 16)
+        XCTAssertTrue(window.styleMask.contains(.titled), "Standalone viewers need a native draggable title bar and resize frame")
+        XCTAssertTrue(window.styleMask.contains(.resizable))
+        XCTAssertTrue(window.isMovable); XCTAssertEqual(window.titleVisibility, .visible)
+        XCTAssertTrue(window.isOpaque); XCTAssertTrue(window.hasShadow)
+        XCTAssertTrue(window.canBecomeKey); XCTAssertTrue(window.canBecomeMain)
+        XCTAssertLessThan(window.contentRect(forFrameRect: window.frame).height, window.frame.height)
+        let content = try XCTUnwrap(window.contentView as? MacAppWindowContentView)
+        content.layoutSubtreeIfNeeded()
+        XCTAssertEqual(MacAppWindowController.contentSize(for: .init(width: 620, height: 440)), .init(width: 632, height: 452),
+                       "Only the border surrounds the video; dragging uses the native title bar")
         stream.surface.inputEnabled = true
         XCTAssertTrue(window.makeFirstResponder(stream.surface)); XCTAssertTrue(window.firstResponder === stream.surface)
         let resized = controller.windowWillResize(window, to: .init(width: 930, height: 800))
-        XCTAssertEqual(resized.height - MacAppWindowController.handleHeight, 660, accuracy: 0.01)
+        let resizedContent = window.contentRect(forFrameRect: .init(origin: .zero, size: resized))
+        let resizedVideo = MacAppWindowController.videoSize(in: resizedContent.size)
+        XCTAssertEqual(resizedVideo.width / resizedVideo.height, 620.0 / 440, accuracy: 0.001)
         let laptop = MacAppWindowController.fitting(video: .init(width: 2400, height: 1800), inside: .init(width: 1100, height: 700))
         XCTAssertLessThanOrEqual(laptop.width, 1100); XCTAssertLessThanOrEqual(laptop.height, 700)
-        XCTAssertEqual(laptop.width / (laptop.height - MacAppWindowController.handleHeight), 4.0 / 3, accuracy: 0.001)
+        let laptopVideo = MacAppWindowController.videoSize(in: laptop)
+        XCTAssertEqual(laptopVideo.width / laptopVideo.height, 4.0 / 3, accuracy: 0.001)
+        if let path = ProcessInfo.processInfo.environment["NOCTURNE_APP_WINDOW_PREVIEW"] {
+            window.orderFront(nil); window.displayIfNeeded()
+            let frame = try XCTUnwrap(content.superview)
+            let bitmap = try XCTUnwrap(frame.bitmapImageRepForCachingDisplay(in: frame.bounds))
+            frame.cacheDisplay(in: frame.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: path))
+        }
         controller.close(); XCTAssertEqual(closed, 1)
+    }
+
+    func testAppViewerResizeKeepsLatestSizeWhenHostReplyArrivesLate() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
+        let appHost = MacAppHost(), apps = AppWindowSessionManager(host: appHost)
+        let host = try WorkspaceServer(folder: root, name: "Host", devices: store, appWindows: apps)
+        defer { host.stop(); apps.stop() }
+        let secret = try SecureStore.randomKey(), port = try await startListener(host, secret: secret)
+        let invitation = try PairingInvitation(host: "127.0.0.1", port: port, name: "Host", secret: secret, enrollmentToken: store.createInvitation())
+        let remote = appHost.windows(applicationID: "app0")[0]
+        let route = AppWindowRoute(serverID: "host", applicationID: remote.applicationID, windowID: remote.id, title: remote.title)
+        let stream = MacDesktopSession(invitation: invitation, identity: try MacClientIdentity.generate().workspace(name: "Viewer"), route: route, initialWindow: remote)
+        let controller = MacAppWindowController(stream: stream) {}
+        defer { controller.close() }
+        let window = try XCTUnwrap(controller.window)
+        controller.present()
+        try await waitFor("app window opened") { stream.display != nil || stream.error != nil }
+        XCTAssertNil(stream.error)
+        let capture = try XCTUnwrap(appHost.captures.first)
+        capture.delayResize = true
+        window.setContentSize(MacAppWindowController.contentSize(for: .init(width: 900, height: 600)))
+        window.contentView?.layoutSubtreeIfNeeded()
+        try await waitFor("first resize pending") { capture.pendingResize != nil }
+        let latest = MacAppWindowController.contentSize(for: .init(width: 1100, height: 500))
+        window.setContentSize(latest)
+        window.contentView?.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        capture.delayResize = false; capture.pendingResize?.resume()
+        try await waitFor("latest resize reached host") { capture.resizes.count >= 2 || stream.error != nil }
+        XCTAssertNil(stream.error)
+        XCTAssertEqual(window.contentView?.bounds.size, latest, "An older host response must not resize the viewer or overwrite the user's latest drag")
+        XCTAssertEqual(capture.resizes.last?.width, 1100)
+        XCTAssertEqual(capture.resizes.last?.height, 500)
+        XCTAssertEqual(appHost.captures.count, 1, "Resizing must keep the same app capture lease")
     }
 
     func testOSAssignedListenerPortsKeepAuthenticatedServersIndependent() async throws {

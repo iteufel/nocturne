@@ -32,6 +32,7 @@ FOUNDATION_EXPORT NSNotificationName const NocturneStreamControlsRequestedNotifi
 - (void)setFillEntireScreen:(BOOL)fill controller:(UIViewController *)controller NS_SWIFT_NAME(setFillEntireScreen(_:controller:));
 - (void)setPointerCapture:(BOOL)enabled controller:(UIViewController *)controller NS_SWIFT_NAME(setPointerCapture(_:controller:));
 - (void)toggleKeyboardForController:(UIViewController *)controller NS_SWIFT_NAME(toggleKeyboard(controller:));
+- (void)setKeyboardVisible:(BOOL)visible controller:(UIViewController *)controller NS_SWIFT_NAME(setKeyboardVisible(_:controller:));
 - (void)stopController:(UIViewController *)controller NS_SWIFT_NAME(stopController(_:));
 - (void)stopController:(UIViewController *)controller completion:(void (^)(void))completion NS_SWIFT_NAME(stopController(_:completion:));
 @end

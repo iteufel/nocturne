@@ -83,7 +83,13 @@
     [interactionTimer invalidate]; interactionTimer = nil;
 }
 
-// Shared by the visible button and the upstream three-finger gesture.
+// Explicit show/hide actions are idempotent, including repeated edge swipes.
+- (void)nocturneSetKeyboardVisible:(BOOL)visible {
+    isInputingText = keyInputField.isFirstResponder;
+    if (isInputingText != visible) [self nocturneToggleKeyboard];
+}
+
+// Retained for the upstream three-finger toggle gesture.
 - (void)nocturneToggleKeyboard {
     if (isInputingText) {
         Log(LOG_D, @"Closing the keyboard");

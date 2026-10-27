@@ -524,6 +524,11 @@ NSNotificationName const NocturneStreamControlsRequestedNotification = @"Nocturn
         [(MDStreamController *)controller nocturneToggleKeyboard];
     }
 }
+- (void)setKeyboardVisible:(BOOL)visible controller:(UIViewController *)controller {
+    if ([controller isKindOfClass:MDStreamController.class] && !((MDStreamController *)controller).cleanedUp) {
+        [(MDStreamController *)controller nocturneSetKeyboardVisible:visible];
+    }
+}
 - (void)stopController:(UIViewController *)controller { if ([controller isKindOfClass:MDStreamController.class]) [(MDStreamController *)controller shutdown]; }
 - (void)stopController:(UIViewController *)controller completion:(void (^)(void))completion {
     [self stopController:controller];

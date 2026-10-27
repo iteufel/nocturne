@@ -134,6 +134,34 @@
         XCTAssertFalse([[view valueForKey:@"isInputingText"] boolValue]);
     }
 }
+- (void)testShowingKeyboardRepeatedlyKeepsItOpenAndRecoversLostFocus {
+    RecordingStreamView *view = [self viewWithAbsoluteTouch:YES];
+    UIViewController *root = [UIViewController new];
+    UIWindow *window = [[UIWindow alloc] initWithFrame:view.bounds];
+    root.view = view;
+    window.rootViewController = root;
+    [window makeKeyAndVisible];
+    UITextField *field = [view valueForKey:@"keyInputField"];
+    @try {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            [view nocturneSetKeyboardVisible:YES];
+            XCTAssertTrue(field.isFirstResponder);
+            XCTAssertTrue([[view valueForKey:@"isInputingText"] boolValue]);
+            XCTAssertEqual([field actionsForTarget:view forControlEvent:UIControlEventEditingChanged].count, 1u);
+        }
+        [field resignFirstResponder];
+        [view nocturneSetKeyboardVisible:YES];
+        XCTAssertTrue(field.isFirstResponder);
+        [view nocturneSetKeyboardVisible:NO];
+        [view nocturneSetKeyboardVisible:NO];
+        XCTAssertFalse(field.isFirstResponder);
+        XCTAssertFalse([[view valueForKey:@"isInputingText"] boolValue]);
+    } @finally {
+        [view nocturneSetKeyboardVisible:NO];
+        window.hidden = YES;
+        window.rootViewController = nil;
+    }
+}
 - (void)testDirectTapPositionsCursorAndClicks {
     RecordingStreamView *view = [self viewWithAbsoluteTouch:YES];
     PointerTestTouch *touch = [PointerTestTouch new]; touch.inputTimestamp = 1;

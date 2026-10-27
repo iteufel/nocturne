@@ -3,7 +3,7 @@ import Foundation
 import NocturneKit
 import Darwin
 
-private struct DisplayCommand: Codable {
+struct DisplayCommand: Codable {
     var id = UUID().uuidString
     let operation: String
     var size: StreamDisplaySize?
@@ -94,17 +94,24 @@ private final class DisplayLineReader: @unchecked Sendable {
     }
 }
 
-/// Reply callbacks run on the pipe's queue, so Stop/restore can wait for the
-/// worker without depending on the app's main run loop to deliver the reply.
-private final class DisplayProcessChannel: @unchecked Sendable {
+protocol DisplayControlChannel: AnyObject {
+    var isRunning: Bool { get }
+    func send(_ command: DisplayCommand, timeout: TimeInterval, completion: @escaping (Result<UInt32?, Error>) -> Void)
+    func stop()
+}
+
+/// Replies and deadlines are delivered on the pipe/background queues. No display
+/// command may block the server's main actor while WindowServer is responding.
+final class DisplayProcessChannel: DisplayControlChannel, @unchecked Sendable {
     let process = Process()
+    var isRunning: Bool { process.isRunning }
     private let input = Pipe(), output = Pipe()
     private let lock = NSLock()
     private var pending: [String: (Result<UInt32?, Error>) -> Void] = [:]
     private var closed = false
-    init() throws {
-        guard let executable = Bundle.main.executableURL else { throw NocturneError.disconnected }
-        process.executableURL = executable; process.arguments = ["--nocturne-display-worker"]
+    init(executable: URL? = Bundle.main.executableURL, arguments: [String] = ["--nocturne-display-worker"]) throws {
+        guard let executable else { throw NocturneError.disconnected }
+        process.executableURL = executable; process.arguments = arguments
         process.standardInput = input; process.standardOutput = output; process.standardError = FileHandle.nullDevice
         let reader = DisplayLineReader { [weak self] line in
             guard let self else { return }
@@ -119,18 +126,18 @@ private final class DisplayProcessChannel: @unchecked Sendable {
         // Closing the unused pipe ends makes EOF reliable when either process dies.
         try input.fileHandleForReading.close(); try output.fileHandleForWriting.close()
     }
-    func send(_ command: DisplayCommand, completion: @escaping (Result<UInt32?, Error>) -> Void) {
+    func send(_ command: DisplayCommand, timeout: TimeInterval, completion: @escaping (Result<UInt32?, Error>) -> Void) {
         lock.lock()
         guard !closed else { lock.unlock(); completion(.failure(NocturneError.disconnected)); return }
         pending[command.id] = completion; lock.unlock()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 12) { [weak self] in
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
             guard let self else { return }
             self.lock.lock(); let callback = self.pending.removeValue(forKey: command.id); self.lock.unlock()
             callback?(.failure(NocturneError.timeout))
         }
         do { try input.fileHandleForWriting.write(contentsOf: JSONEncoder().encode(command) + Data([10])) }
         catch {
-            lock.lock(); let callback = pending.removeValue(forKey: command.id); lock.unlock(); callback?(.failure(error))
+            fail()
         }
     }
     func stop() {
@@ -147,38 +154,86 @@ private final class DisplayProcessChannel: @unchecked Sendable {
 
 @MainActor
 final class ProcessStreamingDisplayDriver: StreamingDisplayDriver {
-    private var channel: DisplayProcessChannel?
+    private var channel: DisplayControlChannel?
+    private var recoveringChannels: [DisplayControlChannel] = []
+    private var restoration: Task<Void, Never>?
+    private var restorationID: UUID?
+    private var revision = UUID()
+    private let makeChannel: () throws -> DisplayControlChannel
+    private let restoreTimeout: TimeInterval
+    private let requestTimeout: TimeInterval
+    init(makeChannel: @escaping () throws -> DisplayControlChannel = { try DisplayProcessChannel() },
+         restoreTimeout: TimeInterval = 8, requestTimeout: TimeInterval = 12) {
+        self.makeChannel = makeChannel; self.restoreTimeout = restoreTimeout; self.requestTimeout = requestTimeout
+    }
     @discardableResult func start() async throws -> UInt32 {
-        if channel == nil { channel = try DisplayProcessChannel() }
         return try await requestDisplay(.init(operation: "start"))
     }
     @discardableResult func apply(_ size: StreamDisplaySize, disablePhysicalDisplays: Bool) async throws -> UInt32 {
-        guard channel != nil else { throw NocturneError.disconnected }
         return try await requestDisplay(.init(operation: "apply", size: size, disable: disablePhysicalDisplays))
     }
     private func requestDisplay(_ command: DisplayCommand) async throws -> UInt32 {
-        guard let channel else { throw NocturneError.disconnected }
-        let display = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<UInt32?, Error>) in
-            channel.send(command) { continuation.resume(with: $0) }
+        let epoch = revision
+        await restoration?.value
+        // Only transport failures warrant a fresh worker. Native configuration
+        // errors still propagate; each request can replace its worker only once.
+        for attempt in 0..<2 {
+            try Task.checkCancellation()
+            guard revision == epoch else { throw NocturneError.disconnected }
+            if channel == nil { channel = try makeChannel() }
+            guard let channel else { throw NocturneError.disconnected }
+            recoveringChannels.removeAll { !$0.isRunning }
+            var request = command
+            // A detached worker still owns its original layout. Let it restore
+            // physical monitors without a new worker disabling them underneath it.
+            if !recoveringChannels.isEmpty { request.disable = false }
+            do {
+                let display = try await send(request, to: channel, timeout: requestTimeout)
+                try Task.checkCancellation()
+                guard revision == epoch else { throw NocturneError.disconnected }
+                guard let display, display != 0 else { throw NocturneError.invalidFrame }
+                return display
+            } catch {
+                guard revision == epoch else { throw NocturneError.disconnected }
+                guard let failure = error as? NocturneError,
+                      failure == .disconnected || failure == .timeout || failure == .invalidFrame else { throw error }
+                retire(channel)
+                if attempt == 1 { throw error }
+            }
         }
-        guard let display, display != 0 else { throw NocturneError.invalidFrame }
-        return display
+        throw NocturneError.disconnected
     }
     func restore() throws {
+        revision = UUID()
+        guard restoration == nil else { return }
         guard let channel else { return }
-        let semaphore = DispatchSemaphore(value: 0)
-        let result = DisplaySynchronousResult()
-        channel.send(.init(operation: "restore")) { value in result.value = value; semaphore.signal() }
-        guard semaphore.wait(timeout: .now() + 8) == .success else {
-            channel.stop(); self.channel = nil
-            throw NocturneError.remote("The display controller is recovering your Mac’s displays. Restart the server before streaming again.")
+        let id = UUID(); restorationID = id
+        restoration = Task { [weak self] in
+            guard let self else { return }
+            do { _ = try await self.send(.init(operation: "restore"), to: channel, timeout: self.restoreTimeout) }
+            catch {
+                // EOF leaves physical-display recovery with the old worker. The
+                // next stream creates a new capture target without a server restart.
+                if self.channel === channel { self.retire(channel) }
+            }
+            if self.restorationID == id { self.restoration = nil; self.restorationID = nil }
         }
-        _ = try result.value?.get()
     }
-    func stop() throws { channel?.stop(); channel = nil }
-}
-
-private final class DisplaySynchronousResult: @unchecked Sendable {
-    // Written before the semaphore signal, read only after the wait succeeds.
-    var value: Result<UInt32?, Error>?
+    func stop() throws {
+        revision = UUID()
+        restoration?.cancel(); restoration = nil; restorationID = nil
+        if let channel { retire(channel) }
+    }
+    private func retire(_ channel: DisplayControlChannel) {
+        if self.channel === channel { self.channel = nil }
+        channel.stop() // Request restoration on EOF; never kill the recovery worker.
+        recoveringChannels.removeAll { !$0.isRunning }
+        if channel.isRunning { recoveringChannels.append(channel) }
+    }
+    private func send(_ command: DisplayCommand, to channel: DisplayControlChannel, timeout: TimeInterval) async throws -> UInt32? {
+        try Task.checkCancellation()
+        return try await withCheckedThrowingContinuation { continuation in
+            channel.send(command, timeout: timeout) { continuation.resume(with: $0) }
+        }
+    }
 }
