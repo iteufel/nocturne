@@ -27,16 +27,16 @@ struct StreamWorkspaceLayout {
 struct StreamWorkspace: View {
     @ObservedObject var model: ClientModel
     @ObservedObject var session: StreamSession
+    @ObservedObject var workspace = StreamWorkspaceState()
     @Environment(\.displayScale) private var displayScale
-    @State private var showTools = false
     @State private var tool = 0
-    @State private var showControls = false
     @State private var showControlsHint = true
+    @State private var keyboardAfterControls = false
 
     var body: some View {
         GeometryReader { geometry in
             let layout = StreamWorkspaceLayout(size: geometry.size, insets: geometry.safeAreaInsets,
-                fillEntireScreen: session.preferences.fillEntireScreen, showTools: showTools)
+                fillEntireScreen: session.preferences.fillEntireScreen, showTools: workspace.showTools)
             ZStack(alignment: .topLeading) {
                 Group {
                     if let controller = session.controller {
@@ -53,9 +53,10 @@ struct StreamWorkspace: View {
                 .accessibilityLabel("Stream")
                 .accessibilityAction { openControls() }
                 .accessibilityAction(named: Text("Open stream controls")) { openControls() }
+                .accessibilityAction(named: Text("Show keyboard")) { showKeyboard() }
 
-                if showTools {
-                    StreamToolsPanel(model: model, connection: model.server, showTools: $showTools, tool: $tool)
+                if workspace.showTools {
+                    StreamToolsPanel(model: model, connection: model.server, showTools: $workspace.showTools, tool: $tool)
                         .frame(width: layout.tools.width, height: layout.tools.height)
                         .background { NocturneBackdrop() }
                         .clipped()
@@ -63,7 +64,7 @@ struct StreamWorkspace: View {
                 }
 
                 if showControlsHint {
-                    Label("Swipe from the right edge for controls", systemImage: "arrow.left")
+                    Label(model.mouseConnected ? "⌘⇧M releases the pointer and opens controls" : "Swipe from the left edge for controls, from the right edge for the keyboard", systemImage: "arrow.left.and.right")
                         .font(.footnote.weight(.medium)).foregroundStyle(.white)
                         .padding(.horizontal, 16).padding(.vertical, 12)
                         .background(.regularMaterial, in: Capsule())
@@ -76,13 +77,18 @@ struct StreamWorkspace: View {
             .onChange(of: displayScale) { _, scale in model.streamViewport(layout.video.size, scale: scale, session: session) }
         }
         .background(Color.black.ignoresSafeArea())
-        .background { StreamControlsGesture(enabled: !showControls) { openControls() }.allowsHitTesting(false) }
-        .onReceive(model.microphone.$error.dropFirst()) { error in
-            if error != nil { openControls() }
+        // Typing must not negotiate another display size and tear down its input view.
+        .ignoresSafeArea(.keyboard)
+        .background {
+            StreamControlsGesture(enabled: !workspace.showControls, open: openControls, keyboard: showKeyboard)
+                .allowsHitTesting(false)
         }
-        .sheet(isPresented: $showControls) {
+        .sheet(isPresented: $workspace.showControls, onDismiss: {
+            if keyboardAfterControls { keyboardAfterControls = false; showKeyboard() }
+        }) {
             StreamControlsMenu(model: model, session: session, microphone: model.microphone,
-                connection: model.server, showTools: $showTools, tool: $tool)
+                connection: model.server, showTools: $workspace.showTools, lockPointer: $workspace.lockPointer, tool: $tool,
+                showKeyboard: { keyboardAfterControls = true; workspace.showControls = false })
                 .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
         .task {
@@ -92,7 +98,16 @@ struct StreamWorkspace: View {
         .tint(MoonStyle.accent).preferredColorScheme(.dark).persistentSystemOverlays(.hidden)
     }
 
-    private func openControls() { showControlsHint = false; showControls = true }
+    private func openControls() {
+        showControlsHint = false
+        if let controller = session.controller { model.engine.setKeyboardVisible(false, controller: controller) }
+        workspace.showControls = true
+    }
+    private func showKeyboard() {
+        guard session.videoReady, let controller = session.controller else { return }
+        showControlsHint = false
+        model.engine.setKeyboardVisible(true, controller: controller)
+    }
 }
 
 private struct StreamToolsPanel: View {
@@ -138,13 +153,19 @@ struct StreamControlsMenu: View {
     @ObservedObject var microphone: ClientMicrophone
     @ObservedObject var connection: WorkspaceConnection
     @Binding var showTools: Bool
+    @Binding var lockPointer: Bool
     @Binding var tool: Int
+    let showKeyboard: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var showMicrophoneInfo = false
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Button("Show keyboard", systemImage: "keyboard") { showKeyboard(); dismiss() }
+                        .disabled(!session.videoReady).accessibilityIdentifier("desktopKeyboard")
+                }
                 Section {
                     Toggle(isOn: Binding(get: { microphone.active || microphone.starting }, set: { _ in toggleMicrophone() })) {
                         Label(microphone.starting ? "Connecting microphone…" : "Microphone", systemImage: microphone.active ? "mic.fill" : "mic.slash")
@@ -160,7 +181,14 @@ struct StreamControlsMenu: View {
                         ForEach(StreamInputMode.allCases) { mode in Label(mode.title, systemImage: mode.symbol).tag(mode) }
                     }
                 } footer: {
-                    Text("Off keeps the picture inside the safe area, clear of the camera and rounded corners. On uses the whole screen.")
+                    Text("Off keeps the picture inside the safe area, clear of the camera and rounded corners. On fills the screen, cropping edges when needed to preserve proportions.")
+                }
+
+                Section {
+                    Toggle("Lock pointer", isOn: $lockPointer)
+                        .accessibilityIdentifier("streamLockPointer")
+                } footer: {
+                    Text("Keeps your mouse or trackpad inside the stream in full screen. Press ⌘⇧M or swipe from the left edge to release it and open controls. The pointer is free while controls, Terminal, or Files are open.")
                 }
 
                 Section {
@@ -170,7 +198,8 @@ struct StreamControlsMenu: View {
                     if showTools { Button("Hide tools", systemImage: "sidebar.right") { showTools = false; dismiss() } }
                 }
                 Section {
-                    Button("Disconnect stream", systemImage: "xmark", role: .destructive) { dismiss(); model.endStream() }
+                    Button(session.videoReady ? "Disconnect stream" : "Cancel connection", systemImage: "xmark", role: .destructive) { dismiss(); model.endStream() }
+                        .accessibilityIdentifier("closeDesktopStream")
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(session.app.name + " · " + session.host.name)
@@ -196,7 +225,7 @@ struct StreamControlsMenu: View {
     private var microphoneExplanation: String {
         if let error = microphone.error { return error }
         if !session.videoReady { return "Your stream is still connecting. Unmute after it starts." }
-        return "On your Mac, open Nocturne Server → Sharing, enable Client microphone, and install the microphone input. Pair using the server’s QR code and reconnect after enabling it.\n\nChoose Nocturne Microphone as the input in Discord or your game. Headphones help keep game audio out of voice chat."
+        return "On your Mac, open Nocturne → Sharing, enable Client microphone, and install the microphone input. Pair using the server’s QR code and reconnect after enabling it.\n\nChoose Nocturne Microphone as the input in Discord or your game. Headphones help keep game audio out of voice chat."
     }
 }
 
@@ -205,48 +234,74 @@ struct StreamControlsMenu: View {
 struct StreamControlsGesture: UIViewRepresentable {
     var enabled = true
     let open: () -> Void
-    func makeUIView(context: Context) -> StreamControlsGestureView { StreamControlsGestureView(open: open) }
-    func updateUIView(_ view: StreamControlsGestureView, context: Context) { view.open = open; view.gestureEnabled = enabled }
+    let keyboard: () -> Void
+    func makeUIView(context: Context) -> StreamControlsGestureView { StreamControlsGestureView(open: open, keyboard: keyboard) }
+    func updateUIView(_ view: StreamControlsGestureView, context: Context) {
+        view.open = open; view.keyboard = keyboard; view.gestureEnabled = enabled
+    }
     static func dismantleUIView(_ view: StreamControlsGestureView, coordinator: ()) { view.detach() }
+}
+
+class StreamEdgeGesture: UIPanGestureRecognizer {
+    let edge: UIRectEdge
+    init(edge: UIRectEdge, target: Any?, action: Selector?) {
+        self.edge = edge; super.init(target: target, action: action)
+    }
 }
 
 final class StreamControlsGestureView: UIView, UIGestureRecognizerDelegate {
     var open: () -> Void
+    var keyboard: () -> Void
     var gestureEnabled: Bool {
         get { edgeGesture.isEnabled }
-        set { edgeGesture.isEnabled = newValue }
+        set { edgeGesture.isEnabled = newValue; keyboardGesture.isEnabled = newValue }
     }
     private weak var gestureWindow: UIWindow?
-    private lazy var edgeGesture: UIPanGestureRecognizer = {
+    private lazy var edgeGesture = makeGesture(edge: .left, name: "Nocturne stream controls")
+    private lazy var keyboardGesture = makeGesture(edge: .right, name: "Nocturne stream keyboard")
+    private func makeGesture(edge: UIRectEdge, name: String) -> StreamEdgeGesture {
         // A scene-relative edge region also works in an iPad window.
         // Ignore all touches outside it so ordinary stream input is unaffected.
-        let gesture = UIPanGestureRecognizer(target: self, action: #selector(reveal(_:)))
+        let gesture = StreamEdgeGesture(edge: edge, target: self, action: #selector(reveal(_:)))
         gesture.delegate = self
         gesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         gesture.maximumNumberOfTouches = 1
         gesture.delaysTouchesBegan = true
         gesture.cancelsTouchesInView = true
-        gesture.name = "Nocturne stream controls"
+        gesture.name = name
         return gesture
-    }()
-    init(open: @escaping () -> Void) { self.open = open; super.init(frame: .zero); isUserInteractionEnabled = false }
+    }
+    init(open: @escaping () -> Void, keyboard: @escaping () -> Void) {
+        self.open = open; self.keyboard = keyboard; super.init(frame: .zero); isUserInteractionEnabled = false
+    }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func didMoveToWindow() {
         super.didMoveToWindow()
         detach()
-        if let window { window.addGestureRecognizer(edgeGesture); gestureWindow = window }
+        if let window {
+            window.addGestureRecognizer(edgeGesture); window.addGestureRecognizer(keyboardGesture); gestureWindow = window
+        }
     }
-    func detach() { gestureWindow?.removeGestureRecognizer(edgeGesture); gestureWindow = nil }
+    func detach() {
+        gestureWindow?.removeGestureRecognizer(edgeGesture); gestureWindow?.removeGestureRecognizer(keyboardGesture); gestureWindow = nil
+    }
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        guard let view = gestureRecognizer.view else { return false }
-        return touch.location(in: view).x >= view.bounds.maxX - 24
+        guard let gesture = gestureRecognizer as? StreamEdgeGesture, let view = gesture.view, touch.type == .direct else { return false }
+        let point = touch.location(in: view)
+        guard view.bounds.contains(point) else { return false }
+        return gesture.edge == .left ? point.x <= view.bounds.minX + 24 : point.x >= view.bounds.maxX - 24
     }
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        let velocity = edgeGesture.velocity(in: edgeGesture.view)
-        return velocity.x < 0 && abs(velocity.x) > abs(velocity.y)
+        guard let gesture = gestureRecognizer as? StreamEdgeGesture else { return false }
+        let velocity = gesture.velocity(in: gesture.view)
+        return (gesture.edge == .left ? velocity.x > 0 : velocity.x < 0) && abs(velocity.x) > abs(velocity.y)
     }
-    @objc private func reveal(_ gesture: UIPanGestureRecognizer) {
-        if gesture.state == .ended, gesture.translation(in: gesture.view).x < -24 { open() }
+    @objc private func reveal(_ gesture: StreamEdgeGesture) {
+        guard gesture.state == .ended else { return }
+        let translation = gesture.translation(in: gesture.view)
+        guard abs(translation.x) > abs(translation.y) else { return }
+        if gesture.edge == .left, translation.x > 24 { open() }
+        else if gesture.edge == .right, translation.x < -24 { keyboard() }
     }
 }
 

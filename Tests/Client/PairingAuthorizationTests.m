@@ -4,6 +4,18 @@
 #import "CryptoManager.h"
 #import "TemporaryHost.h"
 #import "TemporaryApp.h"
+#import "StreamView.h"
+#import <AVFoundation/AVFoundation.h>
+
+@interface StreamView (NocturneVideoTests)
+- (CGSize)getVideoAreaSize;
+@end
+
+@interface UIViewController (NocturneFailureTests)
+- (void)launchFailed:(NSString *)message;
+- (void)connectionTerminated:(int)errorCode;
+- (void)resizeVideoLayerInView:(UIView *)view;
+@end
 
 @interface PairingAuthorizationTests : XCTestCase
 @property NocturneStreamingService *engine;
@@ -80,6 +92,63 @@
     [attempt setValue:[CryptoManager readCertFromFile] forKey:@"clientCertificate"];
     [self.engine setValue:attempt forKey:@"pairingAttempt"];
     return attempt;
+}
+- (void)testLaunchFailureReachesTheCurrentClientWithTheHostError {
+    [self approveFixture];
+    XCTestExpectation *reported = [self expectationWithDescription:@"Video startup error reaches client"];
+    __block UIViewController *expected;
+    self.engine.streamFailed = ^(UIViewController *controller, NSString *message) {
+        XCTAssertEqual(controller, expected);
+        XCTAssertEqualObjects(message, @"Failed to initialize video capture/encoding");
+        [reported fulfill];
+    };
+    expected = [self streamController];
+    [expected launchFailed:@"Failed to initialize video capture/encoding"];
+    [self waitForExpectations:@[reported] timeout:2];
+}
+- (void)testFillEntireScreenCoversWidePhoneWithTheActualVideoLayer {
+    [self approveFixture];
+    UIViewController *controller = [self.engine streamHost:self.host.uuid app:self.desktop.id
+        settings:@{@"width":@1920,@"height":@1080,@"fps":@60,@"bitrate":@20,@"fill":@YES} onExit:^{}];
+    StreamView *view = [[StreamView alloc] initWithFrame:CGRectMake(0, 0, 932, 430)];
+    [view setValue:@(1920.0 / 1080.0) forKey:@"streamAspectRatio"];
+    AVSampleBufferDisplayLayer *layer = [AVSampleBufferDisplayLayer new];
+    [view.layer addSublayer:layer];
+    [controller resizeVideoLayerInView:view];
+    XCTAssertTrue(CGRectContainsRect(layer.frame, view.bounds), @"Fill must cover the entire video surface, including both sides");
+    XCTAssertEqualWithAccuracy(layer.bounds.size.width / layer.bounds.size.height, 1920.0 / 1080.0, 0.001);
+    XCTAssertEqualWithAccuracy([view getVideoAreaSize].width, layer.bounds.size.width, 0.001,
+        @"Input and rendered video must use the same rectangle");
+    [self.engine setFillEntireScreen:NO controller:controller];
+    [controller resizeVideoLayerInView:view];
+    XCTAssertTrue(CGRectContainsRect(view.bounds, layer.frame), @"Fit must keep the full desktop visible");
+    XCTAssertLessThan(layer.bounds.size.width, view.bounds.size.width);
+    XCTAssertEqualWithAccuracy([view getVideoAreaSize].width, layer.bounds.size.width, 0.001);
+    [self.engine setFillEntireScreen:YES controller:controller];
+    [controller resizeVideoLayerInView:view];
+    XCTAssertTrue(CGRectContainsRect(layer.frame, view.bounds), @"Live changes must restore full coverage");
+}
+- (void)testStoppedStreamIgnoresLateVideoFailures {
+    [self approveFixture];
+    self.engine.streamFailed = ^(UIViewController *controller, NSString *message) { XCTFail(@"Stopped stream reported a late failure"); };
+    UIViewController *controller = [self streamController];
+    [controller launchFailed:@"Late failure"];
+    [self.engine stopController:controller];
+    [self drainPairingCallbacks];
+}
+- (void)testCancelledAddressLookupCannotPublishOrRestartSetup {
+    NSOperationQueue *operations = [self.engine valueForKey:@"operations"];
+    operations.suspended = YES;
+    self.engine.addressDiscovered = ^(NSString *hostID, NSString *address) { XCTFail(@"Cancelled lookup published a host"); };
+    self.engine.failed = ^(NSString *message) { XCTFail(@"Cancelled lookup reported a stale failure: %@", message); };
+    [self.engine addAddress:@"127.0.0.1:1"];
+    XCTAssertNotNil([self.engine valueForKey:@"addressRequest"]);
+    [self.engine cancelPairing];
+    XCTAssertNil([self.engine valueForKey:@"addressRequest"]);
+    XCTestExpectation *drained = [self expectationWithDescription:@"Cancelled lookup drained"];
+    [operations addOperationWithBlock:^{ dispatch_async(dispatch_get_main_queue(), ^{ [drained fulfill]; }); }];
+    operations.suspended = NO;
+    [self waitForExpectations:@[drained] timeout:2];
 }
 - (void)testCachedStreamingCertificateDoesNotAuthorizeComputer {
 

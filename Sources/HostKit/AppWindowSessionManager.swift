@@ -8,7 +8,7 @@ public protocol AppWindowCapture: AnyObject {
     var window: RemoteAppWindow { get }
     var display: StreamDisplaySize { get }
     func resize(_ viewport: AppWindowViewport) async throws
-    func input(_ input: AppWindowInput) throws
+    func input(_ input: AppWindowInput) async throws
     func stop()
 }
 
@@ -54,7 +54,15 @@ public final class AppWindowSessionManager {
             guard offset >= 0, offset <= apps.count else { throw NocturneError.invalidFrame }
             let end = min(apps.count, Int(offset) + 64)
             reply.applications = Array(apps[Int(offset)..<end]); reply.offset = Int64(end); reply.eof = end == apps.count
-            if offset == 0 { reply.windows = try await host.windows(applicationID: nil) }
+            if offset == 0 {
+                // Installed apps remain useful when window enumeration is unavailable
+                // (for example while locked or awaiting Screen Recording permission).
+                do { reply.windows = try await host.windows(applicationID: nil) }
+                catch {
+                    if error is CancellationError { throw error }
+                    reply.windows = []; reply.windowsError = error.localizedDescription
+                }
+            }
         case .appIcon:
             guard let id = packet.applicationID else { throw NocturneError.invalidFrame }
             reply.data = try host.icon(applicationID: id)
@@ -103,7 +111,7 @@ public final class AppWindowSessionManager {
                 reply.window = capture.window; reply.display = capture.display
             } else if packet.operation == .appInput {
                 guard let input = packet.input, input.isValid else { throw NocturneError.invalidFrame }
-                try capture.input(input)
+                try await capture.input(input)
             }
             reply.sessionID = lease.id
         case .appClose:

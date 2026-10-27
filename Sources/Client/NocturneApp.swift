@@ -80,15 +80,24 @@ enum AppWindowScenes {
         }
         UIApplication.shared.requestSceneSessionActivation(existing, userActivity: activity(route), options: nil, errorHandler: failed)
     }
-    static func disconnectAll() {
-        for scene in UIApplication.shared.connectedScenes { (scene.delegate as? DarkSceneDelegate)?.appStream?.deactivate() }
+    static func disconnect(serverID: String) {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let stream = (scene.delegate as? DarkSceneDelegate)?.appStream, stream.route.serverID == serverID else { continue }
+            stream.deactivate()
+        }
     }
     static func close(_ session: UISceneSession, failed: ((Error) -> Void)? = nil) {
         (session.scene?.delegate as? DarkSceneDelegate)?.appStream?.deactivate()
         let options = UIWindowSceneDestructionRequestOptions(); options.windowDismissalAnimation = .standard
         UIApplication.shared.requestSceneSessionDestruction(session, options: options, errorHandler: failed)
     }
-    static func libraryActive(_ id: String) { activeLibraries.insert(id); ClientModel.shared.start() }
+    static func libraryActive(_ id: String) {
+        activeLibraries.insert(id)
+        // Discovery can ask for local network access. Introduce the app before that prompt.
+        if UserDefaults.standard.bool(forKey: "nocturne.client.onboardingComplete") || ClientModel.shared.savedServerName != nil {
+            ClientModel.shared.start()
+        }
+    }
     static func libraryInactive(_ id: String) {
         guard activeLibraries.remove(id) != nil, activeLibraries.isEmpty else { return }
         ClientModel.shared.suspend()

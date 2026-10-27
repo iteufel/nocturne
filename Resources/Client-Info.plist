@@ -58,7 +58,7 @@
 		<string>_nocturne._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan the pairing QR code displayed by Nocturne Server on your Mac.</string>
+	<string>Scan the pairing QR code displayed by Nocturne on your Mac.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Find your computers and connect directly for streaming, terminal access, and file transfer.</string>
 	<key>NSMicrophoneUsageDescription</key>

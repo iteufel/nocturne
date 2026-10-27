@@ -3,7 +3,7 @@
 Nocturne includes a self-hosted Rust broker and a Rust transport embedded in the
 Mac and iOS apps. Remote access is disabled by default, with
 `https://nocturne.alkal.de` preconfigured as the broker. Enable
-**Nocturne Server → Settings → Remote access**, keep the default broker or enter
+**Nocturne → Settings → Remote access**, keep the default broker or enter
 your own HTTPS origin, start the server, and scan a new QR code. Existing LAN-only
 pairings still work; scanning again adds the broker and public endpoint identity
 to the pairing saved in Keychain. No external account is required.
@@ -90,14 +90,21 @@ with bounded, expiring fragmentation; lost video packets do not block file or
 terminal streams. Microphone TLS reuses the authenticated tunnel on a separate
 workspace socket.
 
+Media UDP flows survive temporary port-unreachable responses while the streaming
+engine starts or restarts. The client begins audio pings before the host opens
+its audio listener; closing the flow on that first response loses all subsequent
+pings and ends screen sharing with an initial-ping timeout. This recovery is
+handled by the Mac transport for both relay and peer-to-peer connections.
+
 There are at most eight host tunnels, 48 incoming streams per tunnel and 16 UDP
 flows. Unauthenticated tunnels expire after 30 seconds. Removing a device closes
 its tunnel as well as its workspace/video authorization. Stop server, reset
 pairing, and client backgrounding release their transport resources. All local
 forwarders bind only to loopback. The client preserves the Mac's actual LAN
 address and public endpoint identity rather than saving an ephemeral proxy port.
-Only one remote streaming host is active per iOS app, matching the current
-single saved workspace/stream model.
+Only one remote streaming host is active per iOS app: the selected paired Mac.
+An app window from another paired Mac opens its own workspace-only tunnel
+instead of reusing the selected Mac's tunnel.
 
 ## Build and verification
 
@@ -120,9 +127,11 @@ NOCTURNE_BROKER_EXECUTABLE="$PWD/remote/target/debug/nocturne-broker" swift test
 
 Rust integration tests run a real local broker and exercise forced relay,
 direct-path migration, traffic after broker shutdown, TCP transfer, UDP
-fragmentation/round-trip, pre-authentication port denial, and per-device
-revocation. Swift integration tests exercise the native library, actual workspace
-TLS, single-use QR enrollment, terminal restoration, the separate media socket,
+fragmentation/round-trip, early media pings before a listener opens, media listener
+restart, continued media traffic beyond five seconds on relay and direct paths,
+pre-authentication port denial, and per-device revocation. Swift integration tests
+exercise the native library, actual workspace TLS, single-use QR enrollment,
+terminal restoration, the separate media socket,
 and removal. These local tests do not substitute for testing two physical devices
 on different internet connections, cellular handovers, or game-stream quality.
 

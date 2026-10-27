@@ -15,8 +15,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "DC2D303AFE3D329DEFF4BAF6"
-               BuildableName = "Nocturne Server.app"
-               BlueprintName = "Nocturne Server"
+               BuildableName = "Nocturne.app"
+               BlueprintName = "Nocturne Mac"
                ReferencedContainer = "container:Nocturne.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -31,8 +31,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "DC2D303AFE3D329DEFF4BAF6"
-            BuildableName = "Nocturne Server.app"
-            BlueprintName = "Nocturne Server"
+            BuildableName = "Nocturne.app"
+            BlueprintName = "Nocturne Mac"
             ReferencedContainer = "container:Nocturne.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
@@ -54,8 +54,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "DC2D303AFE3D329DEFF4BAF6"
-            BuildableName = "Nocturne Server.app"
-            BlueprintName = "Nocturne Server"
+            BuildableName = "Nocturne.app"
+            BlueprintName = "Nocturne Mac"
             ReferencedContainer = "container:Nocturne.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -71,8 +71,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "DC2D303AFE3D329DEFF4BAF6"
-            BuildableName = "Nocturne Server.app"
-            BlueprintName = "Nocturne Server"
+            BuildableName = "Nocturne.app"
+            BlueprintName = "Nocturne Mac"
             ReferencedContainer = "container:Nocturne.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

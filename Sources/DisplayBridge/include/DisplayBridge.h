@@ -16,6 +16,9 @@ NS_ASSUME_NONNULL_BEGIN
 @interface NDDisplayLayout : NSObject
 - (instancetype)initExcludingDisplay:(CGDirectDisplayID)display;
 + (BOOL)isSessionAvailable;
++ (BOOL)isScreenLocked;
+/// Evaluate a WindowServer session snapshot using the same policy as live checks.
++ (BOOL)isSessionAvailableForSession:(nullable NSDictionary *)session;
 + (BOOL)canDisableDisplays;
 + (BOOL)hasActiveDisplayOtherThan:(CGDirectDisplayID)excluded;
 - (BOOL)makePrimary:(CGDirectDisplayID)display disableOthers:(BOOL)disableOthers error:(NSError **)error;

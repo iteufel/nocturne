@@ -28,7 +28,7 @@ struct TerminalWorkspace: View {
             } else if connection.state != .connected {
                 ServerEmptyView(icon: "terminal", title: "Pick up where\nyou left off.", detail: "Connect to your Mac to open a shell or return to your running terminals.", action: connect)
             } else if !connection.capabilities.contains("terminal") {
-                ContentUnavailableView("Allow terminal access", systemImage: "terminal", description: Text("Enable Terminal in Nocturne Server on your Mac, then reconnect."))
+                ContentUnavailableView("Allow terminal access", systemImage: "terminal", description: Text("Enable Terminal in Nocturne on your Mac, then reconnect."))
             } else {
                 Spacer()
                 Image(systemName: "terminal").font(.system(size: 40, weight: .ultraLight)).foregroundStyle(MoonStyle.accent)

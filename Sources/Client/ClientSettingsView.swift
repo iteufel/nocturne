@@ -3,13 +3,19 @@ import NocturneKit
 
 struct ClientSettingsView: View {
     @ObservedObject var model: ClientModel
-    @State private var confirmForget = false
+    var showOnboarding: () -> Void = {}
     @AppStorage("nocturne.appearance") private var appearance = NocturneAppearance.system
     var body: some View {
         Form {
             Section {
-                HStack(spacing: 15) { MoonMark(size: 50); VStack(alignment: .leading, spacing: 4) { Text("Make it feel like you.").font(.system(size: 20, weight: .semibold, design: .rounded)); Text("Your next stream uses these settings.").font(.caption).foregroundStyle(MoonStyle.secondary) } }.padding(.vertical, 12)
-            }.listRowBackground(Color.clear)
+                NavigationLink { PairedHostsView(model: model) } label: {
+                    HStack {
+                        Label("Paired hosts", systemImage: "desktopcomputer")
+                        Spacer()
+                        Text("\(model.pairedServers.servers.count)").foregroundStyle(.secondary)
+                    }
+                }.accessibilityIdentifier("pairedHostsSettings")
+            }.listRowBackground(MoonStyle.surface)
             Section("Appearance") {
                 Picker("Style", selection: $appearance) {
                     ForEach(NocturneAppearance.allCases) { style in Text(style.title).tag(style) }
@@ -19,12 +25,12 @@ struct ClientSettingsView: View {
                 Toggle("Fill entire screen", isOn: Binding(get: { model.preferences.fillEntireScreen }, set: model.setFillEntireScreen))
                     .accessibilityIdentifier("streamFillEntireScreen")
             } header: { Text("Stream display") } footer: {
-                Text("Off fits the stream inside the safe area, keeping content clear of the camera and rounded corners. On uses the whole screen. Swipe inward from the right edge while streaming to open Controls.")
+                Text("Off fits the stream inside the safe area, keeping content clear of the camera and rounded corners. On fills the screen, cropping edges when needed to preserve proportions. Swipe inward from the left edge while streaming to open Controls, or from the right edge to show the keyboard.")
             }.listRowBackground(MoonStyle.surface)
             Section("Picture & sound") {
                 Picker("Resolution", selection: $model.preferences.resolution) { ForEach(["Match device", "720p", "1080p", "1440p", "4K"], id: \.self) { Text($0) } }
                 if model.preferences.resolution == "Match device" {
-                    Text("Matches the Mac desktop to your display and follows rotation and window resizing. Enable Headless virtual monitor in Nocturne Server’s display settings and pair using its QR code. Video briefly reconnects when the size changes.")
+                    Text("Matches the Mac desktop to your display and follows rotation and window resizing. Enable Headless virtual monitor in Nocturne’s display settings and pair using its QR code. Video briefly reconnects when the size changes.")
                         .font(.caption).foregroundStyle(MoonStyle.secondary)
                 }
                 Picker("Frame rate", selection: $model.preferences.frameRate) { Text("30 fps").tag(30); Text("60 fps").tag(60); Text("120 fps").tag(120) }
@@ -55,31 +61,23 @@ struct ClientSettingsView: View {
             }.listRowBackground(MoonStyle.surface)
             Section("Microphone") {
                 Label("Voice chat on your Mac", systemImage: "mic")
-                Text("Enable Client microphone in Nocturne Server → Sharing and install the microphone input. In Discord or your game, select Nocturne Microphone. Open Controls → Microphone in your stream to unmute.")
+                Text("Enable Client microphone in Nocturne → Sharing and install the microphone input. In Discord or your game, select Nocturne Microphone. Open Controls → Microphone in your stream to unmute.")
                     .font(.caption).foregroundStyle(MoonStyle.secondary)
                 Text("Each stream starts muted. Backgrounding, disconnecting, resizing the stream, or changing audio devices mutes it again. Headphones are recommended; Bluetooth microphone use can reduce playback quality.")
                     .font(.caption).foregroundStyle(MoonStyle.secondary)
-            }.listRowBackground(MoonStyle.surface)
-            Section("Nocturne Server") {
-                if let name = model.savedServerName {
-                    LabeledContent("Paired Mac", value: name)
-                    Button("Reconnect") { Task { await model.reconnectServer() } }
-                    Button("Forget paired Mac", role: .destructive) { confirmForget = true }
-                } else { Button("Pair Nocturne Server") { model.preferServer = true; model.showAdd = true } }
             }.listRowBackground(MoonStyle.surface)
             FilesIntegrationSettings(integration: model.filesIntegration, paired: model.savedServerName != nil) {
                 Task { await model.reconnectServer() }
             }
             Section {
+                Button("Welcome to Nocturne", systemImage: "sparkles", action: showOnboarding)
+                    .accessibilityIdentifier("replayOnboarding")
                 FeatureRow(icon: "rectangle.expand.vertical", title: "Room to move", subtitle: "Layouts follow your window on iPhone, iPad, and iPhone Duo. Expand for a sidebar; resize or fold back into a compact workspace.")
                 Link("Moonlight open-source project", destination: URL(string: "https://github.com/moonlight-stream/moonlight-ios")!)
                 Text("Nocturne 1.0 · GPL-3.0\nBuilt on Moonlight and SwiftTerm. An independent project, not affiliated with Apple or the Moonlight team.")
                     .font(.caption2).foregroundStyle(MoonStyle.secondary)
             }.listRowBackground(MoonStyle.surface)
         }.scrollContentBackground(.hidden)
-            .confirmationDialog("Forget this Mac?", isPresented: $confirmForget, titleVisibility: .visible) {
-                Button("Forget Mac", role: .destructive) { model.forgetServer() }
-            } message: { Text("The saved pairing key will be removed from this device.") }
     }
     private func inputStatus(_ name: String, symbol: String, connected: Bool) -> some View {
         HStack { Label(name, systemImage: symbol); Spacer(); Text(connected ? "Connected" : "Not connected").font(.caption).foregroundStyle(connected ? MoonStyle.mint : MoonStyle.secondary) }

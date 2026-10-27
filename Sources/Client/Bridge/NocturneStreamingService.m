@@ -19,6 +19,8 @@
 #import <SDL.h>
 #include <Limelight.h>
 
+NSNotificationName const NocturneStreamControlsRequestedNotification = @"NocturneStreamControlsRequested";
+
 @interface StreamFrameViewController (DarkLifecycle)
 - (void)returnToMainFrame;
 - (void)nocturneStopWithCompletion:(void (^)(void))completion;
@@ -27,12 +29,31 @@
 @interface MDStreamController : StreamFrameViewController
 @property (nonatomic, copy) void (^onExit)(void);
 @property (nonatomic, copy) void (^onStarted)(UIViewController *controller);
+@property (nonatomic, copy) void (^onFailure)(UIViewController *controller, NSString *message);
 @property (nonatomic) BOOL cleanedUp;
 @property (nonatomic) CGSize lastControlSize;
 @property (nonatomic) BOOL absoluteTouchMode;
+@property (nonatomic) BOOL fillEntireScreen;
+@property (nonatomic) BOOL pointerCaptureEnabled;
 - (void)shutdown;
 @end
 @implementation MDStreamController
+- (BOOL)prefersPointerLocked { return self.pointerCaptureEnabled && !self.cleanedUp && [super prefersPointerLocked]; }
+- (void)setPointerCaptureEnabled:(BOOL)enabled {
+    BOOL changed = _pointerCaptureEnabled != enabled;
+    _pointerCaptureEnabled = enabled;
+    if (!enabled && self.isViewLoaded) [self nocturneReleaseInput];
+    if (enabled && changed && self.isViewLoaded) [self nocturneFocusInput];
+    [self setNeedsUpdateOfPrefersPointerLocked];
+}
+- (void)setFillEntireScreen:(BOOL)fill {
+    _fillEntireScreen = fill;
+    if (self.isViewLoaded) {
+        [self nocturneReleaseInput];
+        [self.view setNeedsLayout];
+        [self.view layoutIfNeeded];
+    }
+}
 - (void)setAbsoluteTouchMode:(BOOL)absolute {
     _absoluteTouchMode = absolute;
     if (self.isViewLoaded) [self nocturneSetAbsoluteTouchMode:absolute];
@@ -51,11 +72,28 @@
     [super connectionStarted];
     dispatch_async(dispatch_get_main_queue(), ^{ if (!self.cleanedUp && self.onStarted) self.onStarted(self); });
 }
-- (void)launchFailed:(NSString *)message { if (!self.cleanedUp) [super launchFailed:message]; }
-- (void)connectionTerminated:(int)errorCode { if (!self.cleanedUp) [super connectionTerminated:errorCode]; }
+- (void)reportFailure:(NSString *)message {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self.cleanedUp && self.onFailure) self.onFailure(self, message);
+    });
+}
+- (void)launchFailed:(NSString *)message { [self reportFailure:message ?: @"Screen sharing could not start."]; }
+- (void)stageFailed:(const char *)stageName withError:(int)errorCode portTestFlags:(int)portTestFlags {
+    [self reportFailure:[NSString stringWithFormat:@"Screen sharing failed at %s (error %d). Check the host and network, then try again.", stageName, errorCode]];
+}
+- (void)connectionTerminated:(int)errorCode {
+    if (errorCode == ML_ERROR_GRACEFUL_TERMINATION) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self returnToMainFrame]; });
+    } else if (errorCode == ML_ERROR_NO_VIDEO_TRAFFIC || errorCode == ML_ERROR_NO_VIDEO_FRAME) {
+        [self reportFailure:@"The host connected but no video arrived. Check screen capture on the host and your network, then try again."];
+    } else {
+        [self reportFailure:[NSString stringWithFormat:@"Screen sharing ended unexpectedly (error %d). Reconnect to try again.", errorCode]];
+    }
+}
 - (void)shutdown {
     if (self.cleanedUp) return;
     self.cleanedUp = YES;
+    self.pointerCaptureEnabled = NO;
     if (self.isViewLoaded) [self nocturneReleaseInput];
     [self updatePreferredDisplayMode:NO];
     [super willMoveToParentViewController:nil];
@@ -79,13 +117,13 @@
     }
 }
 - (void)resizeVideoLayerInView:(UIView *)view {
+    if ([view isKindOfClass:StreamView.class]) ((StreamView *)view).nocturneFillEntireScreen = self.fillEntireScreen;
     if ([view isKindOfClass:StreamView.class] && !CGSizeEqualToSize(self.lastControlSize, view.bounds.size)) {
         if (!CGSizeEqualToSize(self.lastControlSize, CGSizeZero)) [(StreamView *)view showOnScreenControls];
         self.lastControlSize = view.bounds.size;
     }
     CGFloat ratio = (CGFloat)self.streamConfig.width / MAX(1, self.streamConfig.height);
-    CGFloat width = MIN(view.bounds.size.width, view.bounds.size.height * ratio);
-    CGSize size = CGSizeMake(width, width / ratio);
+    CGSize size = NocturneVideoAreaSize(view.bounds.size, ratio, self.fillEntireScreen);
     [CATransaction begin]; [CATransaction setDisableActions:YES];
     for (CALayer *layer in view.layer.sublayers) {
         if ([layer isKindOfClass:AVSampleBufferDisplayLayer.class]) {
@@ -116,6 +154,7 @@
 @property NSOperationQueue *operations;
 @property NocturnePairingTrust *pairingTrust;
 @property NocturnePairingAttempt *pairingAttempt;
+@property NSUUID *addressRequest;
 @property NSTimer *hostRefreshTimer;
 - (void)startPairing:(NSString *)PIN attempt:(NocturnePairingAttempt *)attempt;
 - (void)pairSuccessful:(NSData *)serverCert attempt:(NocturnePairingAttempt *)attempt;
@@ -241,19 +280,35 @@
     [self publishHosts];
 }
 - (void)addAddress:(NSString *)address {
+    NSUUID *request = NSUUID.UUID;
+    self.addressRequest = request;
     [self.operations addOperationWithBlock:^{
+        if (self.addressRequest != request) return;
         // Resolve the server UUID directly. Upstream discoverHost reports an already-known
         // host as a nil result ("Host information updated"), which is not a connection failure.
         HttpManager *manager = [[HttpManager alloc] initWithAddress:address httpsPort:0 serverCert:nil];
         ServerInfoResponse *info = [ServerInfoResponse new];
         [manager executeRequestSynchronously:[HttpRequest requestForResponse:info withUrlRequest:[manager newServerInfoRequest:NO]
                                                              fallbackError:401 fallbackRequest:[manager newHttpServerInfoRequest]]];
-        if (![info isStatusOk]) { [self pairFailed:@"Cannot reach this computer. Check its address and that Nocturne Server is running."]; return; }
+        if (![info isStatusOk]) {
+            Log(LOG_W, @"Screen sharing lookup failed for %@ (%d): %@", address, info.statusCode, info.statusMessage);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (self.addressRequest != request) return;
+                self.addressRequest = nil;
+                if (self.failed) self.failed(@"Cannot reach screen sharing on this host. Check that Nocturne is running, then try again.");
+            });
+            return;
+        }
         TemporaryHost *resolved = [TemporaryHost new];
         resolved.activeAddress = resolved.address = address; resolved.state = StateOnline;
         [info populateHost:resolved];
-        if (!resolved.uuid.length) { [self pairFailed:@"The streaming server did not return a valid identifier."]; return; }
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (self.addressRequest != request) return;
+            self.addressRequest = nil;
+            if (!resolved.uuid.length) {
+                if (self.failed) self.failed(@"The streaming server did not return a valid identifier.");
+                return;
+            }
             // Preserve the saved certificate and pairing state when re-adding an existing host.
             TemporaryHost *host = self.hosts[resolved.uuid] ?: resolved;
             host.activeAddress = address; host.localAddress = resolved.localAddress;
@@ -264,7 +319,6 @@
             self.hosts[host.uuid] = host;
             [self.discovery addHostToDiscovery:host]; [[DataManager new] updateHost:host]; [self publishHosts];
             if (self.addressOverrides[host.uuid]) [self.discovery pauseDiscoveryForHost:host];
-            if (self.pairingFinished) self.pairingFinished();
             if (self.addressDiscovered) self.addressDiscovered(host.uuid, address);
         });
     }];
@@ -293,7 +347,7 @@
                                                              fallbackError:401 fallbackRequest:[manager newHttpServerInfoRequest]]];
         if (!remote) [self.discovery resumeDiscoveryForHost:host];
         if (self.pairingAttempt != attempt) return;
-        if (![info isStatusOk]) { [attempt pairFailed:info.statusMessage ?: @"Cannot reach this computer. Check that Nocturne Server is running."]; return; }
+        if (![info isStatusOk]) { [attempt pairFailed:info.statusMessage ?: @"Cannot reach this computer. Check that Nocturne is running."]; return; }
         if (![[[info getStringTag:TAG_UNIQUE_ID] trim] isEqualToString:attempt.hostID]) {
             [attempt pairFailed:@"This address belongs to a different computer. Add it again to pair securely."]; return;
         }
@@ -321,7 +375,7 @@
             dispatch_async(dispatch_get_main_queue(), ^{
                 typeof(self) self = weakSelf;
                 if (!self || self.pairingAttempt != attempt) return;
-                if (!approved) { [self pairFailed:@"QR pairing could not finish. Scan a new QR code on your Mac and try again." attempt:attempt]; return; }
+                if (!approved) { [self pairFailed:@"Screen sharing approval failed. Reconnect to the host and try again." attempt:attempt]; return; }
                 attempt.workspaceApproved = YES;
                 [self completePairingIfReady:attempt];
             });
@@ -341,7 +395,7 @@
 - (void)completePairingIfReady:(NocturnePairingAttempt *)attempt {
     if (self.pairingAttempt != attempt || attempt.approvalRecorded) return;
     if (!attempt.qrAuthorized || !self.canPairHost || !self.canPairHost(attempt.hostID)) {
-        [self pairFailed:@"The QR connection was lost. Scan the QR code again." attempt:attempt]; return;
+        [self pairFailed:@"The host connection was lost before screen sharing finished. Reconnect and try again." attempt:attempt]; return;
     }
     // Either network callback may arrive first. Both must succeed before trust
     // is persisted or the app library opens.
@@ -356,11 +410,11 @@
     [[DataManager new] updateHost:attempt.host];
     [self alreadyPaired:attempt];
 }
-- (void)cancelPairing { self.pairingAttempt = nil; }
+- (void)cancelPairing { self.pairingAttempt = nil; self.addressRequest = nil; }
 - (void)requireQRPairing {
     [self cancelPairing]; [self.discovery startDiscovery]; [self publishHosts];
     if (self.pairingRequired) self.pairingRequired();
-    else if (self.failed) self.failed(@"Scan the QR code in Nocturne Server to pair this computer.");
+    else if (self.failed) self.failed(@"Scan the QR code in Nocturne to pair this computer.");
 }
 - (void)pairFailed:(NSString *)message {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -446,13 +500,33 @@
     }
     MDStreamController *controller = [MDStreamController new]; controller.streamConfig = config; controller.onExit = onExit;
     controller.absoluteTouchMode = [settings[@"absolute"] boolValue];
+    controller.fillEntireScreen = [settings[@"fill"] boolValue];
     controller.onStarted = self.streamStarted;
+    controller.onFailure = self.streamFailed;
     [self pause];
     return controller;
 }
 - (void)setTouchMode:(BOOL)absolute controller:(UIViewController *)controller {
     if ([controller isKindOfClass:MDStreamController.class] && !((MDStreamController *)controller).cleanedUp) {
         ((MDStreamController *)controller).absoluteTouchMode = absolute;
+    }
+}
+- (void)setFillEntireScreen:(BOOL)fill controller:(UIViewController *)controller {
+    if ([controller isKindOfClass:MDStreamController.class] && !((MDStreamController *)controller).cleanedUp) {
+        ((MDStreamController *)controller).fillEntireScreen = fill;
+    }
+}
+- (void)setPointerCapture:(BOOL)enabled controller:(UIViewController *)controller {
+    if ([controller isKindOfClass:MDStreamController.class]) ((MDStreamController *)controller).pointerCaptureEnabled = enabled;
+}
+- (void)toggleKeyboardForController:(UIViewController *)controller {
+    if ([controller isKindOfClass:MDStreamController.class] && !((MDStreamController *)controller).cleanedUp) {
+        [(MDStreamController *)controller nocturneToggleKeyboard];
+    }
+}
+- (void)setKeyboardVisible:(BOOL)visible controller:(UIViewController *)controller {
+    if ([controller isKindOfClass:MDStreamController.class] && !((MDStreamController *)controller).cleanedUp) {
+        [(MDStreamController *)controller nocturneSetKeyboardVisible:visible];
     }
 }
 - (void)stopController:(UIViewController *)controller { if ([controller isKindOfClass:MDStreamController.class]) [(MDStreamController *)controller shutdown]; }

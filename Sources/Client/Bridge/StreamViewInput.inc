@@ -1,3 +1,10 @@
+- (BOOL)nocturneFillEntireScreen {
+    return [objc_getAssociatedObject(self, @selector(nocturneFillEntireScreen)) boolValue];
+}
+- (void)setNocturneFillEntireScreen:(BOOL)fill {
+    objc_setAssociatedObject(self, @selector(nocturneFillEntireScreen), @(fill), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
 - (void)nocturneSendMouseButton:(int)action button:(int)button {
     LiSendMouseButtonEvent(action, button);
 }
@@ -65,6 +72,7 @@
 }
 
 - (void)nocturneCancelInput {
+    [self nocturneReleaseKeyboard];
     NSSet *touches = [nocturneActiveTouches copy] ?: NSSet.set;
     if (!nocturneIgnoredTouches) nocturneIgnoredTouches = [NSHashTable weakObjectsHashTable];
     for (UITouch *touch in touches) [nocturneIgnoredTouches addObject:touch];
@@ -73,4 +81,49 @@
     [nocturneActiveTouches removeAllObjects];
     [self nocturneReleaseMouseButtons];
     [interactionTimer invalidate]; interactionTimer = nil;
+}
+
+// Explicit show/hide actions are idempotent, including repeated edge swipes.
+- (void)nocturneSetKeyboardVisible:(BOOL)visible {
+    isInputingText = keyInputField.isFirstResponder;
+    if (isInputingText != visible) [self nocturneToggleKeyboard];
+}
+
+// Retained for the upstream three-finger toggle gesture.
+- (void)nocturneToggleKeyboard {
+    if (isInputingText) {
+        Log(LOG_D, @"Closing the keyboard");
+        [keyInputField resignFirstResponder];
+        isInputingText = false;
+    } else {
+        Log(LOG_D, @"Opening the keyboard");
+        // Prepare the textbox used to capture keyboard events.
+        keyInputField.delegate = self;
+        keyInputField.text = @"0";
+    #if !TARGET_OS_TV
+        // Prepare the toolbar above the keyboard for more options
+        UIToolbar *customToolbarView = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, self.bounds.size.width, 44)];
+
+        UIBarButtonItem *doneBarButton = [self createButtonWithImageNamed:@"DoneIcon.png" backgroundColor:[UIColor clearColor] target:self action:@selector(toolbarButtonClicked:) keyCode:0x00 isToggleable:NO];
+        UIBarButtonItem *windowsBarButton = [self createButtonWithImageNamed:@"WindowsIcon.png" backgroundColor:[UIColor blackColor] target:self action:@selector(toolbarButtonClicked:) keyCode:0x5B isToggleable:YES];
+        UIBarButtonItem *tabBarButton = [self createButtonWithImageNamed:@"TabIcon.png" backgroundColor:[UIColor blackColor] target:self action:@selector(toolbarButtonClicked:) keyCode:0x09 isToggleable:NO];
+        UIBarButtonItem *shiftBarButton = [self createButtonWithImageNamed:@"ShiftIcon.png" backgroundColor:[UIColor blackColor] target:self action:@selector(toolbarButtonClicked:) keyCode:0xA0 isToggleable:YES];
+        UIBarButtonItem *escapeBarButton = [self createButtonWithImageNamed:@"EscapeIcon.png" backgroundColor:[UIColor blackColor] target:self action:@selector(toolbarButtonClicked:) keyCode:0x1B isToggleable:NO];
+        UIBarButtonItem *controlBarButton = [self createButtonWithImageNamed:@"ControlIcon.png" backgroundColor:[UIColor blackColor] target:self action:@selector(toolbarButtonClicked:) keyCode:0xA2 isToggleable:YES];
+        UIBarButtonItem *altBarButton = [self createButtonWithImageNamed:@"AltIcon.png" backgroundColor:[UIColor blackColor] target:self action:@selector(toolbarButtonClicked:) keyCode:0xA4 isToggleable:YES];
+        UIBarButtonItem *deleteBarButton = [self createButtonWithImageNamed:@"DeleteIcon.png" backgroundColor:[UIColor blackColor] target:self action:@selector(toolbarButtonClicked:) keyCode:0x2E isToggleable:NO];
+        UIBarButtonItem *flexibleSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+
+        [customToolbarView setItems:[NSArray arrayWithObjects:doneBarButton, windowsBarButton, escapeBarButton, tabBarButton, shiftBarButton, controlBarButton, altBarButton, deleteBarButton, flexibleSpace, nil]];
+        keyInputField.inputAccessoryView = customToolbarView;
+    #endif
+        [keyInputField becomeFirstResponder];
+        [keyInputField removeTarget:self action:@selector(onKeyboardPressed:) forControlEvents:UIControlEventEditingChanged];
+        [keyInputField addTarget:self action:@selector(onKeyboardPressed:) forControlEvents:UIControlEventEditingChanged];
+
+        // Undo causes issues for our state management, so turn it off
+        [keyInputField.undoManager disableUndoRegistration];
+
+        isInputingText = true;
+    }
 }

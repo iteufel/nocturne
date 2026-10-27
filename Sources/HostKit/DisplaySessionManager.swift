@@ -66,13 +66,13 @@ public final class DisplaySessionManager {
                 let display = try await driver.apply(requested, disablePhysicalDisplays: disablePhysicalDisplays)
                 guard display != 0 else { throw NocturneError.invalidFrame }
                 guard revision == epoch else { throw NocturneError.disconnected }
-                // The new framebuffer has a new ID. Do not acknowledge a resize
-                // until the video engine is ready to capture that exact display.
+                // The new framebuffer has a new ID. Select it before acknowledging
+                // a resize; the engine temporarily follows the main screen while locked.
                 try await prepareCapture(display)
                 guard revision == epoch else { throw NocturneError.disconnected }
                 configurationDeadline = nil; lease?.renewed = Date(); scheduleExpiry()
                 size = requested; deviceName = name; lastError = nil
-                reply.display = requested; reply.sessionID = id; onChange?()
+                reply.display = requested; reply.displayID = display; reply.sessionID = id; onChange?()
             } catch {
                 if revision == epoch { release() }; throw error
             }
@@ -131,10 +131,12 @@ extension NDDisplayLayout: StreamingDisplayLayout {}
 @MainActor
 struct StreamingDisplayEnvironment {
     var isSessionAvailable: () -> Bool
+    var isScreenLocked: () -> Bool
     var create: (StreamDisplaySize) throws -> StreamingVirtualDisplay
     var captureLayout: (UInt32) -> StreamingDisplayLayout
     static var native: Self {
-        .init(isSessionAvailable: { NDDisplayLayout.isSessionAvailable() }, create: {
+        .init(isSessionAvailable: { NDDisplayLayout.isSessionAvailable() },
+            isScreenLocked: { NDDisplayLayout.isScreenLocked() }, create: {
             try NDVirtualDisplay(width: UInt($0.width), height: UInt($0.height), refreshRate: UInt($0.frameRate))
         }, captureLayout: { NDDisplayLayout(excludingDisplay: $0) })
     }
@@ -151,32 +153,39 @@ final class NativeStreamingDisplayDriver: StreamingDisplayDriver {
     init(environment: StreamingDisplayEnvironment) { self.environment = environment }
     @discardableResult func start() async throws -> UInt32 {
         // Always create the selected virtual monitor, even with physical monitors
-        // attached. The engine probes this exact display before accepting streams.
+        // attached. The engine returns to this target after the user unlocks.
         try await apply(size ?? .init(width: 1920, height: 1080, frameRate: 60), disablePhysicalDisplays: false)
     }
     @discardableResult func apply(_ requested: StreamDisplaySize, disablePhysicalDisplays: Bool) async throws -> UInt32 {
-        guard environment.isSessionAvailable() else { throw NocturneError.remote("Unlock this Mac before starting its streaming display.") }
+        guard environment.isSessionAvailable() else { throw NocturneError.remote("Sign in to this Mac before starting its streaming display.") }
         guard requested.isValid else { throw NocturneError.invalidFrame }
         let epoch = UUID(); revision = epoch
         // The default mode never rearranges, mirrors, resizes, or disables a
-        // physical display. Capture targets the virtual ID instead of main.
-        if disablePhysicalDisplays, layout == nil { layout = environment.captureLayout(display?.displayID ?? 0) }
+        // physical display, including while capture follows the lock screen.
+        let changePhysicalLayout = disablePhysicalDisplays && !environment.isScreenLocked()
+        if changePhysicalLayout, layout == nil { layout = environment.captureLayout(display?.displayID ?? 0) }
         let replacement: StreamingVirtualDisplay
         if let display, size == requested { replacement = display }
         else { replacement = try environment.create(requested) }
         try await settle(replacement, revision: epoch)
-        if disablePhysicalDisplays { try layout?.makePrimary(replacement.displayID, disableOthers: true) }
+        // A locked connection must reach the existing password screen first.
+        // The monitor-off preference applies on the next preparation after unlock.
+        if changePhysicalLayout, !environment.isScreenLocked() {
+            try layout?.makePrimary(replacement.displayID, disableOthers: true)
+        }
         display = replacement; size = requested
         return replacement.displayID
     }
     func restore() throws {
         revision = UUID()
+        // Keep the framebuffer only while physical-screen recovery is pending.
+        // Once recovery succeeds, ending the lease must also remove the monitor
+        // from WindowServer. The next stream creates and selects a fresh target.
         try layout?.restore()
         layout = nil
-        // Keep the engine's capture target alive between streams. Only Stop
-        // destroys it, after physical displays have been restored.
+        display = nil; size = nil
     }
-    func stop() throws { try restore(); display = nil; size = nil }
+    func stop() throws { try restore() }
     private func settle(_ display: StreamingVirtualDisplay, revision epoch: UUID) async throws {
         var failure: Error = NocturneError.timeout
         for _ in 0..<40 {

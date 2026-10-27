@@ -1,10 +1,27 @@
 import XCTest
 import Network
-import NocturneKit
+@testable import NocturneKit
 import NocturneHostKit
 
 @MainActor
 final class DiscoveryTests: XCTestCase {
+    func testScopedIPv4EndpointCanBeReusedByHTTPAndNetworkConnections() async throws {
+        let monitor = NWPathMonitor(); defer { monitor.cancel() }
+        let ready = expectation(description: "Network interfaces available")
+        monitor.pathUpdateHandler = { _ in
+            monitor.pathUpdateHandler = nil; ready.fulfill()
+        }
+        monitor.start(queue: .main)
+        await fulfillment(of: [ready], timeout: 5)
+        let interface = try XCTUnwrap(monitor.currentPath.availableInterfaces.first)
+        let scoped = try XCTUnwrap(IPv4Address(Data([192, 168, 0, 123]), interface))
+        let host = NWEndpoint.Host.ipv4(scoped)
+        XCTAssertTrue(String(describing: host).contains("%"), "Exercise the scoped endpoint returned by Bonjour")
+        let reusable = WorkspaceConnection.reusableAddress(host)
+        XCTAssertEqual(URLComponents(string: "http://\(reusable):47989/serverinfo")?.host, "192.168.0.123")
+        guard case .ipv4 = NWEndpoint.Host(reusable) else { return XCTFail("Saved IPv4 endpoint became a DNS hostname") }
+    }
+
     func testPairedWorkspaceFindsNewAddressAndPortWithoutReenrollment() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -32,6 +49,7 @@ final class DiscoveryTests: XCTestCase {
         XCTAssertEqual(client.terminals.map(\.id), [tab])
         let current = try XCTUnwrap(client.connectedInvitation)
         XCTAssertNotEqual(current.host, saved.host)
+        XCTAssertEqual(client.streamingAddress, current.host)
         XCTAssertEqual(current.port, port)
         XCTAssertEqual(current.secret, key)
         XCTAssertNil(current.enrollmentToken)

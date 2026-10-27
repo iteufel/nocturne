@@ -23,6 +23,7 @@ public final class EmbeddedStreamingEngine {
     public var onUnexpectedExit: ((String) -> Void)?
     public let directory: URL
     public var isRunning: Bool { process?.isRunning == true }
+    public var isReady: Bool { isRunning && launch != nil }
     public var logURL: URL { directory.appendingPathComponent("engine.log") }
     private var process: Process?
     private var api: EngineAPI?
@@ -39,7 +40,7 @@ public final class EmbeddedStreamingEngine {
     public func start(executable: URL, name: String, display: String = "") async throws {
         guard process == nil else { return }
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
-            throw NocturneError.remote("The bundled streaming engine is missing. Rebuild Nocturne Server with scripts/bootstrap.sh.")
+            throw NocturneError.remote("The bundled streaming engine is missing. Rebuild Nocturne with scripts/bootstrap.sh.")
         }
         let epoch = UUID(); generation = epoch
         let password = try SecureStore.randomKey().base64EncodedString()
@@ -54,7 +55,11 @@ public final class EmbeddedStreamingEngine {
         child.terminationHandler = { [weak self] child in
             Task { @MainActor in
                 guard let self, self.generation == epoch else { return }
-                self.onUnexpectedExit?("The streaming engine stopped (code \(child.terminationStatus)). Review the server log, then start again.")
+                // Recovery starts a new process and truncates its console output.
+                // Keep the failed process's logs before notifying the supervisor.
+                self.preserveCrashLogs()
+                let reason = child.terminationReason == .uncaughtSignal ? "signal" : "code"
+                self.onUnexpectedExit?("The streaming engine stopped (\(reason) \(child.terminationStatus)). Diagnostic logs: \(self.directory.path)/engine-crash.log and console-crash.log.")
             }
         }
         process = child
@@ -108,6 +113,22 @@ public final class EmbeddedStreamingEngine {
         try? logHandle?.close(); logHandle = nil
     }
 
+    private func preserveCrashLogs() {
+        for name in ["engine", "console"] {
+            let source = directory.appendingPathComponent("\(name).log")
+            let destination = directory.appendingPathComponent("\(name)-crash.log")
+            // Diagnostics must not load an unbounded log into the app's memory.
+            guard let handle = try? FileHandle(forReadingFrom: source) else { continue }
+            defer { try? handle.close() }
+            guard let length = try? handle.seekToEnd() else { continue }
+            let limit: UInt64 = 1_048_576
+            do { try handle.seek(toOffset: length > limit ? length - limit : 0) }
+            catch { continue }
+            guard let data = try? handle.read(upToCount: Int(limit)) else { continue }
+            try? Self.writePrivate(data, to: destination)
+        }
+    }
+
     private func pendingPairings() async throws -> [StreamPairingRequest] {
         guard let api else { throw NocturneError.disconnected }
         let response = try await api.request("/api/pin")
@@ -145,6 +166,30 @@ public final class EmbeddedStreamingEngine {
         guard let api else { throw NocturneError.disconnected }
         let result = try await api.request("/api/clients/unpair-all", body: [:])
         guard result["status"] as? Bool == true else { throw NocturneError.remote("The streaming pairings could not be reset.") }
+    }
+
+    /// Revocation must remain available when screen sharing is disabled. Never
+    /// edit the engine's state while a child process can write it concurrently.
+    public func resetSavedPairing() throws {
+        try updateSavedPairings { _ in [] }
+    }
+
+    public func removeSavedDevice(_ id: String) throws {
+        try updateSavedPairings { $0.filter { $0["uuid"] as? String != id } }
+    }
+
+    private func updateSavedPairings(_ update: ([[String: Any]]) -> [[String: Any]]) throws {
+        guard process == nil else { throw NocturneError.remote("Wait for screen sharing to finish starting, then try again.") }
+        let url = directory.appendingPathComponent("state.json")
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        guard var object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any],
+              var root = object["root"] as? [String: Any] else { throw NocturneError.invalidFrame }
+        let devices: [[String: Any]]
+        if root["named_devices"] == nil || root["named_devices"] as? String == "" { devices = [] }
+        else if let saved = root["named_devices"] as? [[String: Any]] { devices = saved }
+        else { throw NocturneError.invalidFrame }
+        root["named_devices"] = update(devices); object["root"] = root
+        try Self.writePrivate(try JSONSerialization.data(withJSONObject: object), to: url)
     }
 
     public func pairedDevices() async throws -> [StreamDevice] {

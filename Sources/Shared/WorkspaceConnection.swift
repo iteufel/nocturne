@@ -13,6 +13,7 @@ public final class WorkspaceConnection: ObservableObject {
     public var onAppPacket: ((Packet) -> Void)?
     public let chatEvents = PassthroughSubject<ChatEvent, Never>()
     public let chatVoiceEvents = PassthroughSubject<ChatVoiceEvent, Never>()
+    public var onDesktopPacket: ((Packet) -> Void)?
     @Published public private(set) var terminals: [TerminalTab] = []
     @Published public private(set) var terminalID: String?
     /// Authenticated pairing with a refreshed LAN address; remote proxy addresses are never saved.
@@ -23,6 +24,8 @@ public final class WorkspaceConnection: ObservableObject {
         return state == .connected ? "Local network" : nil
     }
     private var remoteTunnel: RemoteTunnel?
+    /// The hashed pairing key of the Mac at the far end of `remoteTunnel`.
+    private var tunnelServer: Data?
     private weak var mediaParent: WorkspaceConnection?
     private var terminalServer: Data?
     public func selectTerminal(_ id: String) {
@@ -37,7 +40,10 @@ public final class WorkspaceConnection: ObservableObject {
     private let discovery = WorkspaceDiscovery()
     private let identity: WorkspaceIdentity
     private let remoteStreaming: Bool
-    public init(identity: WorkspaceIdentity, remoteStreaming: Bool = true) { self.identity = identity; self.remoteStreaming = remoteStreaming }
+    private let requiresIPv4: Bool
+    public init(identity: WorkspaceIdentity, remoteStreaming: Bool = true, requiresIPv4: Bool = false) {
+        self.identity = identity; self.remoteStreaming = remoteStreaming; self.requiresIPv4 = requiresIPv4
+    }
     /// A separately authenticated socket keeps live media independent of file/terminal traffic.
     public func mediaConnection() -> WorkspaceConnection {
         let media = WorkspaceConnection(identity: identity, remoteStreaming: false); media.mediaParent = self; return media
@@ -51,8 +57,9 @@ public final class WorkspaceConnection: ObservableObject {
         try await withTaskCancellationHandler {
             do {
                 try Task.checkCancellation()
-                if let shared = mediaParent?.remoteTunnel {
-                    remoteTunnel = shared
+                // App windows can belong to a Mac other than the parent's; only that Mac's own tunnel reaches it.
+                if let parent = mediaParent, parent.tunnelServer == server, let shared = parent.remoteTunnel {
+                    remoteTunnel = shared; tunnelServer = server
                     try await establish(invitation, endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: shared.workspacePort)!), restoreTerminalSessions: restoreTerminalSessions, epoch: epoch)
                     return
                 }
@@ -73,7 +80,7 @@ public final class WorkspaceConnection: ObservableObject {
                 if let access = invitation.remoteAccess {
                     let tunnel = try await RemoteTunnel.connect(access, streaming: remoteStreaming)
                     guard generation == epoch else { tunnel.stop(); throw NocturneError.disconnected }
-                    remoteTunnel = tunnel
+                    remoteTunnel = tunnel; tunnelServer = server
                     try await establish(invitation, endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: tunnel.workspacePort)!), restoreTerminalSessions: restoreTerminalSessions, epoch: epoch)
                 }
             } catch {
@@ -89,7 +96,14 @@ public final class WorkspaceConnection: ObservableObject {
     }
     private func establish(_ invitation: PairingInvitation, endpoint: NWEndpoint, restoreTerminalSessions: Bool, epoch: UUID) async throws {
         state = .connecting
-        let connection = NWConnection(to: endpoint, using: SecureTransport.parameters(secret: invitation.secret))
+        let parameters = SecureTransport.parameters(secret: invitation.secret)
+        // The bundled streaming engine listens on IPv4. Bonjour otherwise often
+        // chooses a link-local IPv6 workspace address that cannot reach video.
+        // Independent workspace/media connections retain their dual-stack support.
+        if requiresIPv4, let ip = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
+            ip.version = .v4
+        }
+        let connection = NWConnection(to: endpoint, using: parameters)
         let channel = SecureChannel(connection: connection); self.channel = channel
         channel.onReady = { [weak self, weak channel] in Task { @MainActor in
             guard let self, let channel, self.channel === channel, self.generation == epoch else { return }
@@ -110,7 +124,7 @@ public final class WorkspaceConnection: ObservableObject {
         var hello = Packet(.hello); hello.version = WorkspaceProtocol.version
         let greeting = try await request(hello)
         guard greeting.version == WorkspaceProtocol.version, let challenge = greeting.data, challenge.count == 32 else {
-            throw NocturneError.remote("Update Nocturne Server before connecting this device.")
+            throw NocturneError.remote("Update Nocturne before connecting this device.")
         }
         var proof = Packet(.authenticate); proof.certificate = identity.certificate; proof.name = identity.name
         proof.signature = try identity.sign(WorkspaceIdentity.message(for: channel.boundChallenge(challenge))); proof.enrollmentToken = invitation.enrollmentToken
@@ -126,17 +140,23 @@ public final class WorkspaceConnection: ObservableObject {
             // Persist the real LAN address and broker identity, never the temporary proxy port.
             connectedInvitation = invitation
         } else if case .hostPort(let host, let port) = connection.currentPath?.remoteEndpoint {
-            connectedInvitation = try invitation.replacingAddress(host: "\(host)", port: port.rawValue)
+            connectedInvitation = try invitation.replacingAddress(host: Self.reusableAddress(host), port: port.rawValue)
         } else { connectedInvitation = invitation }
         lastError = nil
         state = .connected
+    }
+    static func reusableAddress(_ host: NWEndpoint.Host) -> String {
+        // NWEndpoint's description includes an interface suffix even for IPv4
+        // (e.g. 192.168.0.123%en0), which HTTP/DNS cannot use.
+        if case .ipv4(let ip) = host { return ip.rawValue.map(String.init).joined(separator: ".") }
+        return "\(host)"
     }
     public func disconnect() {
         generation = UUID(); discovery.cancel(); closeTransport()
     }
     private func closeTransport() {
         channel?.cancel(); channel = nil; state = .disconnected; connectedInvitation = nil
-        remoteTunnel = nil
+        remoteTunnel = nil; tunnelServer = nil
         capabilities = []
         ready?.resume(throwing: NocturneError.disconnected); ready = nil
         let waiting = pending; pending.removeAll(); deadlines.values.forEach { $0.cancel() }; deadlines.removeAll()
@@ -215,6 +235,9 @@ public final class WorkspaceConnection: ObservableObject {
         if packet.operation == .chatEvent {
             if let event = packet.chatEvent { chatEvents.send(event) }
             return
+        }
+        if [.desktopVideo, .desktopAudio, .desktopEnded].contains(packet.operation) {
+            onDesktopPacket?(packet); return
         }
         if packet.operation == .appVideo || packet.operation == .appEnded {
             onAppPacket?(packet); return

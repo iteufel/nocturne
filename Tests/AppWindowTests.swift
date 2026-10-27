@@ -32,10 +32,14 @@ private final class RecordingAppHost: AppWindowHosting {
     var pauseCapture: CheckedContinuation<Void, Never>?
     var delayCapture = false
     var failCapture = false
+    var failWindows = false
     func applications() -> [RemoteApplication] { (0..<130).map { .init(id: "app\($0)", name: "App \($0)") } }
     func icon(applicationID: String) -> Data { Data([1, 2, 3]) }
-    func windows(applicationID: String?) -> [RemoteAppWindow] { (1...8).map { .init(id: UInt32($0), applicationID: "app", title: "Window \($0)", width: 800, height: 600) } }
-    func launch(applicationID: String) -> [RemoteAppWindow] { windows(applicationID: applicationID) }
+    func windows(applicationID: String?) throws -> [RemoteAppWindow] {
+        if failWindows { throw NocturneError.remote("Unlock this Mac to browse windows.") }
+        return (1...8).map { .init(id: UInt32($0), applicationID: "app", title: "Window \($0)", width: 800, height: 600) }
+    }
+    func launch(applicationID: String) throws -> [RemoteAppWindow] { try windows(applicationID: applicationID) }
     func capture(applicationID: String, windowID: UInt32, viewport: AppWindowViewport, send: @escaping AppWindowSend, ended: @escaping (Error) -> Void) async throws -> AppWindowCapture {
         if failCapture { throw NocturneError.permissionDenied }
         let capture = RecordingAppCapture(windowID: windowID, send: send); captures.append(capture)
@@ -46,6 +50,29 @@ private final class RecordingAppHost: AppWindowHosting {
 
 @MainActor
 final class AppWindowTests: XCTestCase {
+    private var nativeClicks = 0
+    @objc private func nativeClick(_ sender: NSButton) { nativeClicks += 1 }
+
+    func testPointerEventsUseGlobalWindowCoordinatesForSystemRouting() throws {
+        var state = AppWindowEventState()
+        let frame = CGRect(x: 2830, y: 38, width: 740, height: 1402)
+        for kind in [AppWindowInput.Kind.down, .move, .up, .scroll] {
+            var input = AppWindowInput(kind); input.x = 0.25; input.y = 0.2
+            input.deltaY = 37
+            let event = try XCTUnwrap(state.events(for: input, frame: frame, windowID: 115).first)
+            XCTAssertEqual(event.location.x, 3015, accuracy: 0.001)
+            XCTAssertEqual(event.location.y, 318.4, accuracy: 0.001)
+            if kind == .scroll {
+                XCTAssertEqual(event.type, .scrollWheel)
+                XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1), 37)
+            }
+        }
+        var down = AppWindowInput(.down); down.x = 1; down.y = 1; down.button = 1
+        let event = try XCTUnwrap(state.events(for: down, frame: frame, windowID: 115).first)
+        XCTAssertEqual(event.type, .rightMouseDown)
+        XCTAssertEqual(event.location, CGPoint(x: frame.maxX - 1, y: frame.maxY - 1))
+        XCTAssertEqual(state.release(windowID: 115).first?.location, event.location)
+    }
     private let viewport = AppWindowViewport(width: 800, height: 600, scale: 2)
     private let send: AppWindowSend = { _, completion in completion(nil) }
     func testSmallAndExtremeAppViewportsRetainTheirAspectRatio() throws {
@@ -205,6 +232,22 @@ final class AppWindowTests: XCTestCase {
         await rejected { try await manager.handle(open(2), connection: UUID(), device: "iPad", isConnected: { false }, send: send) }
         XCTAssertEqual(host.captures.count, 1)
     }
+    func testWindowEnumerationFailurePreservesPagedCatalogAndReportsRecovery() async throws {
+        let host = RecordingAppHost(); host.failWindows = true
+        let manager = AppWindowSessionManager(host: host), connection = UUID()
+        let first = try await manager.handle(Packet(.appList), connection: connection, device: "iPhone", send: send)
+        let decoded = try JSONDecoder().decode(Packet.self, from: JSONEncoder().encode(first))
+        XCTAssertEqual(decoded.applications?.count, 64)
+        XCTAssertEqual(decoded.windows, [])
+        XCTAssertEqual(decoded.windowsError, "Unlock this Mac to browse windows.")
+        var next = Packet(.appList); next.offset = first.offset
+        let second = try await manager.handle(next, connection: connection, device: "iPhone", send: send)
+        XCTAssertEqual(second.applications?.count, 64)
+        host.failWindows = false
+        let refreshed = try await manager.handle(Packet(.appList), connection: connection, device: "iPhone", send: send)
+        XCTAssertNil(refreshed.windowsError)
+        XCTAssertEqual(refreshed.windows?.count, 8)
+    }
     func testCatalogPagingAndUntrustedViewportVideoInputValidation() async throws {
         let manager = AppWindowSessionManager(host: RecordingAppHost()), connection = UUID()
         var packet = Packet(.appList), apps: [RemoteApplication] = []
@@ -245,6 +288,9 @@ final class AppWindowTests: XCTestCase {
         window.title = "Nocturne capture test"; window.isReleasedWhenClosed = false; window.makeKeyAndOrderFront(nil)
         let field = NSTextField(frame: CGRect(x: 30, y: 40, width: 400, height: 30))
         window.contentView?.addSubview(field); window.makeFirstResponder(field)
+        let button = NSButton(title: "Test remote click", target: self, action: #selector(nativeClick(_:)))
+        button.frame = CGRect(x: 30, y: 120, width: 180, height: 30)
+        window.contentView?.addSubview(button); nativeClicks = 0
         let other = NSWindow(contentRect: CGRect(x: 100, y: 100, width: 700, height: 500), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         other.title = "Another Nocturne window"; other.isReleasedWhenClosed = false; other.orderFront(nil)
         defer { window.close(); other.close() }
@@ -262,20 +308,98 @@ final class AppWindowTests: XCTestCase {
         do { try await capture.start(viewport) }
         catch { waiting.fulfill(); await fulfillment(of: [waiting], timeout: 1); XCTFail("Starting native window capture: \(error)"); return }
         await fulfillment(of: [waiting], timeout: 8)
-        try await second.start(.init(width: 700, height: 500, scale: 2))
+        do { try await second.start(.init(width: 700, height: 500, scale: 2)) }
+        catch { throw NocturneError.remote("Starting second test capture: \(error)") }
         try await capture.resize(.init(width: 640, height: 480, scale: 2))
         XCTAssertEqual(capture.window.width, 640); XCTAssertEqual(capture.window.height, 480)
         XCTAssertEqual(capture.display, .init(width: 1280, height: 960, frameRate: 60))
         XCTAssertEqual(second.window.width, 700); XCTAssertEqual(second.window.height, 500)
         var text = AppWindowInput(.text); text.text = "Nocturne"
-        try capture.input(text)
+        do { try await capture.input(text) }
+        catch { throw NocturneError.remote("Typing into native test window: \(error)") }
         for _ in 0..<100 where field.currentEditor()?.string.contains("Nocturne") != true {
             while let event = NSApp.nextEvent(matching: .any, until: Date(), inMode: .default, dequeue: true) { NSApp.sendEvent(event) }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTAssertTrue(field.currentEditor()?.string.contains("Nocturne") == true)
+        let accessibility = try AppWindowAccessibility(pid: getpid(), windowID: UInt32(window.windowNumber))
+        let bounds = try XCTUnwrap(accessibility.frame)
+        let screenPoint = window.convertPoint(toScreen: CGPoint(x: button.frame.midX, y: button.frame.midY))
+        let top = try XCTUnwrap(NSScreen.screens.first).frame.maxY
+        var click = AppWindowInput(.down)
+        click.x = (screenPoint.x - bounds.minX) / bounds.width
+        click.y = (top - screenPoint.y - bounds.minY) / bounds.height
+        do { try await capture.input(click); click.kind = .up; try await capture.input(click) }
+        catch { throw NocturneError.remote("Clicking native test control: \(error)") }
+        for _ in 0..<100 where nativeClicks == 0 {
+            while let event = NSApp.nextEvent(matching: .any, until: Date(), inMode: .default, dequeue: true) { NSApp.sendEvent(event) }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(nativeClicks, 1, "Remote down/up must activate the native control, not merely acknowledge input")
+        if let screen = NSScreen.screens.first, screen.visibleFrame.height >= 1100 {
+            window.contentMinSize = CGSize(width: 740, height: 200)
+            try await capture.resize(.init(width: 430, height: 600, scale: 2))
+            let fitted = try XCTUnwrap(accessibility.frame)
+            XCTAssertEqual(fitted.width / fitted.height, 430.0 / 600.0, accuracy: 0.002,
+                "Await both AX position and size before reporting a fitted portrait window")
+            XCTAssertEqual(capture.window.width, Int(fitted.width))
+            XCTAssertEqual(capture.window.height, Int(fitted.height))
+        }
         capture.stop()
-        try second.input(AppWindowInput(.move))
+        try await second.input(AppWindowInput(.move))
+    }
+    func testMinimumWindowWidthKeepsPortraitPhoneProportions() async throws {
+        let viewport = AppWindowViewport(width: 430, height: 785, scale: 3)
+        var requests: [CGSize] = []
+        let size = try AppWindowAccessibility.resizeToMatch(viewport) { requested in
+            requests.append(requested)
+            return CGSize(width: max(740, requested.width), height: requested.height)
+        }
+        XCTAssertEqual(requests.count, 2, "Compensate when the app clamps the requested window width")
+        XCTAssertGreaterThanOrEqual(size.width, 740)
+        XCTAssertEqual(size.width / size.height, 430.0 / 785.0, accuracy: 0.001,
+            "App minimum widths must not turn a portrait stream into a letterboxed square")
+    }
+    func testFixedSizeWindowCanStreamWhenTheAppRejectsResizing() throws {
+        let original = CGSize(width: 620, height: 440)
+        do {
+            let size = try AppWindowAccessibility.resizeToMatch(.init(width: 1200, height: 700, scale: 2),
+                currentSize: { original }) { _ in throw AppWindowAccessibility.ResizeUnavailable() }
+            XCTAssertEqual(size, original, "Stream the fixed-size app at its actual aspect ratio")
+        } catch { XCTFail("Opening a non-resizable app must not fail: \(error)") }
+    }
+    func testResizeFallbackReadsCurrentGeometryAndPreservesPermissionErrors() throws {
+        var current = CGSize(width: 400, height: 300), calls = 0
+        let result = try AppWindowAccessibility.resizeToMatch(.init(width: 430, height: 785, scale: 2), currentSize: { current }) { proposed in
+            calls += 1
+            if calls == 2 { throw AppWindowAccessibility.ResizeUnavailable() }
+            current = .init(width: 740, height: proposed.height); return current
+        }
+        XCTAssertEqual(calls, 2); XCTAssertEqual(result, current, "Read the actual window after a partial resize")
+        XCTAssertThrowsError(try AppWindowAccessibility.resizeToMatch(.init(width: 800, height: 600, scale: 1),
+            currentSize: { current }) { _ in throw NocturneError.permissionDenied }) { error in
+                XCTAssertEqual(error as? NocturneError, .permissionDenied)
+            }
+        let legacy = Data(#"{"id":1,"applicationID":"app","title":"Window","width":620,"height":440}"#.utf8)
+        XCTAssertNil(try JSONDecoder().decode(RemoteAppWindow.self, from: legacy).isResizable)
+    }
+    func testAppThatSilentlyIgnoresWritableSizeIsReportedAsFixed() throws {
+        let size = CGSize(width: 620, height: 440)
+        let fixed = try AppWindowAccessibility.resizeIfPossible(.init(width: 1200, height: 700, scale: 2),
+            currentSize: { size }, apply: { _ in size })
+        XCTAssertEqual(fixed.size, size); XCTAssertFalse(fixed.isResizable)
+        var current = size
+        let resizing = try AppWindowAccessibility.resizeIfPossible(.init(width: 800, height: 600, scale: 2),
+            currentSize: { current }, apply: { current = $0; return current })
+        XCTAssertEqual(resizing.size, .init(width: 800, height: 600)); XCTAssertTrue(resizing.isResizable)
+    }
+    func testTallPhoneWindowMovesUpBeforeMacOSClampsItsHeight() {
+        let visible = CGRect(x: 0, y: 38, width: 5120, height: 1402)
+        let position = AppWindowAccessibility.positionToFit(CGPoint(x: 2830, y: 549),
+            size: CGSize(width: 740, height: 1409), visibleFrame: visible)
+        XCTAssertEqual(position, CGPoint(x: 2830, y: 38))
+        XCTAssertEqual(AppWindowAccessibility.positionToFit(CGPoint(x: 100, y: 100),
+            size: CGSize(width: 800, height: 600), visibleFrame: visible), CGPoint(x: 100, y: 100))
     }
     func testNativeCatalogAndIcons() throws {
         let host = NativeAppWindowHost(), apps = try host.applications()

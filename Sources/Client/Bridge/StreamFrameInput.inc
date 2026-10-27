@@ -34,3 +34,8 @@
     [_streamView nocturneCancelInput];
     [_controllerSupport nocturneReleaseMouseButtons];
 }
+
+- (void)nocturneFocusInput { [_streamView becomeFirstResponder]; }
+
+- (void)nocturneToggleKeyboard { [_streamView nocturneToggleKeyboard]; }
+- (void)nocturneSetKeyboardVisible:(BOOL)visible { [_streamView nocturneSetKeyboardVisible:visible]; }

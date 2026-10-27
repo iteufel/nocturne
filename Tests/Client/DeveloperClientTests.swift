@@ -32,6 +32,7 @@ final class DeveloperClientTests: XCTestCase {
         XCTAssertNil(chat.selected); XCTAssertEqual(chat.draft, "", "A late helper cannot restore a draft into another chat generation")
     }
     func testNativeChatCanvasScreenshot() async throws {
+        let restoreOnboarding = completeOnboardingForTest(); defer { restoreOnboarding() }
         let peer = try DeveloperWorkspacePeer(demonstration: true); try await peer.start()
         let app = ClientModel(voicePermission: { false }), client = app.server, chat = app.chats
         defer { app.suspend(); peer.stop() }
@@ -61,6 +62,7 @@ final class DeveloperClientTests: XCTestCase {
     }
     func testInteractiveChatWorkspaceCapture() async throws {
         guard ProcessInfo.processInfo.environment["NOCTURNE_CAPTURE_CHAT"] == "1" else { throw XCTSkip("Opt-in native screenshot navigation") }
+        let restoreOnboarding = completeOnboardingForTest(); defer { restoreOnboarding() }
         let peer = try DeveloperWorkspacePeer(demonstration: true); try await peer.start()
         let app = ClientModel(voicePermission: { false }), client = app.server, chat = app.chats
         defer { app.suspend(); peer.stop() }
@@ -84,6 +86,14 @@ final class DeveloperClientTests: XCTestCase {
         }
         let deadline = Date().addingTimeInterval(420)
         while app.page == .chats, Date() < deadline { try await Task.sleep(nanoseconds: 200_000_000) }
+    }
+    private func completeOnboardingForTest() -> () -> Void {
+        let key = "nocturne.client.onboardingComplete", previous = UserDefaults.standard.object(forKey: "nocturne.client.onboardingComplete")
+        UserDefaults.standard.set(true, forKey: key)
+        return {
+            if let previous { UserDefaults.standard.set(previous, forKey: key) }
+            else { UserDefaults.standard.removeObject(forKey: key) }
+        }
     }
     private func waitUntil(_ condition: () -> Bool) async throws {
         for _ in 0..<200 { if condition() { return }; try await Task.sleep(nanoseconds: 10_000_000) }

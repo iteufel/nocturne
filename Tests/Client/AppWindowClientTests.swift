@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import SwiftUI
 import AVFoundation
 import VideoToolbox
 import NocturneKit
@@ -7,6 +8,63 @@ import NocturneKit
 
 @MainActor
 final class AppWindowClientTests: XCTestCase {
+    func testAppWindowUsesTheWholeVideoAreaWithoutPersistentControls() {
+        let client = ClientModel.shared
+        let originalFill = client.preferences.fillEntireScreen
+        let defaults = UserDefaults.standard
+        let stored = defaults.data(forKey: "streamPreferences")
+        defer { client.setFillEntireScreen(originalFill); defaults.set(stored, forKey: "streamPreferences") }
+        for fill in [false, true] {
+            client.setFillEntireScreen(fill)
+            let stream = AppWindowStreamModel(route: .init(serverID: "layout-test", applicationID: "test", windowID: 1, title: "Test"),
+                connection: client.server.mediaConnection(), invitation: { throw NocturneError.disconnected })
+            let host = UIHostingController(rootView: AppWindowWorkspace(stream: stream, close: {}))
+            host.additionalSafeAreaInsets = UIEdgeInsets(top: 32, left: 24, bottom: 20, right: 24)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1024, height: 768))
+            window.rootViewController = host; window.makeKeyAndVisible()
+            defer { stream.deactivate(); window.isHidden = true; window.rootViewController = nil }
+            host.view.layoutIfNeeded()
+            let expected = fill ? host.view.bounds : host.view.safeAreaLayoutGuide.layoutFrame
+            XCTAssertEqual(stream.surface.convert(stream.surface.bounds, to: host.view), expected,
+                "Neither a toolbar nor a navigation bar may take space from the app stream")
+            XCTAssertEqual(window.gestureRecognizers?.filter { $0 is StreamEdgeGesture }.count, 2)
+        }
+    }
+    func testAppKeyboardShowIsIdempotentAndRecoversLostFocus() {
+        let view = AppWindowVideoView(frame: CGRect(x: 0, y: 0, width: 640, height: 480))
+        let root = UIViewController(), window = UIWindow(frame: view.frame)
+        root.view = view; window.rootViewController = root; window.makeKeyAndVisible()
+        defer { view.keyboardVisible = false; view.reset(); window.isHidden = true; window.rootViewController = nil }
+        for _ in 0..<3 {
+            view.keyboardVisible = true
+            XCTAssertTrue(view.isFirstResponder)
+            XCTAssertNil(view.inputView, "Showing again must keep the system keyboard selected")
+        }
+        view.resignFirstResponder()
+        view.keyboardVisible = true
+        XCTAssertTrue(view.isFirstResponder)
+        view.keyboardVisible = false
+        XCTAssertNotNil(view.inputView)
+    }
+    func testWindowFillCoversPhoneAndMapsTouchesThroughTheCrop() async throws {
+        let view = AppWindowVideoView(frame: CGRect(x: 0, y: 0, width: 430, height: 819))
+        try view.enqueue(await encodedFrame(width: 740, height: 786))
+        defer { view.reset() }
+        view.fillEntireScreen = true
+        XCTAssertEqual((view.layer as? AVSampleBufferDisplayLayer)?.videoGravity, .resizeAspectFill)
+        XCTAssertTrue(view.videoRect.insetBy(dx: -0.001, dy: -0.001).contains(view.bounds))
+        var sent: [AppWindowInput] = []; view.onInput = { sent.append($0) }
+        let touch = AppWindowTestTouch(), event = AppWindowTestEvent()
+        touch.point = CGPoint(x: 20, y: 400); event.inputTouches = [touch]
+        view.touchesBegan([touch], with: event); view.touchesEnded([touch], with: event)
+        XCTAssertEqual(sent.map(\.kind), [.down, .up])
+        let expectedX = (touch.point.x - view.videoRect.minX) / view.videoRect.width
+        XCTAssertEqual(try XCTUnwrap(sent.first).x, expectedX, accuracy: 0.001)
+        XCTAssertGreaterThan(expectedX, 0.1, "The left screen edge corresponds to the cropped window, not its left edge")
+        view.fillEntireScreen = false
+        XCTAssertEqual((view.layer as? AVSampleBufferDisplayLayer)?.videoGravity, .resizeAspect)
+        XCTAssertTrue(view.bounds.contains(view.videoRect))
+    }
     func testLongPressAndTwoFingerScrollDoNotSendAnInitialLeftClick() async throws {
         let view = AppWindowVideoView(frame: CGRect(x: 0, y: 0, width: 640, height: 480))
         try view.enqueue(await encodedFrame(width: 640, height: 480))

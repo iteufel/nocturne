@@ -67,9 +67,15 @@ def input_methods(source, filename)
   "#import \"NocturneStreamInput.h\"\n" + source.sub(/\n@end\s*\z/, "\n" + File.read("Sources/Client/Bridge/#{filename}") + "\n@end\n")
 end
 overlay(target, group, 'Stream/Connection.m') do |source|
+  source = replace_once(source, 'static SDL_AudioDeviceID audioDevice;', "static SDL_AudioDeviceID audioDevice;\n#define NOCTURNE_ADAPTIVE_AUDIO 1\nstatic struct { uint64_t lastPacketMs; unsigned targetMs; bool hasPacket; } audioTiming;")
+  source = replace_once(source, '    SDL_AudioSpec want, have;', "    SDL_AudioSpec want, have;\n    memset(&audioTiming, 0, sizeof(audioTiming));")
+  source = replace_section(source, 'void ArDecodeAndPlaySample(', 'void ClStageStarting(', File.read('Sources/Client/Bridge/StreamAudioPlayback.inc'))
+  source = replace_once(source, "    // Start playback\n    SDL_PauseAudioDevice(audioDevice, 0);", "    // Playback starts after StreamAudioPlayback primes the jitter cushion.")
   # Loopback is the remote QUIC proxy: retain WAN packet sizing and stream behavior.
   source = replace_once(source, 'if ([Utils isActiveNetworkVPN]) {', 'if ([Utils isActiveNetworkVPN] || [config.host isEqualToString:@"127.0.0.1"]) {')
-  source = replace_once(source, "-(void) terminate\n{", "-(void) terminate { [self nocturneTerminateWithCompletion:nil]; }\n\n-(void)nocturneTerminateWithCompletion:(void (^)(void))completion\n{")
+  source = replace_once(source, "-(void) terminate\n{", "-(void) terminate { [self nocturneTerminateWithCompletion:nil]; }\n\n-(void)nocturneTerminateWithCompletion:(void (^)(void))completion\n{\n    [self cancel];")
+  # A stop may win before the queued Connection operation has entered main().
+  source = replace_once(source, "    [initLock lock];\n    LiStartConnection(", "    [initLock lock];\n    if (self.cancelled) { [initLock unlock]; return; }\n    LiStartConnection(")
   replace_once(source, "        LiStopConnection();\n        [initLock unlock];", "        LiStopConnection();\n        [initLock unlock];\n        if (completion) dispatch_async(dispatch_get_main_queue(), completion);")
 end
 overlay(target, group, 'Stream/StreamManager.m') do |source|
@@ -86,7 +92,13 @@ overlay(target, group, 'ViewControllers/StreamFrameViewController.m') do |source
 end
 # Keep all input changes in reviewed overlays, leaving the pinned dependency intact.
 overlay(target, group, 'Input/StreamView.m') do |source|
+  source = "#import <objc/runtime.h>\n" + source
+  source = replace_section(source, '- (CGSize) getVideoAreaSize {', '- (CGPoint) adjustCoordinatesForVideoArea:', "- (CGSize) getVideoAreaSize {\n    return NocturneVideoAreaSize(self.bounds.size, streamAspectRatio, self.nocturneFillEntireScreen);\n}\n\n")
+  source = replace_section(source, '    CGSize videoSize;', '    videoOrigin = CGPointMake', "    CGSize videoSize = [self getVideoAreaSize];\n    CGPoint videoOrigin;\n")
   source = replace_once(source, '    NSInteger lastMouseButtonMask;', "    NSInteger lastMouseButtonMask;\n    NSMapTable<UITouch *, NSNumber *> *nocturneMouseTouches;\n    NSMutableSet<UITouch *> *nocturneActiveTouches;\n    NSHashTable<UITouch *> *nocturneIgnoredTouches;")
+  source = replace_once(source, '    NSMutableSet* keysDown;', "    NSMutableSet* keysDown;\n    NSMutableDictionary<NSNumber *, UIPress *> *nocturnePressedKeys;\n    BOOL nocturneControlsKeyDown;")
+  source = replace_section(source, '- (void)pressesBegan:', '- (void)touchesEnded:', File.read('Sources/Client/Bridge/StreamKeyboardInput.inc'))
+  source = replace_section(source, '        if ([[event allTouches] count] == 3) {', '- (UIBarButtonItem *)createButtonWithImageNamed:', "        if ([[event allTouches] count] == 3) [self nocturneToggleKeyboard];\n    }\n}\n\n")
   source = replace_section(source, '- (BOOL)handleMouseButtonEvent:', '- (void)touchesMoved:', '')
   raise 'Upstream mouse routing changed; review the overlay.' unless source.scan('if ([GCMouse current] != nil)').length == 2
   source = source.gsub('if ([GCMouse current] != nil)', 'if (NocturneUsesRelativeMouse(self))')
@@ -97,9 +109,20 @@ overlay(target, group, 'Input/StreamView.m') do |source|
   source = source.gsub(/LiSendMouseButtonEvent\((BUTTON_ACTION_(?:PRESS|RELEASE)), (\[self buttonFromX1ButtonCode:button\])\);/, '[self nocturneSendMouseButton:\1 button:\2];')
   input_methods(source, 'StreamViewInput.inc')
 end
+overlay(target, group, 'Stream/VideoDecoderRenderer.m') do |source|
+  # UIKit switches run-loop modes during touch tracking. Default-only delivery
+  # freezes decoding until the gesture ends, then drains a burst of old frames.
+  source = replace_once(source, 'forMode:NSDefaultRunLoopMode];', 'forMode:NSRunLoopCommonModes];')
+  source = replace_once(source, '    CADisplayLink* _displayLink;', "    CADisplayLink* _displayLink;\n    NocturneVideoPacer nocturnePacer;")
+  source = replace_once(source, '    self->frameRate = frameRate;', "    self->frameRate = frameRate;\n    NocturneVideoPacerReset(&nocturnePacer, frameRate, framePacing);")
+  source = replace_section(source, '- (void)displayLinkCallback:', '- (void)stop', File.read('Sources/Client/Bridge/StreamVideoPlayback.inc'))
+  source = replace_section(source, '    CGSize videoSize;', '    displayLayer.position =', "    CGSize videoSize = [_view getVideoAreaSize];\n")
+  "#import \"NocturneStreamInput.h\"\n#import \"StreamVideoPacing.h\"\n" + source
+end
 overlay(target, group, 'Input/ControllerSupport.m') do |source|
   source = replace_once(source, '@implementation ControllerSupport {', "@implementation ControllerSupport {\n    NSUInteger nocturneMouseButtons;")
   source = replace_once(source, '        self->accumulatedDeltaX += deltaX / MOUSE_SPEED_DIVISOR;', "        if (![self nocturneUsesRelativeMouse]) return;\n        self->accumulatedDeltaX += deltaX / MOUSE_SPEED_DIVISOR;")
+  source = replace_once(source, '            LiSendMouseMoveEvent(truncatedDeltaX, truncatedDeltaY);', '            [self nocturneSendMouseMoveX:truncatedDeltaX y:truncatedDeltaY];')
   raise 'Upstream mouse buttons changed; review the overlay.' unless source.scan('LiSendMouseButtonEvent(pressed ? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE,').length == 5
   source = source.gsub(/LiSendMouseButtonEvent\(pressed \? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE, (BUTTON_\w+)\);/, '[self nocturneHandleMouseButton:pressed ? BUTTON_ACTION_PRESS : BUTTON_ACTION_RELEASE button:\1];')
   source = replace_once(source, "-(void) unregisterMouseCallbacks:(GCMouse*)mouse API_AVAILABLE(ios(14.0)) {", "-(void) unregisterMouseCallbacks:(GCMouse*)mouse API_AVAILABLE(ios(14.0)) {\n    [self nocturneReleaseMouseButtons];")
@@ -144,6 +167,12 @@ target.build_configurations.each do |config|
   settings['SWIFT_OBJC_INTERFACE_HEADER_NAME'] = 'Moonlight-Swift.h'
   settings['SWIFT_VERSION'] = '5.0'
   settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
+  # The pinned client names Xcode.app explicitly. CI selects another Xcode,
+  # so importing both toolchains' headers redefines SwiftBridging.
+  settings['HEADER_SEARCH_PATHS'].map! do |path|
+    path.sub('/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include',
+      '$(TOOLCHAIN_DIR)/usr/include')
+  end
   settings['HEADER_SEARCH_PATHS'] << '$(PROJECT_DIR)/../../Sources/Client/Bridge'
   settings['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'DarkAppIcon'
   settings['MARKETING_VERSION'] = '1.0'
@@ -224,23 +253,27 @@ scheme.add_test_target(client.targets.find { |entry| entry.name == 'NocturneClie
 scheme.save_as('Vendor/moonlight-ios/Nocturne.xcodeproj', 'Nocturne', true)
 
 mac = Xcodeproj::Project.new('Nocturne.xcodeproj')
-host = mac.new_target(:application, 'Nocturne Server', :osx, '14.0')
+host = mac.new_target(:application, 'Nocturne Mac', :osx, '14.0')
+host.product_name = 'Nocturne'
+host.product_reference.path = 'Nocturne.app'
 group = mac.main_group.new_group('Server')
 Dir.glob('{Sources/Server,Sources/Design}/**/*.swift').sort.each do |path|
   host.source_build_phase.add_file_reference(group.new_file(path))
 end
 host.resources_build_phase.add_file_reference(group.new_file('Resources/Server.xcassets'))
-raise 'Run scripts/bootstrap.sh to fetch the server runtime.' unless File.executable?('Vendor/StreamingRuntime/Contents/Helpers/nocturne-stream-host')
+# Client-only bootstrap does not need the Mac runtime. Packaging validates it
+# when the server is actually built.
 phase = host.new_shell_script_build_phase('Package streaming server runtime')
 phase.shell_path = '/bin/bash'
 phase.shell_script = '"${SRCROOT}/scripts/package-streaming-server.sh"'
 phase.always_out_of_date = '1'
 kit = package(mac, '.')
 product(mac, host, kit, 'NocturneKit'); product(mac, host, kit, 'NocturneHostKit')
+product(mac, host, kit, 'NocturneMacClient')
 host.build_configurations.each do |config|
   settings = config.build_settings
   settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'app.nocturne.server'
-  settings['PRODUCT_NAME'] = 'Nocturne Server'
+  settings['PRODUCT_NAME'] = 'Nocturne'
   settings['SWIFT_VERSION'] = '5.0'
   settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
   settings['INFOPLIST_FILE'] = 'Resources/Server-Info.plist'
@@ -258,7 +291,7 @@ end
 mac.save
 scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(host); scheme.set_launch_target(host)
-scheme.save_as('Nocturne.xcodeproj', 'Nocturne Server', true)
+scheme.save_as('Nocturne.xcodeproj', 'Nocturne Mac', true)
 workspace = Xcodeproj::Workspace.new('Nocturne.xcodeproj', 'Vendor/moonlight-ios/Nocturne.xcodeproj')
 workspace.save_as('Nocturne.xcworkspace')
 
@@ -273,7 +306,7 @@ info['NSBonjourServices'] = ['_nvstream._tcp', '_nocturne._tcp']
 info['NSLocalNetworkUsageDescription'] = 'Find your computers and connect directly for streaming, terminal access, and file transfer.'
 info['NSBluetoothAlwaysUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
 info['NSBluetoothPeripheralUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
-info['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Nocturne Server on your Mac.'
+info['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Nocturne on your Mac.'
 info['NSMicrophoneUsageDescription'] = 'Talk with Codex in live voice chats, or send your microphone to your paired Mac for Discord and games when you unmute a stream.'
 info['UIBackgroundModes'] = ['audio']
 info['UIApplicationSceneManifest'] = {

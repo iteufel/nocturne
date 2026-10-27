@@ -2,11 +2,27 @@ import AppKit
 import SwiftUI
 import NocturneKit
 import NocturneHostKit
-import Darwin
+import SystemConfiguration
+import ServiceManagement
+
+struct ServerLoginItem {
+    var status: () -> SMAppService.Status
+    var setEnabled: (Bool) throws -> Void
+    static let system = ServerLoginItem(status: { SMAppService.mainApp.status }, setEnabled: { enabled in
+        if enabled { try SMAppService.mainApp.register() }
+        else { try SMAppService.mainApp.unregister() }
+    })
+}
 
 @MainActor
 final class ServerModel: ObservableObject {
+    private let defaults: UserDefaults
+    private let loginItem: ServerLoginItem
+    private let keyProvider: (String) throws -> Data
+    private let engineExecutable: URL
+    private let port: UInt16
     private let appWindows = AppWindowSessionManager(host: NativeAppWindowHost())
+    private let desktop = DesktopSessionManager(host: NativeDesktopHost())
     @Published private(set) var running = false
     @Published private(set) var starting = false
     @Published private(set) var status = "Stopped"
@@ -17,64 +33,67 @@ final class ServerModel: ObservableObject {
     @Published private(set) var removingDevice: String?
     @Published var error: String?
     @Published var showPairing = false
+    @Published var showOnboarding = false
     @Published var invitation: PairingInvitation?
     @Published private(set) var resettingPairing = false
     var changingDevices: Bool { removingDevice != nil || resettingPairing }
-    @Published var terminalEnabled = UserDefaults.standard.bool(forKey: "allowTerminal") { didSet { updatePermissions() } }
-    @Published var filesEnabled = UserDefaults.standard.bool(forKey: "allowFiles") { didSet { updatePermissions() } }
-    @Published var chatsEnabled = UserDefaults.standard.bool(forKey: "allowChats") { didSet { updatePermissions() } }
     let codexAccount = CodexAccountController()
-    @Published private(set) var chatAgents = UserDefaults.standard.data(forKey: "chatAgents")
-        .flatMap { try? JSONDecoder().decode([ChatAgentConfiguration].self, from: $0) } ?? ChatAgentConfiguration.defaults
-    @Published var microphoneEnabled = UserDefaults.standard.bool(forKey: "allowMicrophone") { didSet { updatePermissions() } }
+    @Published private(set) var chatAgents: [ChatAgentConfiguration]
+    @Published var settings: ServerSettings
+    @Published private(set) var appliedSettings: ServerSettings
+    var chatsEnabled: Bool {
+        get { settings.chats }
+        set {
+            settings.chats = newValue; appliedSettings.chats = newValue
+            defaults.set(newValue, forKey: "allowChats")
+            server?.updatePermissions(.init(terminal: appliedSettings.terminal, files: appliedSettings.files,
+                microphone: appliedSettings.microphone, chats: newValue))
+            if newValue { startEnabledServices() }
+            else if !appliedSettings.hasEnabledServices { stop() }
+        }
+    }
+    var hasSettingsChanges: Bool { settings != appliedSettings }
+    @Published private(set) var loginApprovalRequired = false
+    @Published private(set) var screenSharingStatus = "Stopped"
+    @Published private(set) var screenSharingError: String?
     @Published private(set) var microphoneInstalled = VirtualMicrophone.isInstalled
     @Published private(set) var installingMicrophone = false
     @Published private(set) var microphoneInstallationMessage: String?
-    @Published var address: String
-    @Published var sharedFolder: URL
-    @Published var display: String {
-        didSet { UserDefaults.standard.set(display, forKey: "streamDisplay"); updateDisplayStatus() }
-    }
-    @Published var headlessDisplayEnabled: Bool {
-        didSet { UserDefaults.standard.set(headlessDisplayEnabled, forKey: "headlessDisplayEnabled"); updateDisplayStatus() }
-    }
-    @Published var disablePhysicalDisplays: Bool {
-        didSet { UserDefaults.standard.set(disablePhysicalDisplays, forKey: "disablePhysicalDisplays") }
-    }
     @Published private(set) var displayStatus = ""
     @Published private(set) var displayActive = false
     let displays: DisplaySessionManager
-    let addresses: [String]
     let name = Host.current().localizedName ?? "My Mac"
     let engine: EmbeddedStreamingEngine
     var active: Bool { running || starting }
     private var server: WorkspaceServer?
     private var remoteTunnel: RemoteTunnel?
-    @Published var remoteAccessEnabled = UserDefaults.standard.bool(forKey: "remoteAccessEnabled") {
-        didSet { UserDefaults.standard.set(remoteAccessEnabled, forKey: "remoteAccessEnabled") }
-    }
-    @Published var brokerURL = UserDefaults.standard.string(forKey: "remoteBrokerURL") ?? "https://nocturne.alkal.de" {
-        didSet { UserDefaults.standard.set(brokerURL, forKey: "remoteBrokerURL") }
-    }
     private var deviceStore: WorkspaceDeviceStore?
     private var streamDevices: [StreamDevice] = []
     private var workspaceConnections: [WorkspaceDeviceConnection] = []
     private var pairingTasks: [String: Task<Void, Error>] = [:]
     private var deviceRevision = UUID()
     private var startTask: Task<Void, Never>?
+    private var screenSharingTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
     private var secret: Data?
     private var generation = UUID()
     private var pairWhenReady = false
-    init() {
-        let displaySettings = DisplaySettings()
-        display = displaySettings.physicalDisplay
-        headlessDisplayEnabled = displaySettings.headlessEnabled
-        disablePhysicalDisplays = displaySettings.disablePhysicalDisplays
-        addresses = Self.localAddresses(); address = addresses.first ?? "127.0.0.1"
-        let savedFolder = UserDefaults.standard.string(forKey: "sharedFolder")
-        sharedFolder = savedFolder.map { URL(fileURLWithPath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Nocturne Shared", isDirectory: true)
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    init(defaults: UserDefaults = .standard, supportDirectory: URL? = nil,
+         engineExecutable: URL? = nil, port: UInt16 = WorkspaceProtocol.port,
+         loginItem: ServerLoginItem = .system,
+         keyProvider: @escaping (String) throws -> Data = { account in
+             if let stored = try SecureStore.read(account) { return stored }
+             let key = try SecureStore.randomKey(); try SecureStore.write(key, account: account); return key
+         }) {
+        self.defaults = defaults; self.loginItem = loginItem; self.keyProvider = keyProvider; self.port = port
+        chatAgents = defaults.data(forKey: "chatAgents").flatMap { try? JSONDecoder().decode([ChatAgentConfiguration].self, from: $0) } ?? ChatAgentConfiguration.defaults
+        self.engineExecutable = engineExecutable ?? Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/nocturne-stream-host")
+        var saved = ServerSettings(defaults: defaults)
+        let loginStatus = loginItem.status()
+        saved.launchAtLogin = loginStatus == .enabled || loginStatus == .requiresApproval
+        settings = saved; appliedSettings = saved
+        loginApprovalRequired = loginStatus == .requiresApproval
+        let support = supportDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let engine = EmbeddedStreamingEngine(directory: support.appendingPathComponent("Nocturne/Engine", isDirectory: true))
         self.engine = engine
         displays = DisplaySessionManager { display in try await engine.selectDisplay(display) }
@@ -82,7 +101,14 @@ final class ServerModel: ObservableObject {
             deviceStore = try WorkspaceDeviceStore(url: support.appendingPathComponent("Nocturne/devices.json"))
             streamDevices = try engine.savedDevices(); publishDevices()
         } catch { devicesError = error.localizedDescription }
-        engine.onUnexpectedExit = { [weak self] message in self?.stop(); self?.error = message }
+        engine.onUnexpectedExit = { [weak self] message in
+            guard let self else { return }
+            self.engine.stop()
+            self.displays.stop()
+            self.screenSharingStatus = "Retrying…"
+            self.screenSharingError = message
+            self.maintainScreenSharing()
+        }
         displays.onChange = { [weak self] in
             guard let self else { return }
             self.displayActive = self.displays.isActive
@@ -95,56 +121,42 @@ final class ServerModel: ObservableObject {
         if let size = displays.size {
             displayStatus = "\(size.width) × \(size.height) · \(displays.deviceName ?? "Connected device")"
         } else {
-            displayStatus = headlessDisplayEnabled ? "Virtual monitor · Matches your device" : "Physical monitor · Fixed desktop size"
+            displayStatus = appliedSettings.headlessDisplay ? "Virtual monitor · Matches your device" : "Physical monitor · Fixed desktop size"
         }
     }
     func start() {
-        guard !active else { return }
-        guard DisplaySessionManager.isSessionAvailable else { error = "Unlock this Mac before starting the server."; return }
+        guard !active, appliedSettings.hasEnabledServices else { return }
+        guard DisplaySessionManager.isSessionAvailable else { error = "Sign in to this Mac before starting the server."; return }
         starting = true; status = "Starting"; error = nil
         let epoch = UUID(); generation = epoch
+        let configuration = appliedSettings
         startTask = Task { [self] in
             do {
-                guard let deviceStore else { throw NocturneError.remote("The saved device list could not be loaded. Restart Nocturne Server and try again.") }
-                let executable = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/nocturne-stream-host")
-                let key: Data
-                if let stored = try SecureStore.read("server-key") { key = stored }
-                else { key = try SecureStore.randomKey(); try SecureStore.write(key, account: "server-key") }
+                try Task.checkCancellation()
+                guard generation == epoch else { return }
+                guard let deviceStore else { throw NocturneError.remote("The saved device list could not be loaded. Restart Nocturne and try again.") }
+                let key = try keyProvider("server-key")
                 guard key.count == 32 else { throw NocturneError.invalidInvitation }
                 secret = key
-                var captureDisplay = display.isEmpty ? String(CGMainDisplayID()) : display
-                if headlessDisplayEnabled {
-                    displays.disablePhysicalDisplays = disablePhysicalDisplays
-                    captureDisplay = String(try await displays.start())
-                }
-                try Task.checkCancellation()
-                guard generation == epoch else { return }
-                try await engine.start(executable: executable, name: name, display: captureDisplay)
-                try Task.checkCancellation()
-                guard generation == epoch else { return }
-                let savedDevices = try await engine.pairedDevices()
-                guard generation == epoch, !Task.isCancelled else { return }
-                streamDevices = savedDevices; publishDevices()
-                if remoteAccessEnabled {
+                if configuration.remoteAccess {
                     // This private identity is never shared in a QR or derived from its shared key.
-                    let endpointKey: Data
-                    if let stored = try SecureStore.read("server-remote-key") { endpointKey = stored }
-                    else { endpointKey = try SecureStore.randomKey(); try SecureStore.write(endpointKey, account: "server-remote-key") }
-                    let tunnel = try await RemoteTunnel.host(brokerURL: brokerURL, endpointKey: endpointKey)
+                    let endpointKey = try keyProvider("server-remote-key")
+                    let tunnel = try await RemoteTunnel.host(brokerURL: configuration.brokerURL, endpointKey: endpointKey, port: port)
                     guard generation == epoch, !Task.isCancelled else { tunnel.stop(); return }
                     remoteTunnel = tunnel
                 }
-                let host = try WorkspaceServer(folder: sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: terminalEnabled, files: filesEnabled, microphone: microphoneEnabled, chats: chatsEnabled), appWindows: appWindows, chatAgents: chatAgents)
+                let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: .init(terminal: configuration.terminal, files: configuration.files, microphone: configuration.microphone, chats: configuration.chats), appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil, chatAgents: chatAgents)
                 if let tunnel = remoteTunnel {
                     host.authorizeRemoteDevice = { [weak tunnel] port, device in
                         guard let tunnel else { throw NocturneError.disconnected }
                         try tunnel.authorize(sourcePort: port, deviceID: device)
                     }
                 }
-                if headlessDisplayEnabled {
+                if configuration.screenSharing && configuration.headlessDisplay {
                     host.displayCommand = { [weak self] packet, connection, name, completion in
                         Task { @MainActor in
                             guard let self, self.generation == epoch, self.running else { completion(packet.reply(error: NocturneError.disconnected.localizedDescription)); return }
+                            guard self.engine.isReady else { completion(packet.reply(error: "Screen sharing is starting. Try again in a moment.")); return }
                             do { completion(try await self.displays.handle(packet, connection: connection, name: name)) }
                             catch { completion(packet.reply(error: error.localizedDescription)) }
                         }
@@ -153,17 +165,19 @@ final class ServerModel: ObservableObject {
                         Task { @MainActor in guard self?.generation == epoch else { return }; self?.displays.disconnected(connection) }
                     }
                 }
-                host.pairStream = { [weak self] pin, name, address, deviceID, completion in
-                    Task { @MainActor in
-                        guard let self, self.running, self.generation == epoch, self.removingDevice != deviceID, !self.resettingPairing,
-                              self.pairingTasks[deviceID] == nil else { completion(NocturneError.disconnected); return }
-                        let task = Task { try await self.engine.pairAuthorizedClient(pin: pin, name: name, address: address) }
-                        self.pairingTasks[deviceID] = task
-                        do { try await task.value; completion(nil) } catch { completion(error) }
-                        guard self.generation == epoch else { return }
-                        self.pairingTasks.removeValue(forKey: deviceID)
-                        await self.refreshDevices()
+                if configuration.screenSharing {
+                    host.pairStream = { [weak self] pin, name, address, deviceID, completion in
+                        Task { @MainActor in
+                            guard let self, self.running, self.engine.isReady, self.generation == epoch, self.removingDevice != deviceID, !self.resettingPairing,
+                                  self.pairingTasks[deviceID] == nil else { completion(NocturneError.disconnected); return }
+                            let task = Task { try await self.engine.pairAuthorizedClient(pin: pin, name: name, address: address) }
+                            self.pairingTasks[deviceID] = task
+                            do { try await task.value; completion(nil) } catch { completion(error) }
+                            guard self.generation == epoch else { return }
+                            self.pairingTasks.removeValue(forKey: deviceID)
+                            await self.refreshDevices()
 
+                        }
                     }
                 }
                 host.onDevices = { [weak self] connections in
@@ -174,17 +188,19 @@ final class ServerModel: ObservableObject {
                     guard let self, self.generation == epoch else { return }
                     self.connections = count
                     if status == "Ready" || status == "Connected" {
-                        self.running = true; self.starting = false; self.status = CGPreflightScreenCaptureAccess() ? "Ready" : "Allow screen capture"
+                        self.running = true; self.starting = false; self.status = "Ready"
+                        self.maintainScreenSharing()
                         if self.pairWhenReady { self.pairWhenReady = false; self.pair() }
                     } else if status != "Stopped" {
                         self.stop(); self.error = status
                     }
                 }
-                try host.start(secret: key); server = host
+                try host.start(secret: key, port: port); server = host
                 pollTask = Task { [weak self] in
                     while !Task.isCancelled {
                         guard let self, self.generation == epoch else { return }
                         self.displays.expire()
+                        self.maintainScreenSharing()
                         await self.refreshDevices()
                         do { try await Task.sleep(nanoseconds: 1_500_000_000) } catch { return }
                     }
@@ -197,7 +213,10 @@ final class ServerModel: ObservableObject {
     }
     func stop() {
         appWindows.stop()
+        desktop.stop()
         generation = UUID(); startTask?.cancel(); startTask = nil; pollTask?.cancel(); pollTask = nil
+        screenSharingTask?.cancel(); screenSharingTask = nil; screenSharingStatus = "Stopped"
+        screenSharingError = nil
         deviceRevision = UUID()
         pairingTasks.values.forEach { $0.cancel() }; pairingTasks.removeAll()
         remoteTunnel?.stop(); remoteTunnel = nil
@@ -208,11 +227,20 @@ final class ServerModel: ObservableObject {
         invitation = nil; showPairing = false; pairWhenReady = false
     }
     func pair() {
+        guard appliedSettings.hasEnabledServices else {
+            error = "Enable a feature in Sharing and apply your changes before pairing a device."
+            return
+        }
         guard running else { pairWhenReady = true; start(); return }
         do {
             guard let secret, let deviceStore else { return }
-            let remote = try remoteTunnel.map { try RemoteAccess(brokerURL: brokerURL, endpointID: $0.endpointID) }
-            invitation = try PairingInvitation(host: address, name: name, secret: secret, enrollmentToken: deviceStore.createInvitation(), remoteAccess: remote); showPairing = true
+            let remote = try remoteTunnel.map { try RemoteAccess(brokerURL: appliedSettings.brokerURL, endpointID: $0.endpointID) }
+            // Resolve on the client's network instead of asking users to choose an
+            // interface or embedding an IP that becomes stale when networks change.
+            guard let hostname = SCDynamicStoreCopyLocalHostName(nil) as String?, !hostname.isEmpty else {
+                throw NocturneError.remote("Your Mac’s network name is unavailable. Check your network connection and try again.")
+            }
+            invitation = try PairingInvitation(host: hostname + ".local", port: port, name: name, secret: secret, enrollmentToken: deviceStore.createInvitation(), remoteAccess: remote); showPairing = true
         } catch { self.error = error.localizedDescription }
     }
     func resetPairing() {
@@ -223,7 +251,8 @@ final class ServerModel: ObservableObject {
             do {
                 // Revoke both video certificates and workspace keys as one operation.
                 deviceRevision = UUID()
-                try await engine.resetPairing()
+                if engine.isRunning { try await engine.resetPairing() }
+                else { try engine.resetSavedPairing() }
                 try deviceStore?.reset(); streamDevices = []
                 // Close every transport before changing either stored credential.
                 stop()
@@ -239,7 +268,7 @@ final class ServerModel: ObservableObject {
         let epoch = generation, revision = deviceRevision
         do {
             let result: [StreamDevice]
-            if running { result = try await engine.pairedDevices() }
+            if engine.isReady { result = try await engine.pairedDevices() }
             else { result = try engine.savedDevices() }
             guard generation == epoch, deviceRevision == revision else { return }
             streamDevices = result; devicesError = nil; publishDevices()
@@ -265,10 +294,11 @@ final class ServerModel: ObservableObject {
                 // Let any in-flight PIN approval settle, then revoke every certificate for this exact identity.
                 if let pending = pairingTasks[device.id] { _ = try? await pending.value }
                 guard generation == epoch else { throw NocturneError.disconnected }
-                let current = try await engine.pairedDevices()
+                let current = try engine.isRunning ? await engine.pairedDevices() : engine.savedDevices()
                 for stream in current where stream.fingerprint == device.id {
                     guard generation == epoch else { throw NocturneError.disconnected }
-                    try await engine.removeDevice(stream.id)
+                    if engine.isRunning { try await engine.removeDevice(stream.id) }
+                    else { try engine.removeSavedDevice(stream.id) }
                 }
                 guard generation == epoch else { throw NocturneError.disconnected }
                 let remaining = current.filter { $0.fingerprint != device.id }
@@ -294,22 +324,15 @@ final class ServerModel: ObservableObject {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
         panel.message = "Only this folder will be available for file transfers."
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let restart = active; stop(); sharedFolder = url
-        UserDefaults.standard.set(url.path, forKey: "sharedFolder"); if restart { start() }
+        settings.sharedFolder = url
     }
     func revealFolder() {
-        do { try FileManager.default.createDirectory(at: sharedFolder, withIntermediateDirectories: true); NSWorkspace.shared.open(sharedFolder) }
+        do { try FileManager.default.createDirectory(at: settings.sharedFolder, withIntermediateDirectories: true); NSWorkspace.shared.open(settings.sharedFolder) }
         catch { self.error = error.localizedDescription }
     }
     func revealLog() { NSWorkspace.shared.activateFileViewerSelecting([engine.logURL]) }
     func openPrivacy(_ pane: String) {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_" + pane) { NSWorkspace.shared.open(url) }
-    }
-    private func updatePermissions() {
-        UserDefaults.standard.set(terminalEnabled, forKey: "allowTerminal"); UserDefaults.standard.set(filesEnabled, forKey: "allowFiles")
-        UserDefaults.standard.set(microphoneEnabled, forKey: "allowMicrophone")
-        UserDefaults.standard.set(chatsEnabled, forKey: "allowChats")
-        server?.updatePermissions(.init(terminal: terminalEnabled, files: filesEnabled, microphone: microphoneEnabled, chats: chatsEnabled))
     }
     func saveChatAgent(_ agent: ChatAgentConfiguration) throws {
         try agent.validate()
@@ -324,8 +347,71 @@ final class ServerModel: ObservableObject {
     }
     private func persistChatAgents(_ agents: [ChatAgentConfiguration]) throws {
         let data = try JSONEncoder().encode(agents)
-        UserDefaults.standard.set(data, forKey: "chatAgents"); chatAgents = agents
+        defaults.set(data, forKey: "chatAgents"); chatAgents = agents
         server?.updateChatAgents(agents)
+    }
+    func startEnabledServices() { if appliedSettings.hasEnabledServices { start() } }
+    func refreshLoginItem() {
+        let status = loginItem.status()
+        loginApprovalRequired = status == .requiresApproval
+        let enabled = status == .enabled || loginApprovalRequired
+        if settings.launchAtLogin == appliedSettings.launchAtLogin { settings.launchAtLogin = enabled }
+        appliedSettings.launchAtLogin = enabled
+    }
+    func openLoginItems() { SMAppService.openSystemSettingsLoginItems() }
+    func discardSettings() { settings = appliedSettings }
+    func applySettings() {
+        guard hasSettingsChanges, !changingDevices else { return }
+        do {
+            let configuration = try settings.validated()
+            if configuration.launchAtLogin != appliedSettings.launchAtLogin {
+                try loginItem.setEnabled(configuration.launchAtLogin)
+            }
+            let restart = active
+            configuration.save(defaults: defaults)
+            appliedSettings = configuration; settings = configuration
+            refreshLoginItem()
+            if restart { stop() }
+            updateDisplayStatus()
+            startEnabledServices()
+        } catch { self.error = error.localizedDescription }
+    }
+    private func maintainScreenSharing() {
+        guard running, appliedSettings.screenSharing, screenSharingTask == nil, !engine.isRunning else { return }
+        let epoch = generation, configuration = appliedSettings
+        screenSharingTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.generation == epoch { self.screenSharingTask = nil } }
+            while self.generation == epoch, !Task.isCancelled {
+                do {
+                    self.screenSharingStatus = "Starting…"
+                    var captureDisplay = configuration.display.isEmpty ? String(CGMainDisplayID()) : configuration.display
+                    if configuration.headlessDisplay {
+                        self.displays.disablePhysicalDisplays = configuration.disablePhysicalDisplays
+                        captureDisplay = String(try await self.displays.start())
+                    }
+                    try Task.checkCancellation()
+                    guard self.generation == epoch else { return }
+                    try await self.engine.start(executable: self.engineExecutable, name: self.name, display: captureDisplay)
+                    try Task.checkCancellation()
+                    guard self.generation == epoch else { return }
+                    if configuration.headlessDisplay {
+                        self.displays.restore()
+                        if let failure = self.displays.lastError { throw NocturneError.remote(failure) }
+                    }
+                    self.screenSharingStatus = CGPreflightScreenCaptureAccess() ? "Ready" : "Allow screen capture"
+                    self.screenSharingError = nil
+                    await self.refreshDevices()
+                    return
+                } catch {
+                    guard self.generation == epoch, !Task.isCancelled else { return }
+                    self.engine.stop(); self.displays.stop()
+                    self.screenSharingStatus = "Retrying…"
+                    self.screenSharingError = error.localizedDescription
+                }
+                do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+            }
+        }
     }
     func installMicrophone() {
         guard !installingMicrophone else { return }
@@ -338,17 +424,5 @@ final class ServerModel: ObservableObject {
                 microphoneInstallationMessage = "Installed. Restart your Mac before using Nocturne Microphone."
             } catch { self.error = error.localizedDescription }
         }
-    }
-    private static func localAddresses() -> [String] {
-        var result: [String] = []; var first: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&first) == 0 else { return result }; defer { freeifaddrs(first) }
-        var current = first
-        while let entry = current {
-            defer { current = entry.pointee.ifa_next }
-            guard let address = entry.pointee.ifa_addr, address.pointee.sa_family == UInt8(AF_INET), entry.pointee.ifa_flags & UInt32(IFF_LOOPBACK) == 0, entry.pointee.ifa_flags & UInt32(IFF_UP) != 0 else { continue }
-            var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            if getnameinfo(address, socklen_t(address.pointee.sa_len), &buffer, socklen_t(buffer.count), nil, 0, NI_NUMERICHOST) == 0 { result.append(String(cString: buffer)) }
-        }
-        return Array(Set(result)).sorted()
     }
 }

@@ -5,11 +5,13 @@ contents="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH"
 identity="${EXPANDED_CODE_SIGN_IDENTITY:--}"
 [ -n "$identity" ] || identity=-
 [ -x "$runtime/Helpers/nocturne-stream-host" ] || { echo 'Run scripts/bootstrap.sh to prepare the server runtime.' >&2; exit 1; }
+bash "$SRCROOT/scripts/build-streaming-engine.sh"
+engine="$SRCROOT/.build/SunshinePerformanceBuild/Sunshine.app/Contents/MacOS/Sunshine"
 mkdir -p "$contents/MacOS" "$contents/Frameworks" "$contents/Resources"
 # Copy runtime components directly into the Nocturne bundle. There is no nested .app or GUI launcher.
 # macOS resolves Bundle.main for auxiliary executables inside Contents/MacOS.
 # The engine's native permission checks need that app identity even with its tray disabled.
-ditto "$runtime/Helpers/nocturne-stream-host" "$contents/MacOS/nocturne-stream-host"
+ditto "$engine" "$contents/MacOS/nocturne-stream-host"
 ditto "$runtime/Frameworks" "$contents/Frameworks"
 ditto "$runtime/Resources/assets" "$contents/Resources/assets"
 for component in "$contents/Frameworks/"*; do
