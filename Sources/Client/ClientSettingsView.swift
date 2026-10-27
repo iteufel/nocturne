@@ -25,7 +25,7 @@ struct ClientSettingsView: View {
                 Toggle("Fill entire screen", isOn: Binding(get: { model.preferences.fillEntireScreen }, set: model.setFillEntireScreen))
                     .accessibilityIdentifier("streamFillEntireScreen")
             } header: { Text("Stream display") } footer: {
-                Text("Off fits the stream inside the safe area, keeping content clear of the camera and rounded corners. On fills the screen, cropping edges when needed to preserve proportions. Swipe inward from the right edge while streaming to open Controls.")
+                Text("Off fits the stream inside the safe area, keeping content clear of the camera and rounded corners. On fills the screen, cropping edges when needed to preserve proportions. Swipe inward from the left edge while streaming to open Controls, or from the right edge to show the keyboard.")
             }.listRowBackground(MoonStyle.surface)
             Section("Picture & sound") {
                 Picker("Resolution", selection: $model.preferences.resolution) { ForEach(["Match device", "720p", "1080p", "1440p", "4K"], id: \.self) { Text($0) } }

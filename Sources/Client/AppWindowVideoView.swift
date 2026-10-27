@@ -40,7 +40,10 @@ final class AppWindowVideoView: UIView, UIKeyInput, UIGestureRecognizerDelegate 
     private var pointerDown: PointerPress?
     private let hiddenKeyboard = UIView(frame: .zero)
     var keyboardVisible = false {
-        didSet { if oldValue != keyboardVisible { becomeFirstResponder(); reloadInputViews() } }
+        didSet {
+            if oldValue != keyboardVisible { becomeFirstResponder(); reloadInputViews() }
+            else if keyboardVisible { becomeFirstResponder() }
+        }
     }
     override var inputView: UIView? { keyboardVisible ? nil : hiddenKeyboard }
     override var canBecomeFirstResponder: Bool { true }

@@ -16,6 +16,7 @@ static inline BOOL NocturneUsesRelativeMouse(UIView *view) {
 
 @interface StreamView (NocturneInput)
 - (void)nocturneToggleKeyboard;
+- (void)nocturneSetKeyboardVisible:(BOOL)visible;
 @property (nonatomic) BOOL nocturneFillEntireScreen;
 - (CGSize)getVideoAreaSize;
 - (void)nocturneSetAbsoluteTouchMode:(BOOL)absolute controllerSupport:(ControllerSupport *)support;
@@ -35,6 +36,7 @@ static inline BOOL NocturneUsesRelativeMouse(UIView *view) {
 
 @interface StreamFrameViewController (NocturneInput)
 - (void)nocturneToggleKeyboard;
+- (void)nocturneSetKeyboardVisible:(BOOL)visible;
 - (void)nocturneSetAbsoluteTouchMode:(BOOL)absolute;
 - (void)nocturneReleaseInput;
 - (void)nocturneFocusInput;

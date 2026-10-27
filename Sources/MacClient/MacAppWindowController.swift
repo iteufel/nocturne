@@ -9,11 +9,11 @@ final class MacRemoteAppWindow: NSWindow {
     override func performClose(_ sender: Any?) { close() }
 }
 
-/// The captured Mac window supplies its own title bar. Local chrome consists
-/// only of a small handle above the video; it never forwards a drag to the host.
+/// The native title bar moves the viewer and native window edges resize it.
+/// Both remain outside the captured app's input surface.
 @MainActor
 final class MacAppWindowController: NSWindowController, NSWindowDelegate {
-    static let handleHeight: CGFloat = 14
+    static let borderWidth: CGFloat = 6
     let stream: MacDesktopSession
     private var observation: AnyCancellable?
     private var onClose: (() -> Void)?
@@ -22,12 +22,14 @@ final class MacAppWindowController: NSWindowController, NSWindowDelegate {
 
     init(stream: MacDesktopSession, onClose: @escaping () -> Void) {
         self.stream = stream; self.onClose = onClose
-        let window = MacRemoteAppWindow(contentRect: .init(x: 0, y: 0, width: 800, height: 614),
-            styleMask: [.borderless, .resizable, .closable, .miniaturizable], backing: .buffered, defer: false)
+        let window = MacRemoteAppWindow(contentRect: .init(origin: .zero, size: Self.contentSize(for: .init(width: 800, height: 600))),
+            styleMask: [.titled, .resizable, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = stream.title
-        window.isOpaque = false; window.backgroundColor = .clear; window.hasShadow = false
+        window.isMovable = true; window.titleVisibility = .visible
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.isOpaque = true; window.backgroundColor = .windowBackgroundColor; window.hasShadow = true
         window.isReleasedWhenClosed = false
-        window.contentMinSize = .init(width: 240, height: 160 + Self.handleHeight)
+        window.contentMinSize = Self.contentSize(for: .init(width: 240, height: 160))
         window.collectionBehavior = [.fullScreenPrimary]
         super.init(window: window)
         window.delegate = self
@@ -36,7 +38,7 @@ final class MacAppWindowController: NSWindowController, NSWindowDelegate {
                                 ("Toggle full screen", #selector(fullScreen)), ("Close stream", #selector(closeStream))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: ""); item.target = self; menu.addItem(item)
         }
-        window.contentView = NSHostingView(rootView: MacAppWindowContent(stream: stream, menu: menu))
+        window.contentView = MacAppWindowContentView(stream: stream, menu: menu)
         fitToApp(); window.center()
         observation = stream.$appWindow.sink { [weak self] window in self?.applyHostGeometry(window) }
     }
@@ -49,25 +51,48 @@ final class MacAppWindowController: NSWindowController, NSWindowDelegate {
     }
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
         guard let fixedAspect, fixedAspect > 0 else { return frameSize }
-        return .init(width: frameSize.width, height: frameSize.width / fixedAspect + Self.handleHeight)
+        let content = sender.contentRect(forFrameRect: .init(origin: .zero, size: frameSize)).size
+        var video = Self.videoSize(in: content)
+        let previous = Self.videoSize(in: sender.contentView?.bounds.size ?? content)
+        if abs(video.width - previous.width) >= abs(video.height - previous.height) * fixedAspect {
+            video.height = video.width / fixedAspect
+        } else { video.width = video.height * fixedAspect }
+        return sender.frameRect(forContentRect: .init(origin: .zero, size: Self.contentSize(for: video))).size
+    }
+    func windowDidResize(_ notification: Notification) { window?.contentView?.layoutSubtreeIfNeeded() }
+    func windowDidChangeBackingProperties(_ notification: Notification) {
+        (window?.contentView as? MacAppWindowContentView)?.updateViewport()
     }
     private func applyHostGeometry(_ host: RemoteAppWindow?) {
         guard let host, host != lastHostWindow, host.width > 0, host.height > 0, let window else { return }
         lastHostWindow = host
         fixedAspect = host.isResizable == false ? CGFloat(host.width) / CGFloat(host.height) : nil
-        window.contentMinSize = host.isResizable == false ? .init(width: 100, height: 80 + Self.handleHeight)
-            : .init(width: 240, height: 160 + Self.handleHeight)
+        window.contentMinSize = Self.contentSize(for: host.isResizable == false ? .init(width: 100, height: 80)
+            : .init(width: 240, height: 160))
+        // A reply describes a previous request. Applying its geometry to a
+        // resizable viewer would overwrite a newer drag and send that stale size
+        // back to the host. Only fixed-size apps constrain the local aspect.
+        guard fixedAspect != nil, !window.inLiveResize else { return }
         let actual = CGFloat(host.width) / CGFloat(host.height)
-        let current = window.frame.width / max(1, window.frame.height - Self.handleHeight)
+        let content = window.contentView?.bounds.size ?? .zero
+        let video = Self.videoSize(in: content)
+        let current = video.width / max(1, video.height)
         guard abs(actual - current) > 0.002, !window.styleMask.contains(.fullScreen) else { return }
-        let size = Self.fitting(video: .init(width: host.width, height: host.height), inside: window.frame.size, upscale: true)
+        let size = Self.fitting(video: .init(width: host.width, height: host.height), inside: content, upscale: true)
         window.setContentSize(size)
     }
+    static func videoSize(in content: CGSize) -> CGSize {
+        .init(width: max(0, content.width - 2 * borderWidth), height: max(0, content.height - 2 * borderWidth))
+    }
+    static func contentSize(for video: CGSize) -> CGSize {
+        .init(width: video.width + 2 * borderWidth, height: video.height + 2 * borderWidth)
+    }
     static func fitting(video: CGSize, inside available: CGSize, upscale: Bool = false) -> CGSize {
-        guard video.width.isFinite, video.height.isFinite, video.width > 0, video.height > 0 else { return .init(width: 800, height: 614) }
+        guard video.width.isFinite, video.height.isFinite, video.width > 0, video.height > 0 else { return contentSize(for: .init(width: 800, height: 600)) }
+        let usable = videoSize(in: available)
         let factor = max(0.01, min(upscale ? .greatestFiniteMagnitude : 1,
-            available.width / video.width, max(1, available.height - handleHeight) / video.height))
-        return .init(width: video.width * factor, height: video.height * factor + handleHeight)
+            usable.width / video.width, max(1, usable.height) / video.height))
+        return contentSize(for: .init(width: video.width * factor, height: video.height * factor))
     }
     @objc private func fitToApp() {
         guard let window else { return }
@@ -81,28 +106,47 @@ final class MacAppWindowController: NSWindowController, NSWindowDelegate {
     @objc private func closeStream() { close() }
 }
 
-private struct MacAppWindowContent: View {
+/// AppKit owns the chrome and viewport layout so live window resizing does not
+/// depend on a SwiftUI geometry update arriving before a network reply.
+final class MacAppWindowContentView: NSView {
+    private let stream: MacDesktopSession
+    private let video: NSHostingView<MacAppVideoContent>
+    override var isFlipped: Bool { true }
+    init(stream: MacDesktopSession, menu: NSMenu) {
+        self.stream = stream; video = NSHostingView(rootView: MacAppVideoContent(stream: stream))
+        super.init(frame: .zero)
+        autoresizingMask = [.width, .height]
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        layer?.borderColor = NSColor.separatorColor.cgColor; layer?.borderWidth = 1
+        self.menu = menu
+        addSubview(video)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func layout() {
+        super.layout()
+        let border = MacAppWindowController.borderWidth
+        let size = MacAppWindowController.videoSize(in: bounds.size)
+        video.frame = .init(origin: .init(x: border, y: border), size: size)
+        updateViewport()
+    }
+    func updateViewport() {
+        stream.viewport(MacAppWindowController.videoSize(in: bounds.size), scale: window?.backingScaleFactor ?? 1)
+    }
+}
+
+private struct MacAppVideoContent: View {
     @ObservedObject var stream: MacDesktopSession
-    let menu: NSMenu
-    @Environment(\.displayScale) private var scale
     var body: some View {
-        VStack(spacing: 0) {
-            MacAppHandle(menu: menu).frame(width: 64, height: MacAppWindowController.handleHeight)
-                .frame(maxWidth: .infinity)
-            GeometryReader { geometry in
-                ZStack {
-                    MacAppSurface(surface: stream.surface)
-                    if let error = stream.error {
-                        VStack(spacing: 12) {
-                            Text(error).font(.callout).multilineTextAlignment(.center)
-                            Button("Reconnect") { stream.reconnect() }
-                        }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity).background(.black)
-                    } else if !stream.ready {
-                        ProgressView(stream.status).frame(maxWidth: .infinity, maxHeight: .infinity).background(.black)
-                    }
-                }
-                .onChange(of: geometry.size, initial: true) { _, size in stream.viewport(size, scale: scale) }
-                .onChange(of: scale) { _, value in stream.viewport(geometry.size, scale: value) }
+        ZStack {
+            MacAppSurface(surface: stream.surface)
+            if let error = stream.error {
+                VStack(spacing: 12) {
+                    Text(error).font(.callout).multilineTextAlignment(.center)
+                    Button("Reconnect") { stream.reconnect() }
+                }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity).background(.black)
+            } else if !stream.ready {
+                ProgressView(stream.status).frame(maxWidth: .infinity, maxHeight: .infinity).background(.black)
             }
         }.preferredColorScheme(.dark)
     }
@@ -113,32 +157,4 @@ private struct MacAppSurface: NSViewRepresentable {
     func makeNSView(context: Context) -> MacVideoView { surface }
     func updateNSView(_ view: MacVideoView, context: Context) {}
     static func dismantleNSView(_ view: MacVideoView, coordinator: ()) { view.releaseInput() }
-}
-
-private struct MacAppHandle: NSViewRepresentable {
-    let menu: NSMenu
-    func makeNSView(context: Context) -> MacAppHandleView { let view = MacAppHandleView(); view.menu = menu; return view }
-    func updateNSView(_ view: MacAppHandleView, context: Context) { view.menu = menu }
-}
-
-private final class MacAppHandleView: NSView {
-    override var acceptsFirstResponder: Bool { true }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityLabel("Remote window handle")
-        setAccessibilityHelp("Drag to move this window. Right-click for reconnect, full screen, and close controls.")
-        toolTip = "Drag to move. Right-click for window controls."
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.white.withAlphaComponent(0.65).setFill()
-        NSBezierPath(roundedRect: .init(x: (bounds.width - 32) / 2, y: (bounds.height - 4) / 2, width: 32, height: 4), xRadius: 2, yRadius: 2).fill()
-    }
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
-    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
-    override func accessibilityPerformPress() -> Bool {
-        guard let menu else { return false }
-        menu.popUp(positioning: nil, at: .init(x: 0, y: bounds.maxY), in: self); return true
-    }
 }

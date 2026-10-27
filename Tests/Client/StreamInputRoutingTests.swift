@@ -53,11 +53,54 @@ final class StreamInputRoutingTests: XCTestCase {
     }
     func testControlsGestureDetachesWhenStreamIsRemoved() {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
-        let view = StreamControlsGestureView(open: {})
+        let view = StreamControlsGestureView(open: {}, keyboard: {})
         window.addSubview(view)
         XCTAssertEqual(window.gestureRecognizers?.filter { $0.name == "Nocturne stream controls" }.count, 1)
+        XCTAssertEqual(window.gestureRecognizers?.filter { $0.name == "Nocturne stream keyboard" }.count, 1)
+        let edges = window.gestureRecognizers?.compactMap { ($0 as? StreamEdgeGesture)?.edge }
+        XCTAssertEqual(edges, [.left, .right])
+        view.gestureEnabled = false
+        XCTAssertTrue(window.gestureRecognizers?.compactMap { $0 as? StreamEdgeGesture }.allSatisfy { !$0.isEnabled } == true)
         view.removeFromSuperview()
         XCTAssertFalse(window.gestureRecognizers?.contains { $0.name == "Nocturne stream controls" } ?? false)
+        XCTAssertFalse(window.gestureRecognizers?.contains { $0.name == "Nocturne stream keyboard" } ?? false)
+    }
+    func testEdgeSwipesOpenMenuFromLeftAndShowKeyboardFromRight() throws {
+        for width: CGFloat in [320, 402, 744, 1024, 1366] {
+            let window = UIWindow(frame: .init(x: 0, y: 0, width: width, height: 768))
+            var menus = 0, keyboards = 0
+            let view = StreamControlsGestureView(open: { menus += 1 }, keyboard: { keyboards += 1 })
+            window.addSubview(view)
+            for edge in [UIRectEdge.left, .right] {
+                let gesture = TestStreamEdgeGesture(edge: edge, target: nil, action: nil)
+                window.addGestureRecognizer(gesture)
+                let touch = TestStreamEdgeTouch()
+                for x in [CGFloat(5), width / 2, width - 5] {
+                    touch.point = .init(x: x, y: 200)
+                    XCTAssertEqual(view.gestureRecognizer(gesture, shouldReceive: touch), edge == .left ? x == 5 : x == width - 5)
+                }
+                touch.inputType = .indirectPointer
+                XCTAssertFalse(view.gestureRecognizer(gesture, shouldReceive: touch), "Hardware pointer input must remain with the remote app")
+                let direction: CGFloat = edge == .left ? 1 : -1
+                gesture.motion = .init(x: 100 * direction, y: 5)
+                XCTAssertTrue(view.gestureRecognizerShouldBegin(gesture))
+                gesture.motion = .init(x: -100 * direction, y: 5)
+                XCTAssertFalse(view.gestureRecognizerShouldBegin(gesture))
+                gesture.motion = .init(x: 5 * direction, y: 100)
+                XCTAssertFalse(view.gestureRecognizerShouldBegin(gesture), "Vertical scrolling must stay in the stream")
+                for state in [UIGestureRecognizer.State.began, .cancelled, .failed] {
+                    gesture.inputState = state; gesture.motion = .init(x: 50 * direction, y: 0)
+                    _ = view.perform(NSSelectorFromString("reveal:"), with: gesture)
+                }
+                gesture.inputState = .ended; gesture.motion = .init(x: 10 * direction, y: 0)
+                _ = view.perform(NSSelectorFromString("reveal:"), with: gesture)
+                XCTAssertEqual(menus, edge == .left ? 0 : 1); XCTAssertEqual(keyboards, 0)
+                gesture.motion = .init(x: 50 * direction, y: 0)
+                _ = view.perform(NSSelectorFromString("reveal:"), with: gesture)
+            }
+            XCTAssertEqual(menus, 1); XCTAssertEqual(keyboards, 1)
+            view.removeFromSuperview()
+        }
     }
     func testInputModeUpdatesLiveSessionAndPersistsWithoutReplacingController() throws {
         let defaults = UserDefaults.standard
@@ -108,12 +151,7 @@ final class StreamInputRoutingTests: XCTestCase {
             XCTAssertEqual(videoFrame.minX, safeFrame.minX)
             XCTAssertEqual(videoFrame.maxX, safeFrame.maxX)
             XCTAssertEqual(videoFrame.maxY, safeFrame.maxY)
-            XCTAssertGreaterThan(videoFrame.minY, safeFrame.minY,
-                "Fitted video must reserve space for the persistent stream controls")
-            let controlsPoint = CGPoint(x: safeFrame.minX + 24, y: (safeFrame.minY + videoFrame.minY) / 2)
-            let controlsTarget = try XCTUnwrap(window.hitTest(controlsPoint, with: nil))
-            XCTAssertFalse(controlsTarget === video.view || controlsTarget.isDescendant(of: video.view),
-                "A tap on the persistent controls must not reach the video surface")
+            XCTAssertEqual(videoFrame.minY, safeFrame.minY, "No toolbar may take space from the stream")
         }
         for point in [CGPoint(x: 512, y: 384), CGPoint(x: 200, y: 150), CGPoint(x: 900, y: 650)] {
             let target = try XCTUnwrap(window.hitTest(point, with: nil))
@@ -121,4 +159,19 @@ final class StreamInputRoutingTests: XCTestCase {
                 "A tap at \(point) must reach the video surface, but hit \(type(of: target))")
         }
     }
+}
+
+private final class TestStreamEdgeTouch: UITouch {
+    var point = CGPoint.zero
+    var inputType: UITouch.TouchType = .direct
+    override var type: UITouch.TouchType { inputType }
+    override func location(in view: UIView?) -> CGPoint { point }
+}
+
+private final class TestStreamEdgeGesture: StreamEdgeGesture {
+    var motion = CGPoint.zero
+    var inputState: UIGestureRecognizer.State = .possible
+    override var state: UIGestureRecognizer.State { get { inputState } set { inputState = newValue } }
+    override func velocity(in view: UIView?) -> CGPoint { motion }
+    override func translation(in view: UIView?) -> CGPoint { motion }
 }

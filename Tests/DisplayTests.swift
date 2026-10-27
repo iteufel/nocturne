@@ -24,6 +24,41 @@ private final class RecordingDisplayDriver: StreamingDisplayDriver {
     func stop() throws { stops += 1 }
 }
 
+private final class RecordingDisplayChannel: DisplayControlChannel {
+    let displayID: UInt32
+    var isRunning = true
+    var commands: [String] = []
+    var disabled: [Bool] = []
+    var stops = 0
+    var completePendingOnStop = true
+    var holdRestore = false
+    var failure: NocturneError?
+    var onRestore: (() -> Void)?
+    var restoration: ((Result<UInt32?, Error>) -> Void)?
+    init(displayID: UInt32) { self.displayID = displayID }
+    func send(_ command: DisplayCommand, timeout: TimeInterval, completion: @escaping (Result<UInt32?, Error>) -> Void) {
+        commands.append(command.operation)
+        disabled.append(command.disable)
+        if let failure { completion(.failure(failure)); return }
+        if command.operation == "restore", holdRestore {
+            restoration = completion
+            onRestore?()
+            Task { @MainActor in
+                do { try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)) } catch { return }
+                let callback = self.restoration; self.restoration = nil
+                callback?(.failure(NocturneError.timeout))
+            }
+        }
+        else { completion(.success(command.operation == "restore" ? nil : displayID)) }
+    }
+    func stop() {
+        stops += 1
+        guard completePendingOnStop else { return }
+        let completion = restoration; restoration = nil
+        completion?(.failure(NocturneError.disconnected))
+    }
+}
+
 @MainActor
 private final class FakeVirtualDisplay: StreamingVirtualDisplay {
     let displayID: UInt32
@@ -175,6 +210,198 @@ final class DisplayTests: XCTestCase {
         XCTAssertEqual(fixed.display, landscape)
         XCTAssertNil(try StreamDisplayPreparation.request(size: landscape, sessionID: id,
             matchesDevice: false, workspaceLinked: false, capabilities: []))
+    }
+    func testDisplayWorkerRestoreTimeoutAllowsReconnectWithoutRestart() async throws {
+        let stalled = RecordingDisplayChannel(displayID: 101)
+        stalled.holdRestore = true
+        let replacement = RecordingDisplayChannel(displayID: 202)
+        var launches = 0, targets: [UInt32] = []
+        let driver = ProcessStreamingDisplayDriver(makeChannel: {
+            launches += 1; return launches == 1 ? stalled : replacement
+        }, restoreTimeout: 0.02)
+        let manager = DisplaySessionManager(driver: driver, timeout: 20) { targets.append($0) }
+        _ = try await manager.start()
+        let connection = UUID()
+        _ = try await manager.handle(request(id: UUID().uuidString, size: portrait), connection: connection, name: "iPhone")
+        manager.disconnected(connection)
+        XCTAssertNil(manager.lastError, "A delayed display restore must not require a local server restart")
+        let reply = try await manager.handle(request(id: UUID().uuidString, size: landscape), connection: UUID(), name: "iPhone")
+        XCTAssertEqual(reply.display, landscape)
+        XCTAssertEqual(targets, [101, 202], "Reconnect must prepare the replacement worker's exact framebuffer")
+        XCTAssertEqual(launches, 2)
+        XCTAssertEqual(stalled.stops, 1)
+        manager.stop()
+    }
+    func testDelayedRestoreKeepsMainActorResponsiveAndReusesHealthyWorker() async throws {
+        let channel = RecordingDisplayChannel(displayID: 101)
+        channel.holdRestore = true
+        let restoring = expectation(description: "Restore is pending on worker")
+        channel.onRestore = { restoring.fulfill() }
+        var launches = 0
+        let driver = ProcessStreamingDisplayDriver(makeChannel: { launches += 1; return channel }, restoreTimeout: 2)
+        _ = try await driver.start()
+        try driver.restore()
+        await fulfillment(of: [restoring], timeout: 1)
+        // This task can only run if restore has yielded the main actor.
+        XCTAssertEqual(channel.stops, 0)
+        XCTAssertNotNil(channel.restoration)
+        let reconnecting = expectation(description: "Reconnect waiting for restore")
+        let reconnect = Task { reconnecting.fulfill(); return try await driver.apply(portrait, disablePhysicalDisplays: false) }
+        await fulfillment(of: [reconnecting], timeout: 1)
+        XCTAssertEqual(channel.commands, ["start", "restore"], "Apply must wait for restoration to finish")
+        let callback = channel.restoration; channel.restoration = nil
+        callback?(.success(nil))
+        let target = try await reconnect.value
+        XCTAssertEqual(target, 101)
+        XCTAssertEqual(launches, 1)
+        try driver.stop()
+    }
+    func testWorkerFailureRecoversOnceAndKeepsPhysicalDisplaysSafeDuringRecovery() async throws {
+        for failure in [NocturneError.disconnected, .timeout, .invalidFrame] {
+            let failed = RecordingDisplayChannel(displayID: 101)
+            let replacement = RecordingDisplayChannel(displayID: 202)
+            var launches = 0
+            let driver = ProcessStreamingDisplayDriver(makeChannel: {
+                launches += 1; return launches == 1 ? failed : replacement
+            })
+            _ = try await driver.start()
+            failed.failure = failure
+            let target = try await driver.apply(portrait, disablePhysicalDisplays: true)
+            XCTAssertEqual(target, 202)
+            XCTAssertEqual(launches, 2)
+            XCTAssertEqual(failed.stops, 1)
+            XCTAssertEqual(replacement.disabled, [false], "The old worker still owns physical-display recovery")
+            failed.isRunning = false
+            _ = try await driver.apply(landscape, disablePhysicalDisplays: true)
+            XCTAssertEqual(replacement.disabled, [false, true])
+            try driver.stop()
+        }
+    }
+    func testRepeatedWorkerFailureIsBoundedAndNextRequestCanRecover() async throws {
+        var channels: [RecordingDisplayChannel] = []
+        let driver = ProcessStreamingDisplayDriver(makeChannel: {
+            let channel = RecordingDisplayChannel(displayID: UInt32(100 + channels.count))
+            if channels.count < 2 { channel.failure = .disconnected }
+            channels.append(channel); return channel
+        })
+        do { _ = try await driver.start(); XCTFail("Accepted a failed worker") }
+        catch { XCTAssertEqual(error as? NocturneError, .disconnected) }
+        XCTAssertEqual(channels.count, 2, "A request must not enter an endless worker-restart loop")
+        let target = try await driver.apply(portrait, disablePhysicalDisplays: false)
+        XCTAssertEqual(target, 102)
+        XCTAssertEqual(channels.count, 3)
+        try driver.stop()
+    }
+    func testNativeDisplayErrorIsNotRetriedAsWorkerFailure() async throws {
+        let channel = RecordingDisplayChannel(displayID: 101)
+        let failure = NocturneError.remote("Display configuration failed")
+        channel.failure = failure
+        var launches = 0
+        let driver = ProcessStreamingDisplayDriver(makeChannel: { launches += 1; return channel })
+        do { _ = try await driver.start(); XCTFail("Ignored the native display error") }
+        catch { XCTAssertEqual(error as? NocturneError, failure) }
+        XCTAssertEqual(launches, 1)
+        XCTAssertEqual(channel.stops, 0)
+        try driver.stop()
+    }
+    func testStopDuringRestorationCannotResurrectDisplayWorker() async throws {
+        let channel = RecordingDisplayChannel(displayID: 101)
+        channel.holdRestore = true
+        let restoring = expectation(description: "Restore started")
+        channel.onRestore = { restoring.fulfill() }
+        var launches = 0
+        let driver = ProcessStreamingDisplayDriver(makeChannel: { launches += 1; return channel })
+        _ = try await driver.start()
+        try driver.restore()
+        await fulfillment(of: [restoring], timeout: 1)
+        let reconnecting = expectation(description: "Reconnect waiting for restore")
+        let reconnect = Task { reconnecting.fulfill(); return try await driver.apply(portrait, disablePhysicalDisplays: false) }
+        await fulfillment(of: [reconnecting], timeout: 1)
+        try driver.stop()
+        do { _ = try await reconnect.value; XCTFail("Stream survived server stop") }
+        catch { XCTAssertEqual(error as? NocturneError, .disconnected) }
+        XCTAssertEqual(launches, 1)
+        XCTAssertEqual(channel.stops, 1)
+        XCTAssertFalse(channel.commands.contains("apply"))
+    }
+    func testOldRestoreCompletionCannotClearNewWorkersRestoration() async throws {
+        let old = RecordingDisplayChannel(displayID: 101), current = RecordingDisplayChannel(displayID: 202)
+        old.holdRestore = true; old.completePendingOnStop = false
+        current.holdRestore = true
+        let oldRestoring = expectation(description: "Old restore pending")
+        let currentRestoring = expectation(description: "Current restore pending")
+        old.onRestore = { oldRestoring.fulfill() }
+        current.onRestore = { currentRestoring.fulfill() }
+        var launches = 0
+        let driver = ProcessStreamingDisplayDriver(makeChannel: {
+            launches += 1; return launches == 1 ? old : current
+        })
+        _ = try await driver.start()
+        try driver.restore()
+        await fulfillment(of: [oldRestoring], timeout: 1)
+        try driver.stop()
+        _ = try await driver.start()
+        try driver.restore()
+        await fulfillment(of: [currentRestoring], timeout: 1)
+        let oldCallback = old.restoration; old.restoration = nil
+        oldCallback?(.failure(NocturneError.disconnected))
+        // Drain the old continuation before admitting a new request.
+        await Task.yield()
+        let reconnecting = expectation(description: "Reconnect waiting for current restore")
+        let reconnect = Task { reconnecting.fulfill(); return try await driver.apply(portrait, disablePhysicalDisplays: false) }
+        await fulfillment(of: [reconnecting], timeout: 1)
+        XCTAssertEqual(current.commands, ["start", "restore"], "A late old reply must not let apply overtake the current restore")
+        let callback = current.restoration; current.restoration = nil
+        callback?(.success(nil))
+        let target = try await reconnect.value
+        XCTAssertEqual(target, 202)
+        XCTAssertEqual(current.stops, 0)
+        try driver.stop()
+    }
+    func testRestoreFailureAllowsReconnectWithoutRestart() async throws {
+        let failed = RecordingDisplayChannel(displayID: 101), replacement = RecordingDisplayChannel(displayID: 202)
+        var launches = 0
+        let driver = ProcessStreamingDisplayDriver(makeChannel: {
+            launches += 1; return launches == 1 ? failed : replacement
+        })
+        _ = try await driver.start()
+        failed.failure = .remote("The monitor has not woken up yet")
+        try driver.restore()
+        let target = try await driver.apply(portrait, disablePhysicalDisplays: true)
+        XCTAssertEqual(target, 202)
+        XCTAssertEqual(failed.stops, 1)
+        XCTAssertEqual(replacement.disabled, [false])
+        try driver.stop()
+    }
+    func testRealWorkerPipeTimeoutReconnectsWithoutRestart() async throws {
+        // Exercise the real pipes, EOF handling and timeout callbacks without
+        // touching WindowServer or the user's physical display arrangement.
+        let script = #"""
+        while IFS= read -r command; do
+            id=$(printf '%s\n' "$command" | /usr/bin/sed -E 's/.*"id":"([^"]+)".*/\1/')
+            case "$command" in
+                *'"operation":"restore"'*) continue ;;
+            esac
+            printf '{"id":"%s","displayID":303}\n' "$id"
+        done
+        """#
+        var channels: [DisplayProcessChannel] = []
+        let driver = ProcessStreamingDisplayDriver(makeChannel: {
+            let channel = try DisplayProcessChannel(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", script])
+            channels.append(channel); return channel
+        }, restoreTimeout: 0.05)
+        defer { try? driver.stop() }
+        _ = try await driver.start()
+        try driver.restore()
+        let target = try await driver.apply(portrait, disablePhysicalDisplays: false)
+        XCTAssertEqual(target, 303)
+        XCTAssertEqual(channels.count, 2)
+        for _ in 0..<100 {
+            if !channels[0].isRunning { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(channels[0].isRunning, "The recovery worker must receive EOF")
+        XCTAssertTrue(channels[1].isRunning)
     }
     func testDevicePixelsFollowOrientationAndWindowSize() throws {
         XCTAssertEqual(StreamDisplaySize.matching(width: 440, height: 956, scale: 3, frameRate: 60), portrait)
