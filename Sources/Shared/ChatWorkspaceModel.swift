@@ -11,6 +11,7 @@ public final class ChatWorkspaceModel: ObservableObject {
     @Published public private(set) var messages: [ChatMessage] = []
     @Published public private(set) var permissions: [ChatPermission] = []
     @Published public private(set) var loading = false
+    @Published public private(set) var loadingOlder = false
     @Published public private(set) var responding = false
     @Published public private(set) var respondingSince: Date?
     @Published public private(set) var canPrompt = false
@@ -18,6 +19,7 @@ public final class ChatWorkspaceModel: ObservableObject {
     @Published public private(set) var hasOlderMessages = false
     @Published public private(set) var archived = false
     @Published public private(set) var voiceEngaged = false
+    @Published public private(set) var voiceContinuationNotice: String?
     @Published public private(set) var notice: String?
     @Published public var error: String?
     @Published public var draft = ""
@@ -33,6 +35,7 @@ public final class ChatWorkspaceModel: ObservableObject {
     private var voiceObserver: AnyCancellable?
     private var sessionCursor: String?
     private var historyCursor: String?
+    private var historyNeedsReload = false
     private var generation = UUID()
     private var pendingUserID: String?
     private var observers: Set<AnyCancellable> = []
@@ -51,22 +54,51 @@ public final class ChatWorkspaceModel: ObservableObject {
     private func clearConversation() {
         voiceObserver = nil; voiceConnection = nil; voiceEngaged = false
         selected = nil; messages = []; permissions = []; draft = ""; responding = false; respondingSince = nil
-        canPrompt = false; historyCursor = nil; hasOlderMessages = false; pendingUserID = nil
+        loadingOlder = false; canPrompt = false; historyCursor = nil; hasOlderMessages = false; pendingUserID = nil
         options = []; configuring = false; optionsError = nil; latestTurnDiff = nil
+        voiceContinuationNotice = nil; historyNeedsReload = false
     }
-    public func leaveConversation() { if !responding, !loading, !voiceEngaged, !configuring { generation = UUID(); clearConversation(); error = nil } }
+    public func leaveConversation() { if !responding, !loading, !loadingOlder, !voiceEngaged, !configuring { generation = UUID(); clearConversation(); error = nil } }
     public func attachVoice(_ connection: WorkspaceConnection) throws {
-        guard available, supportsVoice, !voiceEngaged, !loading, !responding else { throw NocturneError.remote("Open a recent Codex conversation and finish its reply before starting voice chat.") }
+        guard available, supportsVoice, !voiceEngaged, !loading, !loadingOlder, !responding else { throw NocturneError.remote("Open a recent Codex conversation and finish its reply before starting voice chat.") }
         voiceConnection = connection; voiceEngaged = true
         voiceObserver = connection.chatEvents.sink { [weak self] in self?.receive($0) }
     }
+    public func prepareVoice() async throws {
+        guard connection.capabilities.contains(ChatVoice.preparationCapability) || connection.capabilities.contains(ChatSupervisor.capability) else { return }
+        guard available, let selected, !responding, !loading, !loadingOlder else { throw NocturneError.disconnected }
+        let epoch = generation
+        var packet = Packet(.chatVoicePrepare); packet.chatRequest = ChatRequest(providerID: providerID, sessionID: selected.id)
+        _ = try await connection.request(packet, timeout: 10)
+        guard !Task.isCancelled, generation == epoch, self.selected?.id == selected.id else { throw NocturneError.disconnected }
+        // History cursors belong to the provider process that was just released.
+        historyCursor = nil; historyNeedsReload = true
+    }
+    public func openVoice(on connection: WorkspaceConnection, from sourceID: String) async throws -> ChatSessionInfo {
+        guard voiceConnection === connection, let selected, selected.id == sourceID else { throw NocturneError.disconnected }
+        guard connection.capabilities.contains(ChatVoice.preparationCapability) else { return selected }
+        let epoch = generation
+        var packet = Packet(.chatVoiceOpen); packet.chatRequest = ChatRequest(providerID: providerID, sessionID: sourceID)
+        let reply = try await connection.request(packet, timeout: 60)
+        guard !Task.isCancelled, generation == epoch, voiceConnection === connection, self.selected?.id == sourceID else { throw NocturneError.disconnected }
+        guard let session = reply.chatSession, !session.id.isEmpty else { throw NocturneError.invalidFrame }
+        if session.id != sourceID {
+            guard selected.isSupervisor != true, session.isSupervisor != true else { throw NocturneError.invalidFrame }
+            self.selected = session
+            sessions.removeAll { $0.id == session.id }; sessions.insert(session, at: 0)
+            historyCursor = nil; historyNeedsReload = true; latestTurnDiff = nil
+            voiceContinuationNotice = "Voice continued in a new conversation because the original is open in another client. Its saved history is included."
+        }
+        return session
+    }
+    public func dismissVoiceContinuationNotice() { voiceContinuationNotice = nil }
     public func detachVoice(_ connection: WorkspaceConnection) {
         guard voiceConnection === connection else { return }
         voiceObserver = nil; voiceConnection = nil; voiceEngaged = false; permissions = []; responding = false; respondingSince = nil
     }
     private var available: Bool { connection.state == .connected && connection.capabilities.contains(ChatProtocol.capability) }
     public func refresh() async {
-        guard available, !loading, !responding, !voiceEngaged, !configuring else { return }
+        guard available, !loading, !loadingOlder, !responding, !voiceEngaged, !configuring else { return }
         let epoch = generation; loading = true; error = nil
         defer { if generation == epoch { loading = false } }
         do {
@@ -80,18 +112,18 @@ public final class ChatWorkspaceModel: ObservableObject {
         } catch { if generation == epoch { self.error = error.localizedDescription } }
     }
     public func chooseProvider(_ id: String) async {
-        guard id != providerID, providers.contains(where: { $0.id == id }), !responding, !loading, !voiceEngaged, !configuring else { return }
+        guard id != providerID, providers.contains(where: { $0.id == id }), !responding, !loading, !loadingOlder, !voiceEngaged, !configuring else { return }
         generation = UUID(); providerID = id; sessions = []; sessionCursor = nil; hasMoreSessions = false
         archived = false; notice = nil; error = nil; clearConversation()
         await moreSessions()
     }
     public func showArchived(_ value: Bool) async {
-        guard !responding, !loading, !voiceEngaged, !configuring, archived != value else { return }
+        guard !responding, !loading, !loadingOlder, !voiceEngaged, !configuring, archived != value else { return }
         generation = UUID(); archived = value; sessions = []; sessionCursor = nil; hasMoreSessions = false
         notice = nil; error = nil; clearConversation(); await moreSessions()
     }
     public func moreSessions() async {
-        guard available, provider?.available == true, !loading, !responding, !voiceEngaged, !configuring else { return }
+        guard available, provider?.available == true, !loading, !loadingOlder, !responding, !voiceEngaged, !configuring else { return }
         loading = true; error = nil; let epoch = generation
         defer { if generation == epoch { loading = false } }
         do { try await fetchSessions(epoch: epoch) } catch { if generation == epoch { self.error = error.localizedDescription } }
@@ -107,10 +139,13 @@ public final class ChatWorkspaceModel: ObservableObject {
         sessionCursor = page.nextCursor; hasMoreSessions = page.nextCursor != nil; notice = page.notice
     }
     public func open(_ session: ChatSessionInfo, older: Bool = false) async {
-        guard available, !loading, !responding, !voiceEngaged, !configuring else { return }
+        guard available, !loading, !loadingOlder, !responding, !voiceEngaged, !configuring else { return }
+        if older { guard selected?.id == session.id, hasOlderMessages, historyCursor != nil || historyNeedsReload else { return } }
         if !older { generation = UUID(); clearConversation(); selected = session }
-        let epoch = generation; loading = true; error = nil
-        defer { if generation == epoch { loading = false } }
+        let epoch = generation
+        if older { loadingOlder = true } else { loading = true }
+        error = nil
+        defer { if generation == epoch { if older { loadingOlder = false } else { loading = false } } }
         do {
             var packet = Packet(.chatLoad), request = ChatRequest(providerID: providerID, sessionID: session.id)
             request.cursor = older ? historyCursor : nil; request.archived = archived; packet.chatRequest = request
@@ -119,13 +154,33 @@ public final class ChatWorkspaceModel: ObservableObject {
             guard let page = response.chatHistory, page.session.id == session.id, page.messages.count <= ChatProtocol.pageSize,
                   page.nextCursor == nil || page.nextCursor != request.cursor else { throw NocturneError.invalidFrame }
             selected = page.session
+            if let pending = response.chatPermissions { permissions = pending }
             let existing = Set(messages.map(\.id)); messages.insert(contentsOf: page.messages.filter { !existing.contains($0.id) }, at: 0)
             historyCursor = page.nextCursor; hasOlderMessages = page.nextCursor != nil; canPrompt = page.canPrompt
+            historyNeedsReload = false
             if !older { await refreshOptions() }
         } catch { if generation == epoch { self.error = error.localizedDescription } }
     }
+    public var supportsSupervisor: Bool {
+        connection.capabilities.contains(ChatSupervisor.capability) && provider?.supportsVoice == true
+    }
+    public func openSupervisor() async {
+        guard available, supportsSupervisor, !loading, !loadingOlder, !responding, !voiceEngaged, !configuring else { return }
+        generation = UUID(); let epoch = generation; loading = true; error = nil
+        defer { if generation == epoch { loading = false } }
+        do {
+            var packet = Packet(.chatSupervisor); packet.chatRequest = ChatRequest(providerID: providerID)
+            let response = try await connection.request(packet, timeout: 100)
+            guard generation == epoch else { return }
+            guard let page = response.chatHistory, page.session.isSupervisor == true else { throw NocturneError.invalidFrame }
+            clearConversation(); selected = page.session; messages = page.messages; canPrompt = page.canPrompt; permissions = response.chatPermissions ?? []
+            historyCursor = page.nextCursor; hasOlderMessages = page.nextCursor != nil; archived = false
+            sessions.removeAll { $0.id == page.session.id }; sessions.insert(page.session, at: 0)
+            await refreshOptions()
+        } catch { if generation == epoch { self.error = error.localizedDescription } }
+    }
     public func newConversation(worktree: String? = nil, inheritProject: Bool = false) async {
-        guard available, provider?.available == true, !loading, !responding, !voiceEngaged, !configuring else { return }
+        guard available, provider?.available == true, !loading, !loadingOlder, !responding, !voiceEngaged, !configuring else { return }
         generation = UUID(); let epoch = generation; loading = true; error = nil
         defer { if generation == epoch { loading = false } }
         do {
@@ -150,7 +205,7 @@ public final class ChatWorkspaceModel: ObservableObject {
         } catch { if generation == epoch { optionsError = error.localizedDescription } }
     }
     public func configure(_ option: ChatConfigOption, value: String) async {
-        guard let selected, !loading, !responding, !voiceEngaged, !configuring,
+        guard let selected, !loading, !loadingOlder, !responding, !voiceEngaged, !configuring,
               option.choices.contains(where: { $0.value == value }) else { return }
         configuring = true; let epoch = generation; optionsError = nil
         defer { if generation == epoch { configuring = false } }
@@ -174,7 +229,7 @@ public final class ChatWorkspaceModel: ObservableObject {
         return response
     }
     public func send() async {
-        guard available, let session = selected, canPrompt, !responding, !loading, !voiceEngaged, !configuring else { return }
+        guard available, let session = selected, canPrompt, !responding, !loading, !loadingOlder, !voiceEngaged, !configuring else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         guard text.utf8.count <= ChatProtocol.maximumPromptBytes else { error = "This message is too long. Send less than 64 KB of text."; return }
@@ -193,7 +248,7 @@ public final class ChatWorkspaceModel: ObservableObject {
         }
     }
     public func sendHelper(_ prompt: String) async {
-        guard available, selected != nil, canPrompt, !responding, !loading, !voiceEngaged, !configuring else { return }
+        guard available, selected != nil, canPrompt, !responding, !loading, !loadingOlder, !voiceEngaged, !configuring else { return }
         let previous = draft, epoch = generation
         draft = prompt; await send()
         if generation == epoch { draft = previous }

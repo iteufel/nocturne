@@ -4,6 +4,7 @@ import NocturneKit
 struct ChatTranscript: View {
     @ObservedObject var model: ChatWorkspaceModel
     @State private var following = true
+    @State private var jump = 0
     private var groups: [[ChatMessage]] {
         model.messages.reduce(into: [[ChatMessage]]()) { groups, message in
             if message.role == .tool, groups.last?.last?.role == .tool { groups[groups.count - 1].append(message) }
@@ -11,37 +12,34 @@ struct ChatTranscript: View {
         }
     }
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 28) {
-                    if model.hasOlderMessages, let selected = model.selected {
-                        Button("Load earlier messages") { Task { await model.open(selected, older: true) } }.font(.caption).disabled(model.loading)
-                    }
-                    ForEach(groups, id: \.first!.id) { group in
-                        if group.first?.role == .tool { ChatToolGroup(messages: group) }
-                        else if let message = group.first { ChatTranscriptMessage(message: message, provider: model.provider?.name ?? "Agent") }
-                    }
-                    if model.responding {
-                        TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                            HStack(spacing: 8) {
-                                ProgressView().controlSize(.mini)
-                                Text(model.permissions.isEmpty ? "Working" : "Waiting for your decision")
-                                if let start = model.respondingSince { Text(start, style: .relative).monospacedDigit() }
-                            }.font(.caption).foregroundStyle(ChatStyle.secondary)
-                        }
-                    }
-                    Color.clear.frame(height: 2).id("latest")
-                }.padding(.horizontal, 24).padding(.vertical, 24).frame(maxWidth: 860, alignment: .leading).frame(maxWidth: .infinity)
+        ChatTranscriptScrollView(conversationID: model.selected?.id ?? "", firstMessageID: model.messages.first?.id,
+                                 jump: jump, canLoadEarlier: model.hasOlderMessages && !model.loadingOlder && !model.loading && !model.responding && !model.voiceEngaged,
+                                 loadEarlier: { if let selected = model.selected { Task { await model.open(selected, older: true) } } },
+                                 followingChanged: { if following != $0 { following = $0 } }) {
+            VStack(alignment: .leading, spacing: 24) {
+                ForEach(groups, id: \.first!.id) { group in
+                    if group.first?.role == .tool { ChatToolGroup(messages: group) }
+                    else if let message = group.first { ChatTranscriptMessage(message: message, provider: model.provider?.name ?? "Agent") }
+                }
+                if model.responding {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.mini)
+                        Text(model.permissions.isEmpty ? "Working" : "Waiting for your decision")
+                        if let start = model.respondingSince { Text(start, style: .relative).monospacedDigit() }
+                    }.font(.caption).foregroundStyle(ChatStyle.secondary)
+                }
+            }.padding(24).frame(maxWidth: 860, alignment: .leading).frame(maxWidth: .infinity)
+        }
+        .overlay(alignment: .top) {
+            if model.loadingOlder { ProgressView().controlSize(.small).padding(10).modifier(ChatGlass()).padding(8).accessibilityLabel("Loading earlier messages") }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if !following {
+                Button { jump += 1 } label: {
+                    Image(systemName: "arrow.down").font(.system(size: 17, weight: .semibold))
+                        .frame(width: 44, height: 44).modifier(ChatGlass())
+                }.buttonStyle(.plain).accessibilityLabel("Jump to latest message").accessibilityIdentifier("chatJumpToLatest").padding(16)
             }
-            .scrollDismissesKeyboard(.interactively)
-            .defaultScrollAnchor(.bottom)
-            .onChange(of: model.messages.last?.text) { _, _ in if following { proxy.scrollTo("latest", anchor: .bottom) } }
-            .onChange(of: model.messages.count) { _, _ in if following { proxy.scrollTo("latest", anchor: .bottom) } }
-            .overlay(alignment: .bottomTrailing) {
-                Button { following = true; proxy.scrollTo("latest", anchor: .bottom) } label: { Image(systemName: "arrow.down").padding(12).modifier(ChatGlass()) }
-                    .buttonStyle(.plain).accessibilityLabel("Jump to latest message").padding(12)
-            }
-            .simultaneousGesture(DragGesture().onChanged { _ in following = false })
         }
     }
 }
@@ -72,7 +70,13 @@ private struct ChatTranscriptMessage: View {
     let provider: String
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if message.role == .user {
+            if let summary = ChatMessagePresentation.summary(message) {
+                DisclosureGroup {
+                    Text(message.text).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding(.top, 12)
+                } label: { Label(summary, systemImage: "waveform.path.ecg").font(.subheadline).lineLimit(3) }
+                    .foregroundStyle(ChatStyle.secondary).tint(ChatStyle.secondary).padding(14)
+                    .background(ChatStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+            } else if message.role == .user {
                 HStack {
                     Spacer(minLength: 30)
                     if let summary = PullRequestAgentPrompt.summary(message.text) {

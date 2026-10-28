@@ -6,7 +6,7 @@ struct ChatSettingsActions: View {
     @Binding var darkChat: Bool
     let saveDraft: () -> Void
     let exit: () -> Void
-    private var locked: Bool { chat.loading || chat.responding || chat.voiceEngaged || chat.configuring }
+    private var locked: Bool { chat.loading || chat.loadingOlder || chat.responding || chat.voiceEngaged || chat.configuring }
     var body: some View {
         Section("Provider") {
             ForEach(chat.providers) { provider in
@@ -29,6 +29,7 @@ struct ChatThreadSidebar: View {
     @ObservedObject var chat: ChatWorkspaceModel
     @ObservedObject var project: DeveloperWorkspaceModel
     @ObservedObject var navigation: ChatNavigationState
+    let openSupervisor: () -> Void
     let newThread: () -> Void
     let open: (ChatSessionInfo) -> Void
     let exit: () -> Void
@@ -39,7 +40,7 @@ struct ChatThreadSidebar: View {
     @State private var collapsed: Set<String> = []
     @State private var renaming: ChatSessionInfo?
     @State private var title = ""
-    private var locked: Bool { chat.loading || chat.responding || chat.voiceEngaged || chat.configuring }
+    private var locked: Bool { chat.loading || chat.loadingOlder || chat.responding || chat.voiceEngaged || chat.configuring }
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -51,17 +52,36 @@ struct ChatThreadSidebar: View {
                         .accessibilityLabel("Chat settings").accessibilityIdentifier("chatSettings")
                 }
             }.padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 20)
+            if chat.supportsSupervisor {
+                HStack(spacing: 4) {
+                    Button(action: openSupervisor) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "person.crop.circle.badge.checkmark").font(.title2).foregroundStyle(ChatStyle.purple)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Supervisor").font(.system(size: 17, weight: .semibold))
+                                Text("Manage your agents").font(.caption).foregroundStyle(ChatStyle.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: navigation.supervisorStartsVoice ? "mic.fill" : "pin.fill").font(.caption).foregroundStyle(ChatStyle.secondary)
+                        }.padding(.vertical, 14).padding(.leading, 16).contentShape(Rectangle())
+                    }.buttonStyle(.plain).disabled(locked).accessibilityIdentifier("chatSupervisor")
+                    Menu {
+                        Toggle("Start voice when opened", isOn: $navigation.supervisorStartsVoice)
+                    } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).foregroundStyle(ChatStyle.secondary) }
+                        .accessibilityLabel("Supervisor settings").accessibilityIdentifier("supervisorSettings")
+                }.background(chat.selected?.isSupervisor == true ? ChatStyle.selected : ChatStyle.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
+                    .padding(.horizontal, 8).padding(.bottom, 18)
+            }
             HStack {
                 Text(chat.archived ? "Archived" : chat.provider?.name ?? "Threads").font(.caption).foregroundStyle(ChatStyle.secondary)
                 Spacer()
                 if showsControls { Button("New thread", systemImage: "square.and.pencil", action: newThread).labelStyle(.iconOnly).font(.title3).disabled(locked || chat.provider?.available != true).accessibilityIdentifier("newChat") }
             }.padding(.horizontal, 24).padding(.bottom, 14)
             TimelineView(.periodic(from: .now, by: 30)) { timeline in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
+                List {
                         ForEach([ChatNavigationState.Group.recent, .working, .snoozed, .settled], id: \.rawValue) { group in
                             let sessions = chat.sessions.filter {
-                                navigation.group($0.id, active: chat.responding || chat.voiceEngaged ? chat.selected?.id : nil, now: timeline.date) == group &&
+                                $0.isSupervisor != true && navigation.group($0.id, active: chat.responding || chat.voiceEngaged ? chat.selected?.id : nil, now: timeline.date) == group &&
                                 (search.isEmpty || navigation.title($0).localizedStandardContains(search) || $0.directory.localizedStandardContains(search))
                             }
                             if !sessions.isEmpty {
@@ -72,16 +92,36 @@ struct ChatThreadSidebar: View {
                                             Rectangle().fill(group == .snoozed ? ChatStyle.blue.opacity(0.35) : Color.primary.opacity(0.12)).frame(height: 1)
                                             Image(systemName: collapsed.contains(group.rawValue) ? "chevron.down" : "chevron.up").font(.caption2)
                                         }.foregroundStyle(ChatStyle.secondary).padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 10)
-                                    }.buttonStyle(.plain)
+                                    }.buttonStyle(.plain).listRowInsets(EdgeInsets()).listRowBackground(Color.clear).listRowSeparator(.hidden)
                                 }
-                                if !collapsed.contains(group.rawValue) { ForEach(sessions) { session in row(session, group: group) } }
+                                if !collapsed.contains(group.rawValue) {
+                                    ForEach(sessions) { session in
+                                        row(session, group: group)
+                                            .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+                                            .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                                if group != .working {
+                                                    Button { navigation.settle(session.id, group != .settled) } label: {
+                                                        Label(group == .settled ? "Reopen" : "Settle", systemImage: group == .settled ? "arrow.uturn.backward" : "checkmark")
+                                                    }.tint(ChatStyle.green)
+                                                }
+                                            }
+                                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                                if group != .working {
+                                                    Button { navigation.snooze(session.id, until: group == .snoozed ? nil : Date().addingTimeInterval(3600)) } label: {
+                                                        Label(group == .snoozed ? "Wake" : "Snooze", systemImage: group == .snoozed ? "sun.max" : "moon")
+                                                    }.tint(ChatStyle.purple)
+                                                }
+                                            }
+                                    }
+                                }
                             }
                         }
                         if chat.hasMoreSessions { Button("Load more threads") { Task { await chat.moreSessions() } }.font(.caption).padding(20).disabled(locked) }
                         if chat.loading { ProgressView().frame(maxWidth: .infinity).padding(20) }
                         if chat.sessions.isEmpty, !chat.loading { Text(chat.provider?.available == false ? chat.provider?.detail ?? "Set up the agent on your Mac." : "Start a thread to work on your project.").font(.caption).foregroundStyle(ChatStyle.secondary).padding(24) }
-                    }.padding(.horizontal, 8)
-                }
+                }.listStyle(.plain).scrollContentBackground(.hidden)
+                    .environment(\.defaultMinListRowHeight, 0)
             }
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").font(.title3).foregroundStyle(ChatStyle.secondary)
@@ -186,11 +226,11 @@ struct ChatPRSidebar: View {
                                     }
                                 }
                             }.padding(16).background(item.id == selectedURL ? ChatStyle.selected : .clear, in: RoundedRectangle(cornerRadius: 14))
-                        }.buttonStyle(.plain).disabled(inbox.busy || selectionDisabled)
+                        }.buttonStyle(.plain).disabled(selectionDisabled)
                     }
                     if inbox.hasMore { Button("Load more pull requests") { Task { await inbox.more() } }.font(.caption).padding(20).disabled(inbox.busy) }
-                    if inbox.busy { ProgressView().frame(maxWidth: .infinity).padding(20) }
-                    if filtered.isEmpty, !inbox.busy { Text("No pull requests match these filters.").font(.caption).foregroundStyle(ChatStyle.secondary).padding(24) }
+                    if inbox.busy { HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Checking repositories…").font(.caption).foregroundStyle(ChatStyle.secondary) }.frame(maxWidth: .infinity).padding(16) }
+                    if filtered.isEmpty, !inbox.busy { Text(inbox.items.isEmpty ? "No pull requests found in your loaded projects." : "No pull requests match these filters.").font(.caption).foregroundStyle(ChatStyle.secondary).padding(24) }
                     ForEach(inbox.errors, id: \.self) { Text($0).font(.caption2).foregroundStyle(.orange).padding(12) }
                 }.padding(.horizontal, 8)
             }

@@ -21,11 +21,15 @@ public final class ChatNavigationState: ObservableObject {
         public var settled = false
         public var draft: String?
     }
+    @Published public var supervisorStartsVoice: Bool {
+        didSet { defaults.set(supervisorStartsVoice, forKey: key + ".supervisorVoice") }
+    }
     @Published private var entries: [String: Entry]
     private let defaults: UserDefaults
     private let key: String
     public init(scope: String, defaults: UserDefaults = .standard) {
         self.defaults = defaults; key = "nocturne.chat.navigation." + scope
+        supervisorStartsVoice = defaults.bool(forKey: key + ".supervisorVoice")
         entries = defaults.data(forKey: key).flatMap { try? JSONDecoder().decode([String: Entry].self, from: $0) } ?? [:]
     }
     public func entry(_ id: String) -> Entry { entries[id] ?? Entry() }

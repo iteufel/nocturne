@@ -24,6 +24,23 @@ final class ChatNavigationTests: XCTestCase {
         restored.settle("thread", false)
         XCTAssertEqual(restored.group("thread", active: nil), .recent)
     }
+    func testSupervisorVoicePreferenceIsOptInAndScoped() throws {
+        let suite = "Nocturne-voice-preference-" + UUID().uuidString, defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let state = ChatNavigationState(scope: "mac-a.codex", defaults: defaults)
+        XCTAssertFalse(state.supervisorStartsVoice)
+        state.supervisorStartsVoice = true
+        XCTAssertTrue(ChatNavigationState(scope: "mac-a.codex", defaults: defaults).supervisorStartsVoice)
+        XCTAssertFalse(ChatNavigationState(scope: "mac-b.codex", defaults: defaults).supervisorStartsVoice)
+    }
+    func testProviderEnvelopesCollapseWithoutChangingOrdinaryMessages() {
+        let voice = ChatMessage(id: "voice", role: .user, text: "<realtime_delegation>\n<input>Fix the chat</input>\n<transcript_delta>user: hello</transcript_delta>\n</realtime_delegation>")
+        XCTAssertEqual(ChatMessagePresentation.summary(voice), "Voice request · Fix the chat")
+        XCTAssertEqual(ChatMessagePresentation.summary(.init(id: "review", role: .assistant, text: #"{"risk_level":"low","user_authorization":"high","outcome":"allow","rationale":"Read only"}"#)), "Action approved")
+        XCTAssertNil(ChatMessagePresentation.summary(.init(id: "normal", role: .user, text: "Explain <realtime_delegation> to me")))
+        XCTAssertNil(ChatMessagePresentation.summary(.init(id: "json", role: .assistant, text: #"{"outcome":"allow"}"#)))
+        XCTAssertNil(ChatMessagePresentation.summary(.init(id: "partial", role: .user, text: "<realtime_delegation><input>Incomplete")))
+    }
     func testOnlyExactNativeSlashCommandsAreIntercepted() {
         XCTAssertEqual(ChatSlashCommand.parse(" /changes\n"), .changes)
         XCTAssertEqual(ChatSlashCommand.parse("/pr"), .pr)

@@ -82,16 +82,15 @@ private struct ChatWorkspaceCanvas: View {
         _navigation = StateObject(wrappedValue: ChatNavigationState(scope: scope))
         _sidebar = State(initialValue: chat.selected == nil)
     }
-    private var locked: Bool { chat.loading || chat.responding || chat.voiceEngaged || chat.configuring }
+    private var locked: Bool { chat.loading || chat.loadingOlder || chat.responding || chat.voiceEngaged || chat.configuring }
     var body: some View {
         GeometryReader { geometry in
             let wide = geometry.size.width >= 900 || (geometry.size.width >= 740 && geometry.size.width > geometry.size.height)
             let sidebarWidth = min(440, max(280, geometry.size.width * 0.32))
-            let contentWidth = geometry.size.width - (wide && sidebar ? sidebarWidth : 0)
             ZStack(alignment: .leading) {
                 HStack(spacing: 0) {
                     if wide, sidebar { side(wide: true).frame(width: sidebarWidth) }
-                    main(wide: wide, inlineOptions: contentWidth >= 650).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    main(wide: wide).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 if !wide, sidebar {
                     ChatStyle.canvas.opacity(0.55).ignoresSafeArea().onTapGesture { sidebar = false }
@@ -109,12 +108,12 @@ private struct ChatWorkspaceCanvas: View {
         .toolbar { if #available(iOS 27.1, *), usesSystemBar { systemToolbar } }
         .sheet(item: $sheet) { destination in sheetContent(destination).preferredColorScheme(darkChat ? .dark : nil) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, .sourceCode], allowsMultipleSelection: true, onCompletion: importFiles)
-        .task(id: (chat.selected?.id ?? "") + String(chat.loading)) { if mode == .threads, chat.selected != nil, !chat.loading { await project.refresh() } }
+        .task(id: (chat.selected?.id ?? "") + String(chat.loading)) { if mode == .threads, chat.selected != nil, chat.selected?.isSupervisor != true, !chat.loading { await project.refresh() } }
         .task(id: chat.draft) {
             do { try await Task.sleep(nanoseconds: 400_000_000) } catch { return }
             saveDraft()
         }
-        .onChange(of: chat.responding) { old, value in if old, !value, mode == .threads { Task { await project.refresh() } } }
+        .onChange(of: chat.responding) { old, value in if old, !value, mode == .threads, chat.selected?.isSupervisor != true { Task { await project.refresh() } } }
         .onDisappear { saveDraft() }
     }
     @ViewBuilder private func sheetContent(_ destination: ChatWorkspaceSheet) -> some View {
@@ -132,10 +131,10 @@ private struct ChatWorkspaceCanvas: View {
     }
     @ViewBuilder private func side(wide: Bool) -> some View {
         if mode == .threads {
-            ChatThreadSidebar(chat: chat, project: project, navigation: navigation, newThread: { newThread(wide: wide) }, open: { openThread($0, wide: wide) }, exit: exit, saveDraft: saveDraft, darkChat: $darkChat, showsControls: !usesSystemBar)
+            ChatThreadSidebar(chat: chat, project: project, navigation: navigation, openSupervisor: { openSupervisor(wide: wide) }, newThread: { newThread(wide: wide) }, open: { openThread($0, wide: wide) }, exit: exit, saveDraft: saveDraft, darkChat: $darkChat, showsControls: !usesSystemBar)
         } else { ChatPRSidebar(inbox: inbox, selectedURL: selectedPRURL, selectionDisabled: locked || project.busy, open: { openPR($0, wide: wide) }, settings: { mode = .threads }, showsControls: !usesSystemBar) }
     }
-    private func main(wide: Bool, inlineOptions: Bool) -> some View {
+    private func main(wide: Bool) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
                 if !usesSystemBar {
@@ -148,7 +147,9 @@ private struct ChatWorkspaceCanvas: View {
                 Spacer(minLength: 0)
             }.padding(.leading, 20).padding(.trailing, usesSystemBar ? 20 : 74).padding(.top, 12).padding(.bottom, 12)
             if mode == .threads {
-                if chat.messages.isEmpty, !chat.loading { newThreadHero }
+                if chat.messages.isEmpty, !chat.loading {
+                    if chat.selected?.isSupervisor == true { supervisorHero } else { newThreadHero }
+                }
                 else { ChatTranscript(model: chat).padding(.trailing, usesSystemBar ? 0 : (wide ? 60 : 48)) }
             } else if project.selectedPR != nil, selectedPRURL != nil {
                 ChatPullRequestWorkspace(project: project, chat: chat, showThread: { mode = .threads }, helper: $prHelper, watching: $watchingPR).padding(.trailing, usesSystemBar ? 0 : (wide ? 82 : 60))
@@ -156,16 +157,36 @@ private struct ChatWorkspaceCanvas: View {
             if let permission = chat.permissions.first { permissionView(permission).padding(.trailing, !usesSystemBar && wide ? 80 : 0) }
             if let error = chat.error { errorView(error) { chat.error = nil } }
             if let error = voice.error { errorView(error) { voice.dismissError() } }
+            if let notice = chat.voiceContinuationNotice {
+                HStack(alignment: .top) {
+                    Image(systemName: "arrow.triangle.branch")
+                    Text(notice)
+                    Spacer(minLength: 0)
+                    Button(action: chat.dismissVoiceContinuationNotice) { Image(systemName: "xmark") }.accessibilityLabel("Dismiss voice notice")
+                }.font(.caption).foregroundStyle(ChatStyle.secondary).padding(12).background(ChatStyle.surface).padding(.horizontal, 16)
+            }
             if voice.engaged { voiceControls.padding(.trailing, !usesSystemBar && wide ? 80 : 0).padding(.horizontal, 16).padding(.bottom, 12) }
-            else if mode == .threads { composer(wide: wide, inlineOptions: inlineOptions) }
+            else if mode == .threads { composer(wide: wide) }
         }.background(ChatStyle.canvas).overlay(alignment: .trailing) { if !usesSystemBar { tools(wide: wide) } }
     }
-    private var projectName: String { ChatStyle.projectName(project.snapshot?.root ?? chat.selected?.directory ?? "") }
+    private var projectName: String { chat.selected?.isSupervisor == true ? "All agents" : ChatStyle.projectName(project.snapshot?.root ?? chat.selected?.directory ?? "") }
     private var threadTitle: String {
         guard let selected = chat.selected else { return "New thread" }
+        if selected.isSupervisor == true { return ChatSupervisor.title }
         if chat.messages.isEmpty { return "New thread" }
         if selected.title == "New conversation", let first = chat.messages.first(where: { $0.role == .user }) { return String(first.text.prefix(90)) }
         return navigation.title(selected)
+    }
+    private var supervisorHero: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 38, weight: .light)).foregroundStyle(ChatStyle.purple)
+            Text("One conversation. All your agents.").font(.title2.weight(.semibold)).multilineTextAlignment(.center)
+            Text("Ask for progress, send a fix to a project, or start a new feature.").font(.subheadline).foregroundStyle(ChatStyle.secondary).multilineTextAlignment(.center)
+            Toggle("Start voice when opened", isOn: $navigation.supervisorStartsVoice).font(.subheadline).frame(maxWidth: 300)
+                .accessibilityIdentifier("supervisorAutoVoice")
+            Spacer(); Spacer().frame(maxHeight: 60)
+        }.padding(28).padding(.trailing, usesSystemBar ? 0 : 60).frame(maxWidth: .infinity)
     }
     private var newThreadHero: some View {
         VStack(spacing: 24) {
@@ -223,7 +244,7 @@ private struct ChatWorkspaceCanvas: View {
             }
         }.visibilityPriority(.high)
         ToolbarItemGroup(placement: .topBarTrailing) {
-            if mode == .threads, chat.selected != nil {
+            if mode == .threads, chat.selected != nil, chat.selected?.isSupervisor != true {
                 Button("Terminal", systemImage: "terminal") { composing = false; sheet = .terminal }.disabled(!connection.capabilities.contains("terminal"))
                 Menu { gitActions } label: { Label("Git tools", systemImage: "point.topleft.down.curvedto.point.bottomright.up") }.accessibilityIdentifier("chatGitTools")
                 Button("Files", systemImage: "folder") { composing = false; sheet = .files }.disabled(!connection.capabilities.contains("files"))
@@ -234,7 +255,7 @@ private struct ChatWorkspaceCanvas: View {
         ToolbarItemGroup(placement: .bottomBar) {
             Spacer()
             Button("Threads", systemImage: "bubble.left") { composing = false; mode = .threads }.tint(mode == .threads ? ChatStyle.blue : .primary).accessibilityIdentifier("chatThreadsMode")
-            Button("Pull requests", systemImage: "arrow.triangle.pull", action: showPullRequests).tint(mode == .pullRequests ? ChatStyle.blue : .primary).disabled(chat.loading || project.busy).accessibilityIdentifier("chatPullRequestsMode")
+            Button("Pull requests", systemImage: "arrow.triangle.pull", action: showPullRequests).tint(mode == .pullRequests ? ChatStyle.blue : .primary).accessibilityIdentifier("chatPullRequestsMode")
         }.visibilityPriority(.high)
         ToolbarOverflowMenu {
             if mode == .pullRequests, selectedPRURL != nil { Section("Pull request") { prActions } }
@@ -255,7 +276,7 @@ private struct ChatWorkspaceCanvas: View {
                 Menu { prHelperActions } label: { Image(systemName: "bubble.left.and.bubble.right").font(.title3).frame(width: 44, height: 44).modifier(ChatGlass()) }.disabled(locked || project.busy || !chat.canPrompt).accessibilityLabel("PR agent helpers")
                 Menu { prActions } label: { Image(systemName: "ellipsis").font(.title3).frame(width: 44, height: 44).modifier(ChatGlass()) }.accessibilityLabel("Pull request actions")
             }
-            if chat.selected != nil, mode == .threads {
+            if chat.selected != nil, chat.selected?.isSupervisor != true, mode == .threads {
                 VStack(spacing: 2) {
                     ChatCircleButton(title: "Terminal", symbol: "terminal") { sheet = .terminal }.disabled(!connection.capabilities.contains("terminal"))
                     Menu { gitActions } label: { Image(systemName: "point.topleft.down.curvedto.point.bottomright.up").font(.system(size: 21)).foregroundStyle(Color.primary).frame(width: 44, height: 44) }.accessibilityLabel("Git tools").accessibilityIdentifier("chatGitTools")
@@ -265,13 +286,13 @@ private struct ChatWorkspaceCanvas: View {
             Spacer(minLength: 8)
             VStack(spacing: 2) {
                 ChatCircleButton(title: "Threads", symbol: "bubble.left", selected: mode == .threads) { composing = false; mode = .threads }.accessibilityIdentifier("chatThreadsMode")
-                ChatCircleButton(title: "Pull requests", symbol: "arrow.triangle.pull", selected: mode == .pullRequests, action: showPullRequests).disabled(chat.loading || project.busy).accessibilityIdentifier("chatPullRequestsMode")
+                ChatCircleButton(title: "Pull requests", symbol: "arrow.triangle.pull", selected: mode == .pullRequests, action: showPullRequests).accessibilityIdentifier("chatPullRequestsMode")
             }.padding(3).modifier(ChatGlass())
         }.padding(.top, 12).padding(.bottom, wide ? 24 : (mode == .threads ? 170 : 20)).padding(.trailing, 12).frame(width: 64)
     }
-    private func composer(wide: Bool, inlineOptions: Bool) -> some View {
+    private func composer(wide: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let selected = chat.selected, project.snapshot != nil {
+            if let selected = chat.selected, selected.isSupervisor != true, project.snapshot != nil {
                 HStack(spacing: 14) {
                     Label("Current checkout", systemImage: "folder")
                     Button { sheet = .worktrees } label: { Label(project.snapshot?.branch ?? "Checkout", systemImage: "arrow.triangle.branch").lineLimit(1) }.disabled(locked)
@@ -286,31 +307,46 @@ private struct ChatWorkspaceCanvas: View {
                 } }
             }
             VStack(spacing: 8) {
-                HStack(alignment: .bottom, spacing: 12) {
+                HStack(alignment: .bottom, spacing: 8) {
                     Menu {
                         Button("Attach text files", systemImage: "paperclip") { importing = true }
                         Button("Files on your Mac", systemImage: "folder") { sheet = .files }
                         Button("New worktree", systemImage: "arrow.triangle.branch") { sheet = .worktrees }.disabled(chat.selected == nil)
-                    } label: { Image(systemName: "plus").font(.system(size: 24, weight: .light)).foregroundStyle(Color.primary).frame(width: 32, height: 40) }.disabled(locked)
-                    TextField("Ask the repo agent…", text: $chat.draft, axis: .vertical).lineLimit(1...6).font(.system(size: 16)).focused($composing).disabled(chat.loading || chat.responding || chat.configuring || chat.selected == nil).accessibilityIdentifier("chatComposer").onSubmit(send)
-                    if inlineOptions, !chat.options.isEmpty { ChatConfigurationBar(model: chat, inline: true).frame(width: 220) }
+                    } label: { Image(systemName: "plus").font(.system(size: 24, weight: .light)).foregroundStyle(Color.primary).frame(width: 44, height: 44) }.disabled(locked)
+                    TextField(chat.selected?.isSupervisor == true ? "Tell the supervisor what to do…" : "Ask the repo agent…", text: $chat.draft, axis: .vertical).lineLimit(1...6).font(.system(size: 16)).padding(.vertical, 12).frame(minHeight: 44).focused($composing).disabled(chat.loading || chat.loadingOlder || chat.responding || chat.configuring || chat.selected == nil).accessibilityIdentifier("chatComposer").onSubmit(send)
                     if chat.supportsVoice {
-                        Button { voice.start() } label: { Image(systemName: "mic").font(.title3).frame(width: 36, height: 40) }.disabled(locked).accessibilityLabel("Start voice chat").accessibilityIdentifier("startVoiceChat")
+                        Button { voice.start() } label: { Image(systemName: "mic").font(.title3).frame(width: 44, height: 44) }.disabled(locked).accessibilityLabel("Start voice chat").accessibilityIdentifier("startVoiceChat")
                     }
                     Button { if chat.responding { Task { await chat.stop() } } else { send() } } label: {
-                        Image(systemName: chat.responding ? "stop.fill" : "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: 40, height: 40).background(chat.responding ? Color.red.opacity(0.8) : ChatStyle.blue.opacity(chat.draft.isEmpty ? 0.28 : 0.9), in: Circle())
+                        Image(systemName: chat.responding ? "stop.fill" : "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44).background(chat.responding ? Color.red.opacity(0.8) : ChatStyle.blue.opacity(chat.draft.isEmpty ? 0.28 : 0.9), in: Circle())
                     }.disabled(!chat.responding && (locked || chat.selected == nil || chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)).keyboardShortcut(.return, modifiers: .command).accessibilityLabel(chat.responding ? "Stop reply" : "Send message").accessibilityIdentifier(chat.responding ? "stopChat" : "sendChat")
                 }
-                if !inlineOptions, !chat.options.isEmpty || chat.optionsError != nil { ChatConfigurationBar(model: chat).padding(.bottom, 7) }
-            }.padding(.horizontal, 14).padding(.top, 10).padding(.bottom, inlineOptions || chat.options.isEmpty ? 10 : 0).modifier(ChatGlass())
+                if !chat.options.isEmpty || chat.optionsError != nil {
+                    Divider().overlay(Color.primary.opacity(0.06))
+                    ChatConfigurationBar(model: chat, inline: true).padding(.horizontal, 12).padding(.vertical, 6)
+                }
+            }.padding(8)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.primary.opacity(0.10), lineWidth: 1) }
         }.padding(.leading, 20).padding(.trailing, !usesSystemBar && wide ? 80 : 20).padding(.bottom, 14).padding(.top, 8)
     }
     private func saveDraft() { if let selected = chat.selected, !chat.loading { navigation.saveDraft(chat.draft, for: selected.id) } }
+    private func openSupervisor(wide: Bool) {
+        guard !locked else { return }; composing = false; saveDraft(); mode = .threads
+        Task {
+            await chat.openSupervisor()
+            guard chat.selected?.isSupervisor == true, chat.error == nil else { return }
+            if let id = chat.selected?.id { chat.draft = navigation.entry(id).draft ?? "" }
+            if !wide { sidebar = false }
+            voice.startSupervisorIfEnabled(navigation.supervisorStartsVoice)
+        }
+    }
     private func newThread(wide: Bool) {
         guard !locked else { return }; composing = false; saveDraft(); mode = .threads
         Task { await chat.newConversation(inheritProject: true); if !wide { sidebar = false } }
     }
     private func openThread(_ session: ChatSessionInfo, wide: Bool) {
+        if session.isSupervisor == true { openSupervisor(wide: wide); return }
         guard !locked else { return }; composing = false; saveDraft(); mode = .threads
         Task { await chat.open(session); if chat.error == nil { chat.draft = navigation.entry(session.id).draft ?? "" }; if !wide { sidebar = false } }
     }

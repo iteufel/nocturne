@@ -8,8 +8,8 @@ import NocturneVoice
 
 @MainActor
 final class VoiceChatClientTests: XCTestCase {
-    private func connected() async throws -> (VoiceWorkspacePeer, WorkspaceConnection, ChatWorkspaceModel) {
-        let peer = try VoiceWorkspacePeer(); try await peer.start()
+    private func connected(supervisor: Bool = false) async throws -> (VoiceWorkspacePeer, WorkspaceConnection, ChatWorkspaceModel) {
+        let peer = try VoiceWorkspacePeer(); peer.supervisor = supervisor; try await peer.start()
         let engine = NocturneStreamingService()
         let client = WorkspaceConnection(identity: WorkspaceIdentity(certificate: engine.workspaceCertificate(), name: "Voice test") { engine.signWorkspaceChallenge($0) })
         do {
@@ -18,6 +18,76 @@ final class VoiceChatClientTests: XCTestCase {
             await model.refresh(); await model.open(try XCTUnwrap(model.sessions.first))
             XCTAssertTrue(model.supportsVoice); return (peer, client, model)
         } catch { client.disconnect(); peer.stop(); throw error }
+    }
+    func testSupervisorVoiceAutostartRequiresOptInAndSelectedSupervisor() async throws {
+        let (peer, client, model) = try await connected(supervisor: true); defer { client.disconnect(); peer.stop() }
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true })
+        defer { voice.stop() }
+        voice.startSupervisorIfEnabled(false)
+        XCTAssertFalse(voice.engaged); XCTAssertEqual(audio.starts, 0)
+        voice.startSupervisorIfEnabled(true)
+        try await waitUntil { voice.active }
+        XCTAssertEqual(audio.starts, 1)
+        voice.startSupervisorIfEnabled(true)
+        XCTAssertEqual(audio.starts, 1, "Repeated updates cannot start a second call")
+        voice.stop(); peer.supervisor = false
+        await model.open(try XCTUnwrap(model.selected))
+        voice.startSupervisorIfEnabled(true)
+        XCTAssertFalse(voice.engaged); XCTAssertEqual(audio.starts, 1)
+    }
+    func testFailedVoicePreparationNeverStartsMicrophoneAndKeepsWorkspaceConnected() async throws {
+        let (peer, client, model) = try await connected(supervisor: true); defer { client.disconnect(); peer.stop() }
+        peer.failVoicePreparation = true
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true })
+        defer { voice.stop() }
+        voice.startSupervisorIfEnabled(true)
+        try await waitUntil { voice.error != nil }
+        XCTAssertEqual(audio.starts, 0); XCTAssertEqual(peer.voiceStarts, 0)
+        XCTAssertFalse(voice.engaged); XCTAssertFalse(model.voiceEngaged); XCTAssertEqual(client.state, .connected)
+    }
+    func testVoiceContinuationKeepsOriginalAndRoutesCallAndRetryToNewThread() async throws {
+        let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
+        peer.continueVoice = true; model.draft = "Keep my draft"
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        voice.start(); try await waitUntil { voice.active }
+        XCTAssertEqual(model.selected?.id, "voice-continuation")
+        XCTAssertTrue(model.sessions.contains { $0.id == "voice-chat" })
+        XCTAssertEqual(model.draft, "Keep my draft"); XCTAssertNotNil(model.voiceContinuationNotice)
+        XCTAssertEqual(peer.startedSessions, ["voice-continuation"]); XCTAssertEqual(audio.starts, 1)
+        voice.end(); try await waitUntil { !voice.engaged }
+        voice.start(); try await waitUntil { voice.active }
+        XCTAssertEqual(peer.preflightSessions, ["voice-chat", "voice-continuation"])
+        XCTAssertEqual(peer.startedSessions, ["voice-continuation", "voice-continuation"])
+        XCTAssertEqual(model.sessions.filter { $0.id == "voice-continuation" }.count, 1)
+    }
+    func testPreflightFailureDoesNotRecordAndCanRetry() async throws {
+        let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
+        peer.failPreflight = true
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        voice.start(); try await waitUntil { voice.error != nil }
+        XCTAssertEqual(audio.starts, 0); XCTAssertEqual(peer.voiceStarts, 0)
+        XCTAssertEqual(model.selected?.id, "voice-chat"); XCTAssertNil(model.voiceContinuationNotice)
+        peer.failPreflight = false
+        voice.start(); try await waitUntil { voice.active }
+        XCTAssertNil(voice.error); XCTAssertEqual(audio.starts, 1)
+    }
+    func testCanceledPreflightCannotSwitchThreadsOrStartRecording() async throws {
+        let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
+        peer.continueVoice = true; peer.delayPreflight = true
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        voice.start(); try await waitUntil { peer.pendingPreflight != nil }
+        voice.stop(); peer.pendingPreflight?(); peer.pendingPreflight = nil
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(voice.engaged); XCTAssertFalse(model.voiceEngaged)
+        XCTAssertEqual(audio.starts, 0); XCTAssertEqual(peer.voiceStarts, 0)
+        XCTAssertEqual(model.selected?.id, "voice-chat"); XCTAssertNil(model.voiceContinuationNotice)
+    }
+    func testOlderHostCanStillStartVoiceWithoutPreflight() async throws {
+        let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
+        peer.supportsPreflight = false
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        voice.start(); try await waitUntil { voice.active }
+        XCTAssertEqual(peer.preflightSessions, []); XCTAssertEqual(peer.startedSessions, ["voice-chat"])
     }
     func testPermissionDenialNeverStartsAudio() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
@@ -173,7 +243,14 @@ private final class VoiceWorkspacePeer {
     var lastLease: String?
     private var channels: [UUID: SecureChannel] = [:]
     private var leases: [UUID: String] = [:]
-    private let info = ChatSessionInfo(id: "voice-chat", title: "Work through the next change", directory: "/Projects/Nocturne")
+    private var leaseSessions: [UUID: String] = [:]
+    var supervisor = false
+    var failVoicePreparation = false
+    var supportsPreflight = true, continueVoice = false, failPreflight = false, delayPreflight = false
+    var preflightSessions: [String] = [], startedSessions: [String] = []
+    var pendingPreflight: (() -> Void)?
+    private var info: ChatSessionInfo { ChatSessionInfo(id: "voice-chat", title: "Work through the next change", directory: "/Projects/Nocturne", isSupervisor: supervisor) }
+    private var continuation: ChatSessionInfo { ChatSessionInfo(id: "voice-continuation", title: "Voice · Work through the next change", directory: info.directory) }
     init() throws { key = try SecureStore.randomKey(); listener = try NWListener(using: SecureTransport.parameters(secret: key), on: .any) }
     func start() async throws {
         listener.newConnectionHandler = { [weak self] connection in Task { @MainActor in self?.accept(connection) } }
@@ -201,14 +278,24 @@ private final class VoiceWorkspacePeer {
                 case .hello: reply.version = WorkspaceProtocol.version; reply.data = nonce
                 case .authenticate:
                     _ = try WorkspaceIdentity.verify(certificate: XCTUnwrap(packet.certificate), signature: XCTUnwrap(packet.signature), challenge: channel.boundChallenge(nonce))
-                    reply.name = "Voice fixture"; reply.capabilities = [ChatProtocol.capability, ChatVoice.capability]
+                    reply.name = "Voice fixture"; reply.capabilities = [ChatProtocol.capability, ChatVoice.capability, ChatSupervisor.capability]
+                    if self.supportsPreflight { reply.capabilities?.append(ChatVoice.preparationCapability) }
                 case .chatProviders: reply.chatProviders = [ChatProvider(id: "codex", name: "Codex", available: true, detail: "Fixture", supportsVoice: true)]
                 case .chatList: reply.chatPage = ChatSessionPage(sessions: [self.info])
                 case .chatLoad: reply.chatHistory = ChatHistoryPage(session: self.info, messages: [])
+                case .chatVoicePrepare: if self.failVoicePreparation { throw NocturneError.remote("Provider could not release the thread") }
+                case .chatVoiceOpen:
+                    let source = try XCTUnwrap(packet.chatRequest?.sessionID); self.preflightSessions.append(source)
+                    if self.failPreflight { throw NocturneError.remote("Sign in with ChatGPT to start voice") }
+                    reply.chatSession = self.continueVoice ? self.continuation : self.info
+                    if self.delayPreflight {
+                        let deferred = reply; self.pendingPreflight = { channel.send(deferred) }; return
+                    }
                 case .chatVoiceStart:
                     let offer = try XCTUnwrap(packet.chatRequest?.voiceSDP); try ChatVoice.validateSDP(offer); self.offers.append(offer)
                     let lease = UUID().uuidString; self.leases[id] = lease; self.lastLease = lease; self.voiceStarts += 1
-                    let event = ChatVoiceEvent(voiceID: lease, providerID: "codex", sessionID: self.info.id, kind: .started)
+                    let session = try XCTUnwrap(packet.chatRequest?.sessionID); self.leaseSessions[id] = session; self.startedSessions.append(session)
+                    let event = ChatVoiceEvent(voiceID: lease, providerID: "codex", sessionID: session, kind: .started)
                     var started = Packet(.chatVoiceEvent); started.chatVoiceEvent = event; channel.send(started)
                     self.send(.answer, connection: id)
                     reply.chatVoiceEvent = event
@@ -221,12 +308,12 @@ private final class VoiceWorkspacePeer {
             } catch { reply.error = error.localizedDescription }
             channel.send(reply)
         }
-        channel.onClose = { [weak self] _ in self?.channels.removeValue(forKey: id); self?.leases.removeValue(forKey: id) }
+        channel.onClose = { [weak self] _ in self?.channels.removeValue(forKey: id); self?.leases.removeValue(forKey: id); self?.leaseSessions.removeValue(forKey: id) }
         channel.start()
     }
     func send(_ kind: ChatVoiceEvent.Kind, overridingLease: String? = nil, connection: UUID? = nil) {
         for (id, lease) in leases where connection == nil || connection == id {
-            var event = ChatVoiceEvent(voiceID: overridingLease ?? lease, providerID: "codex", sessionID: info.id, kind: kind)
+            var event = ChatVoiceEvent(voiceID: overridingLease ?? lease, providerID: "codex", sessionID: leaseSessions[id] ?? info.id, kind: kind)
             if kind == .answer { event.sdp = answerSDP }
             var packet = Packet(.chatVoiceEvent); packet.chatVoiceEvent = event; channels[id]?.send(packet)
         }

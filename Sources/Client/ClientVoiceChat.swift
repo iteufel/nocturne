@@ -35,6 +35,10 @@ final class ClientVoiceChat: ObservableObject {
             if self?.active != true { self?.stop() }
         }.store(in: &globalObservers)
     }
+    func startSupervisorIfEnabled(_ enabled: Bool) {
+        guard enabled, chat.selected?.isSupervisor == true, UIApplication.shared.applicationState == .active else { return }
+        start()
+    }
     func start() {
         guard !engaged, chat.supportsVoice, !chat.loading, !chat.responding,
               let session = chat.selected, let invitation = chat.connection.connectedInvitation else { return }
@@ -49,9 +53,14 @@ final class ClientVoiceChat: ObservableObject {
                 let allowed = await self.requestPermission()
                 guard self.generation == epoch, !Task.isCancelled else { return }
                 guard allowed else { throw NocturneError.remote("Allow microphone access in iOS Settings → Nocturne to start voice chat.") }
+                try await self.chat.prepareVoice()
+                guard self.generation == epoch, !Task.isCancelled else { return }
                 try await connection.connect(invitation, restoreTerminalSessions: false)
                 guard self.generation == epoch, !Task.isCancelled else { return }
                 guard connection.capabilities.contains(ChatVoice.capability) else { throw NocturneError.remote("Update Nocturne Server on your Mac and enable Agent chats, then reconnect.") }
+                let voiceSession = try await self.chat.openVoice(on: connection, from: session.id)
+                guard self.generation == epoch, !Task.isCancelled else { return }
+                self.sessionID = voiceSession.id
                 connection.chatVoiceEvents.sink { [weak self] event in self?.receive(event, epoch: epoch) }.store(in: &self.observers)
                 connection.$state.dropFirst().sink { [weak self] state in
                     if state == .disconnected { self?.fail("Voice chat disconnected. Start it again to reconnect.", epoch: epoch) }
@@ -72,7 +81,7 @@ final class ClientVoiceChat: ObservableObject {
                         }
                     }
                 }
-                var packet = Packet(.chatVoiceStart); packet.chatRequest = ChatRequest(providerID: chat.providerID, sessionID: session.id)
+                var packet = Packet(.chatVoiceStart); packet.chatRequest = ChatRequest(providerID: chat.providerID, sessionID: voiceSession.id)
                 packet.chatRequest?.voiceSDP = offer.sdp
                 let reply = try await connection.request(packet, timeout: 75)
                 guard self.generation == epoch, !Task.isCancelled else { return }

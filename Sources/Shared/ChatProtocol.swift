@@ -23,8 +23,9 @@ public struct ChatSessionInfo: Codable, Identifiable, Equatable {
     public let title: String
     public let directory: String
     public let updatedAt: Date?
-    public init(id: String, title: String, directory: String, updatedAt: Date? = nil) {
-        self.id = id; self.title = title; self.directory = directory; self.updatedAt = updatedAt
+    public let isSupervisor: Bool?
+    public init(id: String, title: String, directory: String, updatedAt: Date? = nil, isSupervisor: Bool? = nil) {
+        self.id = id; self.title = title; self.directory = directory; self.updatedAt = updatedAt; self.isSupervisor = isSupervisor
     }
 }
 
