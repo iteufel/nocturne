@@ -8,10 +8,10 @@ final class DarkAppDelegate: AppDelegate {
         AgentAttentionCenter.shared.bind(ClientModel.shared)
         return result
     }
-    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    override func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         AgentAttentionCenter.shared.registered(deviceToken)
     }
-    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+    override func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         AgentAttentionCenter.shared.registrationFailed()
     }
     override func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
