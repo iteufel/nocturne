@@ -21,7 +21,7 @@ final class VoiceChatClientTests: XCTestCase {
     }
     func testSupervisorVoiceAutostartRequiresOptInAndSelectedSupervisor() async throws {
         let (peer, client, model) = try await connected(supervisor: true); defer { client.disconnect(); peer.stop() }
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true })
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }, applicationState: { .active })
         defer { voice.stop() }
         voice.startSupervisorIfEnabled(false)
         XCTAssertFalse(voice.engaged); XCTAssertEqual(audio.starts, 0)
@@ -35,10 +35,30 @@ final class VoiceChatClientTests: XCTestCase {
         voice.startSupervisorIfEnabled(true)
         XCTAssertFalse(voice.engaged); XCTAssertEqual(audio.starts, 1)
     }
+    func testSupervisorVoiceAutostartDoesNotRequestMicrophoneUntilActive() async throws {
+        let (peer, client, model) = try await connected(supervisor: true); defer { client.disconnect(); peer.stop() }
+        let audio = FakeVoiceAudio()
+        var state = UIApplication.State.inactive, permissionRequests = 0
+        let voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: {
+            permissionRequests += 1; return true
+        }, applicationState: { state })
+        defer { voice.stop() }
+        for blockedState in [UIApplication.State.inactive, .background] {
+            state = blockedState
+            voice.startSupervisorIfEnabled(true)
+            await Task.yield()
+            XCTAssertFalse(voice.engaged); XCTAssertFalse(model.voiceEngaged)
+            XCTAssertEqual(permissionRequests, 0); XCTAssertEqual(audio.starts, 0); XCTAssertEqual(peer.voiceStarts, 0)
+        }
+        state = .active
+        voice.startSupervisorIfEnabled(true)
+        try await waitUntil { voice.active }
+        XCTAssertEqual(permissionRequests, 1); XCTAssertEqual(audio.starts, 1); XCTAssertEqual(peer.voiceStarts, 1)
+    }
     func testFailedVoicePreparationNeverStartsMicrophoneAndKeepsWorkspaceConnected() async throws {
         let (peer, client, model) = try await connected(supervisor: true); defer { client.disconnect(); peer.stop() }
         peer.failVoicePreparation = true
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true })
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }, applicationState: { .active })
         defer { voice.stop() }
         voice.startSupervisorIfEnabled(true)
         try await waitUntil { voice.error != nil }

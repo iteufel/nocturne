@@ -460,6 +460,42 @@ final class ChatTests: XCTestCase {
             try await rpc.waitUntilExit()
         }
     }
+    func testProviderClosedStdinFailsRequestWithoutTerminatingHost() async throws {
+        let childFlag = "NOCTURNE_TEST_AGENT_SIGPIPE_CHILD"
+        if ProcessInfo.processInfo.environment[childFlag] == "1" {
+            // Run with the default signal action, regardless of the test launcher's environment.
+            // Only this isolated child may be terminated if the regression returns.
+            let previous = signal(SIGPIPE, SIG_DFL)
+            defer { signal(SIGPIPE, previous) }
+            let rpc = try AgentRPC(configuration: configuration(), directory: root)
+            defer { rpc.close() }
+            _ = try await rpc.call("fixture/closeStdin")
+            do {
+                _ = try await rpc.call("initialize", timeout: 2)
+                XCTFail("A provider with closed stdin accepted another request")
+            } catch { XCTAssertEqual(error.localizedDescription, NocturneError.disconnected.localizedDescription) }
+            XCTAssertTrue(rpc.closed)
+            try await rpc.waitUntilExit()
+            return
+        }
+        let child = Process(), log = root.appendingPathComponent("sigpipe-child.log")
+        FileManager.default.createFile(atPath: log.path, contents: nil)
+        let output = try FileHandle(forWritingTo: log)
+        defer { try? output.close(); if child.isRunning { child.terminate() } }
+        child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+        child.arguments = ["-XCTest", "NocturneKitTests.ChatTests/testProviderClosedStdinFailsRequestWithoutTerminatingHost", Bundle(for: ChatTests.self).bundlePath]
+        var environment = ProcessInfo.processInfo.environment; environment[childFlag] = "1"; child.environment = environment
+        child.standardOutput = output; child.standardError = output
+        try child.run()
+        for _ in 0..<500 {
+            if !child.isRunning { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        guard !child.isRunning else { XCTFail("Isolated broken-pipe regression timed out"); return }
+        let diagnostics = try String(contentsOf: log, encoding: .utf8)
+        XCTAssertEqual(child.terminationReason, .exit, diagnostics)
+        XCTAssertEqual(child.terminationStatus, 0, diagnostics)
+    }
     func testVoiceChildNeverReceivesPlatformKeyEnvironment() async throws {
         let previous = getenv("OPENAI_API_KEY").map { String(cString: $0) }
         setenv("OPENAI_API_KEY", "fixture-only", 1)
@@ -627,7 +663,7 @@ final class ChatTests: XCTestCase {
     }
 
     private static let fixture = #"""
-import json, os, sys, base64
+import json, os, sys, base64, time
 mode, cwd = sys.argv[1:]
 with open(os.path.join(cwd,'agent.pid'), 'w') as f:
     f.write(str(os.getpid()))
@@ -723,6 +759,11 @@ for line in sys.stdin:
         reply(rid, {'thread':thread('voice-continuation')})
     elif method == 'thread/name/set':
         reply(rid, {})
+    elif method == 'fixture/closeStdin':
+        os.close(0)
+        reply(rid, {})
+        time.sleep(30) # Keep stdout open so only the failed write can close the RPC.
+        break
     elif method == 'voice/testEnvironment':
         reply(rid, {'platformKeyPresent': any(os.environ.get(k) for k in ['OPENAI_API_KEY','CODEX_API_KEY','AZURE_OPENAI_API_KEY']), 'originatorOverridePresent': bool(os.environ.get('CODEX_INTERNAL_ORIGINATOR_OVERRIDE'))})
     elif method == 'account/read':
