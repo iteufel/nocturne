@@ -241,6 +241,14 @@ jobs:
           issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
           api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}
           api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+      - name: Download the Attention widget provisioning profile
+        uses: Apple-Actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
+        with:
+          bundle-id: app.nocturne.client.attention
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
       - name: Archive and export iOS
         env:
           NOCTURNE_DEVELOPMENT_TEAM: ${{ vars.APPLE_TEAM_ID }}
