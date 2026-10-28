@@ -1,0 +1,4 @@
+# Official LizardByte release. Keep source, runtime libraries and assets together.
+NOCTURNE_SUNSHINE_VERSION=2026.1028.122642
+NOCTURNE_SUNSHINE_REVISION=d7e5fe00701539a5be4a0304239730e1dfec4cf9
+NOCTURNE_SUNSHINE_ARM64_SHA256=886da51fcd65b5179d03f0596e6cddca45f57bccf7bed92b5af905a7bce7fbfd
