@@ -159,6 +159,7 @@ target.resources_build_phase.add_file_reference(group.new_file('../../Resources/
 kit = package(client, '../..'); terminal = package(client, '../SwiftTerm')
 product(client, target, kit, 'NocturneKit'); product(client, target, terminal, 'SwiftTerm')
 product(client, target, kit, 'NocturneVoice')
+target.add_system_framework('CallKit')
 target.build_configurations.each do |config|
   settings = config.build_settings
   settings['PRODUCT_NAME'] = 'Nocturne'
