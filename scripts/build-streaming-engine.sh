@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source scripts/sunshine-version.sh
 # Xcode's GUI build environment does not include Homebrew by default.
 export PATH="/opt/homebrew/bin:$PATH"
 if [ "$(uname -m)" != arm64 ]; then
@@ -12,14 +13,14 @@ for command in cmake pkg-config git brew; do
 done
 pkg-config --exists miniupnpc || { echo 'Install miniupnpc: brew install miniupnpc' >&2; exit 1; }
 
-revision=3d6e1d6008bd4a24906283ab25fcd0becc0a1c07
+revision="$NOCTURNE_SUNSHINE_REVISION"
 source_dir="$PWD/.build/SunshinePerformanceSource"
 build_dir="$PWD/.build/SunshinePerformanceBuild"
 if [ ! -d "$source_dir/.git" ]; then
-  git clone --depth 1 --branch v2026.1018.5342 https://github.com/LizardByte/Sunshine.git "$source_dir"
+  git clone --depth 1 --branch "v$NOCTURNE_SUNSHINE_VERSION" https://github.com/LizardByte/Sunshine.git "$source_dir"
 fi
 if [ "$(git -C "$source_dir" rev-parse HEAD)" != "$revision" ]; then
-  echo 'Unexpected streaming engine source revision; refusing to build.' >&2
+  echo 'Unexpected streaming engine source revision; move .build/SunshinePerformanceSource and .build/SunshinePerformanceBuild aside and rerun bootstrap/build.' >&2
   exit 1
 fi
 # The build-deps checkout supplies the pinned prebuilt FFmpeg release. Its own
@@ -32,7 +33,7 @@ git -C "$source_dir" submodule update --init --recursive --depth 1 -- \
 
 openssl_root="$(brew --prefix openssl@3)"
 runtime="$PWD/Vendor/StreamingRuntime/Contents"
-cmake -E env BRANCH=nocturne/stream-timing BUILD_VERSION=2026.1018.5342 COMMIT="$revision" \
+cmake -E env BRANCH=nocturne/stream-timing BUILD_VERSION="$NOCTURNE_SUNSHINE_VERSION" COMMIT="$revision" \
   cmake -S "$source_dir" -B "$build_dir" \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=14.2 \
   -DBUILD_TESTS=OFF -DBUILD_DOCS=OFF -DSUNSHINE_ENABLE_TRAY=OFF \
