@@ -39,11 +39,11 @@ struct ChatPullRequestWorkspace: View {
                         HStack(spacing: 0) {
                             ForEach(["Overview", "Guide", "Activity"], id: \.self) { value in
                                 Button { tab = value } label: {
-                                    Text(value).font(.subheadline.weight(tab == value ? .semibold : .regular)).foregroundStyle(tab == value ? Color.black : ChatStyle.secondary)
-                                        .frame(maxWidth: .infinity).padding(.vertical, 9).background(tab == value ? Color.white : .clear, in: Capsule())
+                                    Text(value).font(.subheadline.weight(tab == value ? .semibold : .regular)).foregroundStyle(tab == value ? Color.primary : ChatStyle.secondary)
+                                        .padding(.horizontal, 18).padding(.vertical, 11).background(tab == value ? ChatStyle.selected : .clear, in: RoundedRectangle(cornerRadius: 10))
                                 }.buttonStyle(.plain).accessibilityAddTraits(tab == value ? [.isSelected] : []).accessibilityIdentifier("prTab-" + value)
                             }
-                        }.padding(3).background(ChatStyle.selected, in: Capsule()).accessibilityIdentifier("prWorkspaceTabs")
+                        }.padding(3).accessibilityIdentifier("prWorkspaceTabs")
                         if watching { Label("Watching while this PR is open", systemImage: "eye").font(.caption).foregroundStyle(ChatStyle.blue) }
                         if let error = project.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                         if project.busy { ProgressView().controlSize(.small) }

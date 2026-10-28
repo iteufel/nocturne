@@ -9,6 +9,9 @@ final class ChatAgentSession {
     private let chatGPTOnly: Bool
     var emit: ((ChatEvent) -> Void)?
     var emitVoice: ((ChatVoiceEvent) -> Void)?
+    var supervisorSession: ((String) -> Bool)?
+    var supervisorTool: ((String, [String: Any]) async throws -> String)?
+    private var toolTasks: [UUID: Task<Void, Never>] = [:]
     private var voiceID: String?
     private var voiceSession: String?
     private var voiceStarted = false
@@ -21,6 +24,8 @@ final class ChatAgentSession {
     private var legacyVoiceTranscripts: [String: String] = [:]
     private var capabilities: [String: Any] = [:]
     private var opened: Set<String> = []
+    private var preparedVoiceSessions: Set<String> = []
+    private var created: Set<String> = []
     private var known: [String: ChatSessionInfo] = [:]
     private var activeSession: String?
     private var activeTurn: String?
@@ -79,7 +84,8 @@ final class ChatAgentSession {
         }
     }
     var isClosed: Bool { rpc.closed }
-    func close() { cancelApprovals(); endVoiceLocally(); rpc.close(); emit = nil; emitVoice = nil }
+    var isResponding: Bool { activeSession != nil }
+    func close() { toolTasks.values.forEach { $0.cancel() }; toolTasks = [:]; cancelApprovals(); endVoiceLocally(); rpc.close(); emit = nil; emitVoice = nil }
 
     func list(cursor: String?, archived: Bool) async throws -> ChatSessionPage {
         if let cursor {
@@ -126,9 +132,15 @@ final class ChatAgentSession {
                 historySession = info; known[id] = info
                 if thread["historyMode"] as? String == "paginated" { try await codexItems(id, cursor: nil) }
                 else {
-                    let full = try await rpc.call("thread/read", ["threadId": id, "includeTurns": true])
-                    let turns = (full["thread"] as? [String: Any])?["turns"] as? [[String: Any]] ?? []
-                    history = turns.flatMap { $0["items"] as? [[String: Any]] ?? [] }.compactMap(Self.codexMessage).flatMap(\.parts)
+                    do {
+                        let full = try await rpc.call("thread/read", ["threadId": id, "includeTurns": true])
+                        let turns = (full["thread"] as? [String: Any])?["turns"] as? [[String: Any]] ?? []
+                        history = turns.flatMap { $0["items"] as? [[String: Any]] ?? [] }.compactMap(Self.codexMessage).flatMap(\.parts)
+                    } catch let error as AgentRPCError where error.code == -32600 &&
+                        (error.message.contains("not materialized yet") || error.message.contains("ephemeral threads do not support includeTurns")) {
+                        // Metadata exists before the first turn is written. This is a valid empty conversation.
+                        history = []
+                    }
                 }
             } else {
                 guard let info = known[id] else { throw NocturneError.remote("Refresh the conversations list before opening this chat.") }
@@ -167,7 +179,7 @@ final class ChatAgentSession {
             .compactMap { $0["item"] as? [String: Any] }.compactMap(Self.codexMessage).flatMap(\.parts)
         historyRemoteCursor = result["nextCursor"] as? String
     }
-    func create(ephemeral: Bool = false, in workingDirectory: URL? = nil) async throws -> ChatSessionInfo {
+    func create(ephemeral: Bool = false, in workingDirectory: URL? = nil, supervisor: Bool = false) async throws -> ChatSessionInfo {
         guard activeSession == nil else { throw NocturneError.remote("Stop the current reply before starting a new conversation.") }
         guard configuration.transport == .codex || capabilities["loadSession"] as? Bool == true || opened.count < 32 else {
             throw NocturneError.remote("This provider cannot save history. Reconnect before starting more than 32 temporary chats.")
@@ -177,8 +189,18 @@ final class ChatAgentSession {
         if configuration.transport == .codex {
             var params: [String: Any] = ["cwd": workingDirectory.path, "approvalPolicy": "on-request", "sandbox": "workspace-write", "ephemeral": ephemeral]
             if chatGPTOnly { params["modelProvider"] = "openai" }
+            if supervisor {
+                params["developerInstructions"] = ChatSupervisorService.instructions
+                params["dynamicTools"] = ChatSupervisorService.tools
+                // Codex 0.164 advertises paginated threads before implementing thread/items/list.
+                params["historyMode"] = "legacy"
+            }
             let result = try await rpc.call("thread/start", params)
             guard let thread = result["thread"] as? [String: Any], let session = Self.codexSession(thread) else { throw NocturneError.invalidFrame }
+            if supervisor, !ephemeral {
+                // Naming materializes an otherwise empty thread so a dedicated voice process can resume it.
+                _ = try await rpc.call("thread/name/set", ["threadId": session.id, "name": ChatSupervisor.title])
+            }
             info = session
         } else {
             let result = try await rpc.call("session/new", ["cwd": workingDirectory.path, "mcpServers": [Any]()])
@@ -187,17 +209,20 @@ final class ChatAgentSession {
             sessionOptions[id] = Self.acpOptions(result)
         }
         if configuration.transport == .acp, capabilities["loadSession"] as? Bool != true, let previous = transcriptSession { savedTranscripts[previous] = transcript }
-        known[info.id] = info; opened.insert(info.id); transcript = []; transcriptSession = info.id; toolTitles = [:]; chunkID = nil; chunkRole = nil
+        known[info.id] = info; opened.insert(info.id); created.insert(info.id); transcript = []; transcriptSession = info.id; toolTitles = [:]; chunkID = nil; chunkRole = nil
         return info
     }
     func prompt(_ id: String, text: String) async throws {
-        guard activeSession == nil, voiceID == nil, known[id] != nil else { throw NocturneError.remote("Open a conversation and end voice chat before sending a message.") }
+        guard activeSession == nil, voiceID == nil else { throw NocturneError.remote("Open a conversation and end voice chat before sending a message.") }
+        if known[id] == nil, configuration.transport == .codex { _ = try await workingDirectory(for: id) }
+        guard known[id] != nil else { throw NocturneError.remote("Open this conversation before sending a message.") }
         activeSession = id; activeTurn = nil; cancelRequested = false; chunkID = nil; chunkRole = nil
         do {
             if configuration.transport == .codex {
                 if !opened.contains(id) {
-                    _ = try await rpc.call("thread/resume", ["threadId": id, "excludeTurns": true,
-                        "approvalPolicy": "on-request", "sandbox": "workspace-write"])
+                    var params: [String: Any] = ["threadId": id, "excludeTurns": true, "approvalPolicy": "on-request", "sandbox": "workspace-write"]
+                    if supervisorSession?(id) == true { params["developerInstructions"] = ChatSupervisorService.instructions }
+                    _ = try await rpc.call("thread/resume", params)
                     opened.insert(id)
                 }
                 let result = try await rpc.call("turn/start", ["threadId": id,
@@ -219,6 +244,20 @@ final class ChatAgentSession {
         if configuration.transport == .codex {
             if let turn = activeTurn { _ = try await rpc.call("turn/interrupt", ["threadId": id, "turnId": turn]) }
         } else { rpc.notify("session/cancel", ["sessionId": id]) }
+    }
+    func releaseForVoice(_ id: String) async throws {
+        guard configuration.transport == .codex, activeSession == nil, voiceID == nil else { throw NocturneError.remote("Finish the current reply before starting voice.") }
+        if created.contains(id), let info = known[id] {
+            _ = try await rpc.call("thread/name/set", ["threadId": id, "name": supervisorSession?(id) == true ? ChatSupervisor.title : info.title])
+        }
+        close()
+        try await rpc.waitUntilExit()
+    }
+    func requireIdle(_ id: String) async throws {
+        guard configuration.transport == .codex else { return }
+        let result = try await rpc.call("thread/read", ["threadId": id, "includeTurns": false])
+        let status = ((result["thread"] as? [String: Any])?["status"] as? [String: Any])?["type"] as? String
+        guard status != "active" else { throw NocturneError.remote("This conversation is active in another client. Let it finish or stop it there before sending another task.") }
     }
     func workingDirectory(for id: String) async throws -> URL {
         if configuration.transport == .codex {
@@ -395,6 +434,20 @@ final class ChatAgentSession {
     private func request(_ rpcID: Any, _ method: String, _ params: [String: Any]) {
         let session = (params[configuration.transport == .acp ? "sessionId" : "threadId"] as? String) ?? activeSession ?? voiceSession
         guard let session, session == (activeSession ?? voiceSession), approvals.count < 8 else { rpc.reject(rpcID, message: "No active conversation for this request."); return }
+        if configuration.transport == .codex, method == "item/tool/call", params["tool"] as? String == "nocturne_agents",
+           supervisorSession?(session) == true, let handler = supervisorTool, let arguments = params["arguments"] as? [String: Any] {
+            guard toolTasks.count < 8 else { rpc.reject(rpcID, message: "Too many supervisor actions."); return }
+            let token = UUID()
+            toolTasks[token] = Task { [weak self] in
+                let result: String, success: Bool
+                do { result = try await handler(session, arguments); success = true }
+                catch { result = error.localizedDescription; success = false }
+                guard let self, !self.rpc.closed, !Task.isCancelled else { return }
+                self.rpc.respond(rpcID, result: ["success": success, "contentItems": [["type": "inputText", "text": result]]])
+                self.toolTasks.removeValue(forKey: token)
+            }
+            return
+        }
         let options: [ChatPermissionOption]
         let title: String, detail: String
         if configuration.transport == .acp, method == "session/request_permission" {
@@ -459,23 +512,20 @@ final class ChatAgentSession {
 }
 
 extension ChatAgentSession {
-    func startVoice(_ session: String, lease: String, sdp: String) async throws {
+    var isVoiceProvider: Bool { chatGPTOnly }
+
+    /// Claim the backing thread before opening the microphone. A writer owned by another
+    /// app cannot be transferred; fork its persisted history without interrupting that app.
+    func prepareVoiceSession(_ session: String, allowContinuation: Bool = false) async throws -> ChatSessionInfo {
         guard chatGPTOnly, configuration.transport == .codex, activeSession == nil, voiceID == nil else {
             throw NocturneError.remote("Live voice is available for Codex. End the current reply or voice chat first.")
         }
-        try ChatVoice.validateSDP(sdp)
+        if preparedVoiceSessions.contains(session), let info = known[session] { return info }
         let account = try await rpc.call("account/read", ["refreshToken": false])
         guard (account["account"] as? [String: Any])?["type"] as? String == "chatgpt" else {
             throw NocturneError.remote("Sign in with ChatGPT in Nocturne Server → Sharing → Codex live voice on your Mac. Voice requires a Codex-managed ChatGPT login.")
         }
-        var voiceDirectory = directory.path
-        if !opened.contains(session) {
-            // Use the ChatGPT-backed OpenAI provider when loading a saved thread for voice.
-            let resumed = try await rpc.call("thread/resume", ["threadId": session, "excludeTurns": true, "modelProvider": "openai",
-                "approvalPolicy": "on-request", "sandbox": "workspace-write"])
-            voiceDirectory = (resumed["thread"] as? [String: Any])?["cwd"] as? String ?? directory.path
-            opened.insert(session)
-        }
+        let voiceDirectory = try await workingDirectory(for: session).path
         let settings = try await rpc.call("config/read", ["includeLayers": false, "cwd": voiceDirectory])
         let config = settings["config"] as? [String: Any] ?? [:]
         let openAI = (config["model_providers"] as? [String: [String: Any]])?["openai"] ?? [:]
@@ -486,14 +536,50 @@ extension ChatAgentSession {
         guard !overridesAuth, !headers.contains(where: { ["authorization", "api-key", "x-api-key"].contains($0) }) else {
             throw NocturneError.remote("Voice requires ChatGPT authentication. Remove custom API-key authentication from Codex's OpenAI provider configuration on your Mac.")
         }
+        var params: [String: Any] = ["threadId": session, "excludeTurns": true, "modelProvider": "openai",
+            "approvalPolicy": "on-request", "sandbox": "workspace-write"]
+        if supervisorSession?(session) == true { params["developerInstructions"] = ChatSupervisorService.instructions }
+        let result: [String: Any]
+        var continued = false
+        do { result = try await rpc.call("thread/resume", params) }
+        catch let error as AgentRPCError where error.code == -32600 && error.message == "thread \(session) already has an active writer" {
+            guard supervisorSession?(session) != true else {
+                throw NocturneError.remote("The supervisor is open in another client. End its voice session or close it there, then try again.")
+            }
+            guard allowContinuation else {
+                throw NocturneError.remote("This conversation is open in another client. Update Nocturne on both devices to continue it in voice, or close it there and try again.")
+            }
+            // A carried goal must not launch work before the user has spoken.
+            params["deferGoalContinuation"] = true
+            result = try await rpc.call("thread/fork", params)
+            continued = true
+        }
+        guard let thread = result["thread"] as? [String: Any], var info = Self.codexSession(thread),
+              continued ? info.id != session : info.id == session else { throw NocturneError.invalidFrame }
+        if continued {
+            let title = "Voice · " + String((known[session]?.title ?? info.title).prefix(220))
+            do { _ = try await rpc.call("thread/name/set", ["threadId": info.id, "name": title]) }
+            catch { _ = try? await rpc.call("thread/archive", ["threadId": info.id]); throw error }
+            info = ChatSessionInfo(id: info.id, title: title, directory: info.directory, updatedAt: Date())
+        }
+        opened.insert(info.id); preparedVoiceSessions.insert(info.id); known[info.id] = info
+        return info
+    }
+    func startVoice(_ session: String, lease: String, sdp: String) async throws {
+        try ChatVoice.validateSDP(sdp)
+        _ = try await prepareVoiceSession(session)
         voiceID = lease; voiceSession = session; voiceStarted = false; voiceAnswerReceived = false; voiceFailure = nil
         canonicalVoiceTranscripts = false; voiceTranscriptRoles = [:]; legacyVoiceTranscripts = [:]
         do {
-            _ = try await rpc.call("thread/realtime/start", ["threadId": session, "outputModality": "audio",
+            var realtime: [String: Any] = ["threadId": session, "outputModality": "audio",
                 // 0.164.0 defaults WebRTC to v1, whose quicksilver=v1 header AVAS rejects.
                 // v3 selects Codex's Frameless Bidi parser and quicksilver=v2 header.
                 "version": "v3", "transport": ["type": "webrtc", "sdp": sdp],
-                "realtimeSessionId": lease, "voiceSessionId": lease], timeout: 30)
+                "realtimeSessionId": lease, "voiceSessionId": lease]
+            if supervisorSession?(session) == true {
+                realtime["realtimeStartInstructions"] = "You are the Nocturne supervisor. Delegate requests to inspect or manage agents to your backing coding agent, which has the nocturne_agents tool. Report actual results; do not claim a task finished just because it started."
+            }
+            _ = try await rpc.call("thread/realtime/start", realtime, timeout: 30)
             guard voiceID == lease else { throw NocturneError.remote(voiceFailure ?? "Codex closed the voice session while connecting.") }
             if !voiceStarted || !voiceAnswerReceived {
                 try await withCheckedThrowingContinuation { continuation in

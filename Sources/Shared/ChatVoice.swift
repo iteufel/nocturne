@@ -2,6 +2,7 @@ import Foundation
 
 public enum ChatVoice {
     public static let capability = "codex-webrtc-voice-v1"
+    public static let preparationCapability = "codex-voice-preflight-v1"
     public static let leaseTimeout: TimeInterval = 10
     public static let maximumSDPBytes = 131_072
     public static func validateSDP(_ sdp: String) throws {

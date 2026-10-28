@@ -39,6 +39,7 @@ public final class WorkspaceServer {
     private var microphoneTimer: DispatchSourceTimer?
     private var permissions: HostPermissions
     private var chatAgents: [ChatAgentConfiguration]
+    private let supervisor: ChatSupervisorService
     private let name: String
     private let devices: WorkspaceDeviceStore
     public init(folder: URL, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions = .init(), microphoneOutput: MicrophoneOutput = VirtualMicrophone(), appWindows: AppWindowSessionManager? = nil, desktop: DesktopSessionManager? = nil, chatAgents: [ChatAgentConfiguration] = ChatAgentConfiguration.defaults) throws {
@@ -46,6 +47,7 @@ public final class WorkspaceServer {
         self.appWindows = appWindows
         self.desktop = desktop
         self.chatAgents = chatAgents
+        self.supervisor = ChatSupervisorService(configurations: chatAgents, directory: folder)
         microphone = MicrophoneSession(output: microphoneOutput)
     }
     public func start(secret: Data, port: UInt16 = WorkspaceProtocol.port) throws {
@@ -60,7 +62,7 @@ public final class WorkspaceServer {
             guard let self = self, self.listener != nil, self.sessions.count < 32 else { connection.cancel(); return }
             let id = UUID()
             let channel = SecureChannel(connection: connection, queue: self.queue)
-            let session = HostSession(channel: channel, terminals: self.terminals, microphone: self.microphone, appWindows: self.appWindows, desktop: self.desktop, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, chatAgents: self.chatAgents, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected)
+            let session = HostSession(channel: channel, terminals: self.terminals, microphone: self.microphone, appWindows: self.appWindows, desktop: self.desktop, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, chatAgents: self.chatAgents, supervisor: self.supervisor, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected)
             self.sessions[id] = session
             session.authorizeRemoteDevice = self.authorizeRemoteDevice
             session.onClose = { [weak self] in self?.sessions.removeValue(forKey: id); self?.publish("Ready") }
@@ -88,15 +90,17 @@ public final class WorkspaceServer {
     public func updatePermissions(_ permissions: HostPermissions) {
         queue.async {
             self.permissions = permissions
+            if !permissions.chats { self.supervisor.reset() }
             if !permissions.terminal { self.terminals.closeAll() }
             if !permissions.microphone { self.microphone.stop() }
             self.sessions.values.forEach { $0.updatePermissions(permissions) }
         }
     }
     public func updateChatAgents(_ agents: [ChatAgentConfiguration]) {
-        queue.async { self.chatAgents = agents; self.sessions.values.forEach { $0.configureChats(agents) } }
+        queue.async { self.supervisor.reset(configurations: agents); self.chatAgents = agents; self.sessions.values.forEach { $0.configureChats(agents) } }
     }
     public func stop() {
+        supervisor.reset()
         var cancelled: DispatchSemaphore?
         queue.sync {
             cancelled = listenerCancelled; listenerCancelled = nil
@@ -112,6 +116,7 @@ public final class WorkspaceServer {
         _ = cancelled?.wait(timeout: .now() + 2)
     }
     public func disconnectDevice(_ id: String) {
+        supervisor.reset()
         queue.sync { terminals.closeAll(owner: id); sessions.values.filter { $0.device?.id == id }.forEach { $0.close() }; publish("Ready") }
     }
     private func publish(_ status: String) {
@@ -145,12 +150,12 @@ private final class HostSession {
     private let pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?
     private let displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?
     private let displayDisconnected: ((UUID) -> Void)?
-    init(channel: SecureChannel, terminals: TerminalRegistry, microphone: MicrophoneSession, appWindows: AppWindowSessionManager?, desktop: DesktopSessionManager?, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, chatAgents: [ChatAgentConfiguration], pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?, displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?, displayDisconnected: ((UUID) -> Void)?) {
+    init(channel: SecureChannel, terminals: TerminalRegistry, microphone: MicrophoneSession, appWindows: AppWindowSessionManager?, desktop: DesktopSessionManager?, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, chatAgents: [ChatAgentConfiguration], supervisor: ChatSupervisorService, pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?, displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?, displayDisconnected: ((UUID) -> Void)?) {
         self.pairStream = pairStream; self.terminals = terminals
         self.microphone = microphone
         self.appWindows = appWindows
         self.desktop = desktop
-        chats = ChatHostSession(configurations: chatAgents, directory: folder.url, enabled: permissions.chats)
+        chats = ChatHostSession(configurations: chatAgents, directory: folder.url, enabled: permissions.chats, supervisor: supervisor)
         self.displayCommand = displayCommand; self.displayDisconnected = displayDisconnected
         self.channel = channel; self.devices = devices; self.folder = folder; self.name = name; self.permissions = permissions
         channel.onPacket = { [weak self] packet in self?.handle(packet) }
@@ -208,12 +213,14 @@ private final class HostSession {
                 if permissions.chats {
                     result.capabilities?.append(ChatProtocol.capability)
                     result.capabilities?.append(ChatVoice.capability)
+                    result.capabilities?.append(ChatVoice.preparationCapability)
+                    result.capabilities?.append(ChatSupervisor.capability)
                     result.capabilities?.append(DeveloperProtocol.capability)
                     result.capabilities?.append(DeveloperProtocol.actionsCapability)
                 }
             case .ping: break
-            case .chatProviders, .chatList, .chatLoad, .chatNew, .chatPrompt, .chatCancel, .chatPermission, .chatOptions, .chatConfigure, .chatRepository,
-                 .chatVoiceStart, .chatVoiceHeartbeat, .chatVoiceStop:
+            case .chatSupervisor, .chatProviders, .chatList, .chatLoad, .chatNew, .chatPrompt, .chatCancel, .chatPermission, .chatOptions, .chatConfigure, .chatRepository,
+                 .chatVoicePrepare, .chatVoiceOpen, .chatVoiceStart, .chatVoiceHeartbeat, .chatVoiceStop:
                 guard permissions.chats else { throw NocturneError.permissionDenied }
                 chats.handle(packet) { [weak channel] in channel?.send($0) }
                 return

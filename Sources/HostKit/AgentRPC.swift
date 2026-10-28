@@ -1,6 +1,26 @@
 import Foundation
 import NocturneKit
 
+/// A readability callback can already be queued when its handler is removed.
+/// Serialize reading and closing so that callback never touches a closed FileHandle.
+private final class AgentPipeReader: @unchecked Sendable {
+    private let lock = NSLock()
+    private let handle: FileHandle
+    private var closed = false
+    init(_ handle: FileHandle) { self.handle = handle }
+    func read() -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        guard !closed else { return nil }
+        return handle.availableData
+    }
+    func close() {
+        lock.lock(); defer { lock.unlock() }
+        guard !closed else { return }; closed = true
+        handle.readabilityHandler = nil
+        try? handle.close()
+    }
+}
+
 struct AgentRPCError: LocalizedError {
     let code: Int
     let message: String
@@ -16,6 +36,7 @@ final class AgentRPC {
     var onExit: ((Error) -> Void)?
     private let process = Process()
     private let input = Pipe(), output = Pipe(), errors = Pipe()
+    private var outputReader: AgentPipeReader?, errorReader: AgentPipeReader?
     private let writes = DispatchQueue(label: "nocturne.chat.stdin")
     private var buffer = Data()
     private var nextID = 0
@@ -42,12 +63,14 @@ final class AgentRPC {
         }
         process.environment = environment
         process.standardInput = input; process.standardOutput = output; process.standardError = errors
-        output.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
+        let outputReader = AgentPipeReader(output.fileHandleForReading), errorReader = AgentPipeReader(errors.fileHandleForReading)
+        self.outputReader = outputReader; self.errorReader = errorReader
+        output.fileHandleForReading.readabilityHandler = { [weak self] _ in
+            guard let data = outputReader.read() else { return }
             DispatchQueue.main.async { self?.receive(data) }
         }
         // Drain stderr so a verbose provider cannot deadlock. It may contain private diagnostic data.
-        errors.fileHandleForReading.readabilityHandler = { handle in if handle.availableData.isEmpty { handle.readabilityHandler = nil } }
+        errors.fileHandleForReading.readabilityHandler = { _ in if errorReader.read()?.isEmpty == true { errorReader.close() } }
         do { try process.run() } catch { close(); throw error }
         try? input.fileHandleForReading.close()
         try? output.fileHandleForWriting.close()
@@ -113,10 +136,14 @@ final class AgentRPC {
         deadlines.removeValue(forKey: id)?.cancel()
         pending.removeValue(forKey: id)?.resume(with: result)
     }
+    func waitUntilExit() async throws {
+        while process.isRunning { try await Task.sleep(nanoseconds: 10_000_000) }
+    }
     func close(error: Error = NocturneError.disconnected) {
         guard !closed else { return }; closed = true
-        output.fileHandleForReading.readabilityHandler = nil; errors.fileHandleForReading.readabilityHandler = nil
-        try? input.fileHandleForWriting.close(); try? output.fileHandleForReading.close(); try? errors.fileHandleForReading.close()
+        outputReader?.close(); errorReader?.close()
+        let writer = input.fileHandleForWriting
+        writes.async { try? writer.close() }
         if process.isRunning {
             process.terminate()
             let child = process

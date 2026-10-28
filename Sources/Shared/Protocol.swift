@@ -16,9 +16,9 @@ public enum Operation: String, Codable {
     case displayPrepare, displayHeartbeat, displayRelease
     case microphoneStart, microphoneAudio, microphoneStop
     case appList, appIcon, appLaunch, appOpen, appResize, appInput, appHeartbeat, appClose, appVideo, appEnded
-    case chatProviders, chatList, chatLoad, chatNew, chatPrompt, chatCancel, chatPermission, chatEvent
+    case chatSupervisor, chatProviders, chatList, chatLoad, chatNew, chatPrompt, chatCancel, chatPermission, chatEvent
     case chatOptions, chatConfigure, chatRepository
-    case chatVoiceStart, chatVoiceHeartbeat, chatVoiceStop, chatVoiceEvent
+    case chatVoicePrepare, chatVoiceOpen, chatVoiceStart, chatVoiceHeartbeat, chatVoiceStop, chatVoiceEvent
     case desktopList, desktopOpen, desktopResize, desktopInput, desktopHeartbeat, desktopClose, desktopVideo, desktopAudio, desktopEnded
 }
 
@@ -85,6 +85,7 @@ public struct Packet: Codable {
     public var chatHistory: ChatHistoryPage? = nil
     public var chatSession: ChatSessionInfo? = nil
     public var chatEvent: ChatEvent? = nil
+    public var chatPermissions: [ChatPermission]? = nil
     public var chatOptions: [ChatConfigOption]? = nil
     public var repositoryRequest: RepositoryRequest? = nil
     public var repositoryResponse: RepositoryResponse? = nil

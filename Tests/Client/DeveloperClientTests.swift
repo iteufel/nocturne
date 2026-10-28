@@ -20,6 +20,7 @@ final class DeveloperClientTests: XCTestCase {
         XCTAssertEqual(inbox.items.count, 2, "Matching PR numbers on GitHub and Azure must remain distinct")
         XCTAssertEqual(Set(inbox.items.map(\.id)).count, 2)
         XCTAssertTrue(inbox.errors.isEmpty)
+        XCTAssertNotEqual(peer.lastRepositoryConnection, peer.lastChatConnection, "PR discovery must not lock the conversation connection")
         chat.draft = "An unsent request"
         await chat.sendHelper("Explain https://github.com/acme/app/pull/41")
         XCTAssertEqual(peer.lastPrompt, "Explain https://github.com/acme/app/pull/41")
@@ -30,6 +31,25 @@ final class DeveloperClientTests: XCTestCase {
         try await waitUntil { peer.lastPrompt == "A delayed helper" }
         chat.reset(); peer.finishPrompt(); await helper.value
         XCTAssertNil(chat.selected); XCTAssertEqual(chat.draft, "", "A late helper cannot restore a draft into another chat generation")
+    }
+    func testScrollingToEarlierHistoryLoadsWithoutAButton() async throws {
+        let peer = try DeveloperWorkspacePeer(demonstration: true); peer.pagedHistory = true; try await peer.start()
+        let app = ClientModel(voicePermission: { false }), chat = app.chats
+        defer { app.suspend(); peer.stop() }
+        try await app.server.connect(peer.invitation()); await chat.refresh(); await chat.open(try XCTUnwrap(chat.sessions.first))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: ChatTranscript(model: chat))
+        window.rootViewController = host; window.makeKeyAndVisible(); defer { window.isHidden = true }
+        try await Task.sleep(nanoseconds: 300_000_000); host.view.layoutIfNeeded()
+        func scrollViews(_ view: UIView) -> [UIScrollView] { (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews) }
+        let scroll = try XCTUnwrap(scrollViews(host.view).first)
+        scroll.delegate?.scrollViewWillBeginDragging?(scroll)
+        scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: false)
+        scroll.delegate?.scrollViewDidScroll?(scroll)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertEqual(peer.olderHistoryRequests, 1, "Reaching the top should load history without a load-more button")
+        XCTAssertEqual(chat.messages.first?.id, "earlier")
     }
     func testNativeChatCanvasScreenshot() async throws {
         let restoreOnboarding = completeOnboardingForTest(); defer { restoreOnboarding() }
@@ -162,7 +182,10 @@ private final class DeveloperWorkspacePeer {
     var fileText = "updated\n"
     var lastEditRemote: String?, lastOpenedWorktree: String?
     var lastPrompt: String?
+    var lastRepositoryConnection: UUID?, lastChatConnection: UUID?
     var holdPrompt = false
+    var pagedHistory = false
+    var olderHistoryRequests = 0
     private var promptReply: Packet?
     private weak var promptChannel: SecureChannel?
     private var prTitle = "Review mobile workspace", prBody = "Description"
@@ -203,13 +226,23 @@ private final class DeveloperWorkspacePeer {
                 case .hello: reply.version = WorkspaceProtocol.version; reply.data = nonce
                 case .authenticate:
                     _ = try WorkspaceIdentity.verify(certificate: XCTUnwrap(packet.certificate), signature: XCTUnwrap(packet.signature), challenge: channel.boundChallenge(nonce))
-                    authenticated = true; reply.capabilities = [ChatProtocol.capability, DeveloperProtocol.capability, DeveloperProtocol.actionsCapability]
-                case .chatProviders: reply.chatProviders = [.init(id: "codex", name: "Codex", available: true, detail: "Fixture")]
+                    authenticated = true; reply.capabilities = [ChatProtocol.capability, DeveloperProtocol.capability, DeveloperProtocol.actionsCapability, ChatSupervisor.capability]
+                case .chatProviders: reply.chatProviders = [.init(id: "codex", name: "Codex", available: true, detail: "Fixture", supportsVoice: true)]
                 case .chatList:
                     reply.chatPage = .init(sessions: [self.info] + (self.demonstration ? [.init(id: "demo-review", title: "Review Codex voice", directory: "/Projects/Nocturne", updatedAt: Date().addingTimeInterval(-3600)), .init(id: "demo-snoozed", title: "Polish the diff viewer", directory: "/Projects/Nocturne", updatedAt: Date().addingTimeInterval(-21600)), .init(id: "demo-settled", title: "Keep background audio connected", directory: "/Projects/Nocturne", updatedAt: Date().addingTimeInterval(-86400))] : []))
+                case .chatSupervisor:
+                    reply.chatHistory = .init(session: .init(id: "demo-supervisor", title: "Supervisor", directory: "/Projects", isSupervisor: true), messages: [])
                 case .chatLoad:
+                    self.lastChatConnection = id
                     if self.demonstration { self.info = .init(id: packet.chatRequest?.sessionID ?? self.info.id, title: "Build the native chat workspace", directory: "/Projects/Nocturne", updatedAt: Date()) }
-                    reply.chatHistory = .init(session: self.info, messages: self.demonstration ? self.demonstrationMessages : [])
+                    if self.pagedHistory {
+                        if packet.chatRequest?.cursor != nil {
+                            self.olderHistoryRequests += 1
+                            reply.chatHistory = .init(session: self.info, messages: [.init(id: "earlier", role: .assistant, text: String(repeating: "Earlier history. ", count: 100))])
+                        } else {
+                            reply.chatHistory = .init(session: self.info, messages: (0..<40).map { .init(id: "page-\($0)", role: .assistant, text: "Message \($0). " + String(repeating: "Conversation history. ", count: 15)) }, nextCursor: "older")
+                        }
+                    } else { reply.chatHistory = .init(session: self.info, messages: self.demonstration ? self.demonstrationMessages : []) }
                 case .chatOptions: reply.chatOptions = self.options
                 case .chatConfigure:
                     if packet.chatRequest?.configID == "effort" { self.effort = try XCTUnwrap(packet.chatRequest?.configValue) }
@@ -221,6 +254,7 @@ private final class DeveloperWorkspacePeer {
                     let path = packet.chatRequest?.worktreePath ?? self.info.directory; self.lastOpenedWorktree = path
                     self.info = .init(id: "worktree-chat", title: "New conversation", directory: path); reply.chatSession = self.info
                 case .chatRepository:
+                    self.lastRepositoryConnection = id
                     let request = try XCTUnwrap(packet.repositoryRequest), remote = request.remote ?? "origin"
                     var response = RepositoryResponse()
                     switch request.action {

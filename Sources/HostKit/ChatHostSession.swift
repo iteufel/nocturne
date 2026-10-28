@@ -4,6 +4,10 @@ import NocturneKit
 /// One agent process per authenticated connection; disconnect and access revocation tear it down.
 @MainActor
 public final class ChatHostSession {
+    private let supervisor: ChatSupervisorService
+    private let ownsSupervisor: Bool
+    private let supervisorListener = UUID()
+    private var supervisorSelection: String?
     private var configurations: [ChatAgentConfiguration]
     private let directory: URL
     private var enabled: Bool
@@ -22,22 +26,25 @@ public final class ChatHostSession {
     private var repositoryTask: Task<RepositoryResponse, Error>?
     private var repositoryBusy = false
 
-    public nonisolated init(configurations: [ChatAgentConfiguration], directory: URL, enabled: Bool) {
+    public nonisolated init(configurations: [ChatAgentConfiguration], directory: URL, enabled: Bool, supervisor: ChatSupervisorService? = nil) {
         self.configurations = configurations; self.directory = directory; self.enabled = enabled
+        self.ownsSupervisor = supervisor == nil
+        self.supervisor = supervisor ?? ChatSupervisorService(configurations: configurations, directory: directory)
     }
     public nonisolated func setEnabled(_ value: Bool) {
         DispatchQueue.main.async {
-            if !value { self.endActive("Chat access was turned off on your Mac.") }
+            if !value { self.supervisor.reset(); self.endActive("Chat access was turned off on your Mac.") }
             self.enabled = value; if !value { self.reset() }
         }
     }
     public nonisolated func configure(_ values: [ChatAgentConfiguration]) {
-        DispatchQueue.main.async { self.endActive("The provider settings changed on your Mac. Refresh to reconnect."); self.configurations = values; self.reset() }
+        DispatchQueue.main.async { self.endActive("The provider settings changed on your Mac. Refresh to reconnect."); self.configurations = values; if self.ownsSupervisor { self.supervisor.reset(configurations: values) }; self.reset() }
     }
     public nonisolated func close() {
-        DispatchQueue.main.async { self.closed = true; self.reset(); self.sendEvent = nil }
+        DispatchQueue.main.async { self.closed = true; self.reset(); if self.ownsSupervisor { self.supervisor.reset() }; self.sendEvent = nil }
     }
     private func reset() {
+        supervisor.unsubscribe(supervisorListener); supervisorSelection = nil
         repositoryTask?.cancel(); repositoryTask = nil; repositoryBusy = false
         generation = UUID(); promptTask?.cancel(); promptTask = nil
         cancelTask?.cancel(); cancelTask = nil
@@ -114,6 +121,11 @@ public final class ChatHostSession {
             }
             return reply
         }
+        if packet.operation == .chatPermission, let session = request.sessionID,
+           supervisor.isSupervisor(session, provider: request.providerID), let id = request.permissionID, let option = request.optionID,
+           try supervisor.approve(id, option: option, supervisor: session) {
+            return reply
+        }
         if packet.operation == .chatCancel || packet.operation == .chatPermission {
             guard let agent, agent.configuration.id == request.providerID, let id = request.sessionID,
                   id == activeSession || id == voiceSession else { throw NocturneError.invalidFrame }
@@ -142,17 +154,45 @@ public final class ChatHostSession {
         loading = true; let epoch = generation
         defer { if generation == epoch { loading = false } }
         sendEvent = send
+        if packet.operation == .chatVoicePrepare {
+            guard let id = request.sessionID, configurations.contains(where: { $0.id == request.providerID && $0.transport == .codex }) else { throw NocturneError.invalidFrame }
+            if let agent {
+                guard agent.configuration.id == request.providerID else { throw NocturneError.invalidFrame }
+                try await agent.releaseForVoice(id)
+                if self.agent === agent { self.agent = nil }
+            }
+            return reply
+        }
         if packet.operation == .chatVoiceStart {
             guard request.sessionID != nil, !request.archived, let sdp = request.voiceSDP else { throw NocturneError.remote("Open a recent Codex conversation to start live voice chat.") }
             try ChatVoice.validateSDP(sdp)
         }
-        let provider = try await provider(request.providerID, forVoice: packet.operation == .chatVoiceStart)
+        let provider = try await provider(request.providerID, forVoice: [.chatVoiceOpen, .chatVoiceStart].contains(packet.operation))
         guard generation == epoch, enabled, !closed else { throw NocturneError.permissionDenied }
+        supervisorSelection = request.sessionID.flatMap { supervisor.isSupervisor($0, provider: request.providerID) ? $0 : nil }
+        supervisor.subscribe(supervisorListener) { [weak self] event in
+            guard let self, self.enabled, !self.closed, self.supervisorSelection == event.sessionID else { return }
+            self.event(event)
+        }
         switch packet.operation {
-        case .chatList: reply.chatPage = try await provider.list(cursor: request.cursor, archived: request.archived)
+        case .chatVoiceOpen:
+            guard let session = request.sessionID, !request.archived else { throw NocturneError.invalidFrame }
+            do { reply.chatSession = supervisor.decorate(try await provider.prepareVoiceSession(session, allowContinuation: true), provider: request.providerID) }
+            catch { provider.close(); if agent === provider { agent = nil }; throw error }
+        case .chatSupervisor:
+            reply.chatHistory = try await supervisor.open(using: provider)
+            supervisorSelection = reply.chatHistory?.session.id
+            if let id = supervisorSelection {
+                reply.chatPermissions = supervisor.permissions(for: id)
+            }
+        case .chatList:
+            let page = try await provider.list(cursor: request.cursor, archived: request.archived)
+            reply.chatPage = ChatSessionPage(sessions: page.sessions.map { supervisor.decorate($0, provider: request.providerID) }, nextCursor: page.nextCursor, notice: page.notice)
         case .chatLoad:
             guard let id = request.sessionID else { throw NocturneError.invalidFrame }
-            reply.chatHistory = try await provider.load(id, cursor: request.cursor, archived: request.archived)
+            let page = try await provider.load(id, cursor: request.cursor, archived: request.archived)
+            reply.chatHistory = ChatHistoryPage(session: supervisor.decorate(page.session, provider: request.providerID), messages: page.messages, nextCursor: page.nextCursor, canPrompt: page.canPrompt)
+            if supervisorSelection != nil { reply.chatPermissions = supervisor.permissions(for: id) }
         case .chatNew:
             var directory: URL?
             if let path = request.worktreePath {
@@ -270,7 +310,7 @@ public final class ChatHostSession {
         return result
     }
     private func provider(_ id: String, forVoice: Bool = false) async throws -> ChatAgentSession {
-        if forVoice { agent?.close(); agent = nil }
+        if let agent, agent.isVoiceProvider != forVoice { agent.close(); self.agent = nil }
         if let agent, agent.configuration.id == id, !agent.isClosed { return agent }
         guard let configuration = configurations.first(where: { $0.id == id }) else { throw NocturneError.remote("This provider is no longer configured on your Mac. Refresh the provider list.") }
         guard !forVoice || configuration.transport == .codex else { throw NocturneError.remote("Live voice is currently available for Codex.") }
@@ -278,6 +318,11 @@ public final class ChatHostSession {
         let epoch = generation
         let next = try ChatAgentSession(configuration: configuration, directory: configuration.workingDirectory(fallback: directory),
             chatGPTOnly: forVoice)
+        next.supervisorSession = { [weak supervisor] id in supervisor?.isSupervisor(id, provider: configuration.id) == true }
+        next.supervisorTool = { [weak supervisor] id, arguments in
+            guard let supervisor else { throw NocturneError.disconnected }
+            return try await supervisor.call(arguments, supervisorProvider: configuration.id, supervisorID: id)
+        }
         next.emit = { [weak self] event in
             guard let self, self.generation == epoch else { return }; self.event(event)
         }
@@ -301,6 +346,11 @@ public final class ChatHostSession {
                 var packet = Packet(.chatEvent); packet.chatEvent = bounded; sendEvent?(packet)
             }
         } else { var packet = Packet(.chatEvent); packet.chatEvent = event; sendEvent?(packet) }
+        if event.kind == .completed || event.kind == .failed, supervisor.isSupervisor(event.sessionID, provider: event.providerID) {
+            for permission in supervisor.permissions(for: event.sessionID) {
+                var packet = Packet(.chatEvent); packet.chatEvent = ChatEvent(providerID: event.providerID, sessionID: event.sessionID, kind: .permission, permission: permission); sendEvent?(packet)
+            }
+        }
     }
     private func clearVoice() {
         voiceID = nil; voiceSession = nil; voiceWatchdog?.cancel(); voiceWatchdog = nil

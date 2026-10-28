@@ -26,6 +26,87 @@ final class ChatTests: XCTestCase {
         let agent = try ChatAgentSession(configuration: configuration(mode), directory: root, chatGPTOnly: mode.hasPrefix("voice")); agents.append(agent)
         try await agent.initialize(); return agent
     }
+    func testSupervisorPersistsThreadAndRoutesRealDynamicToolsAndWorkerApprovals() async throws {
+        let suite = "Nocturne-supervisor-" + UUID().uuidString, defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let service = ChatSupervisorService(configurations: [configuration(), configuration("acp", id: "claude")], directory: root, defaults: defaults)
+        defer { service.reset() }
+        let agent = try await agent()
+        agent.supervisorSession = { service.isSupervisor($0, provider: "codex") }
+        agent.supervisorTool = { try await service.call($1, supervisorProvider: "codex", supervisorID: $0) }
+        let page = try await service.open(using: agent)
+        XCTAssertTrue(page.session.isSupervisor == true)
+        let reopened = try await service.open(using: agent)
+        XCTAssertEqual(reopened.session.id, page.session.id)
+        let restored = ChatSupervisorService(configurations: [configuration()], directory: root, defaults: defaults)
+        XCTAssertTrue(restored.isSupervisor(page.session.id, provider: "codex"))
+        var events: [ChatEvent] = [], workerEvents: [ChatEvent] = []
+        agent.emit = { events.append($0) }
+        let listener = UUID(); service.subscribe(listener) { workerEvents.append($0) }
+        defer { service.unsubscribe(listener) }
+        try await agent.prompt(page.session.id, text: "list agents")
+        try await waitUntil { events.contains { $0.kind == .completed } }
+        XCTAssertTrue(events.contains { $0.message?.text.contains("claude") == true }, "The actual RPC dynamic tool response reaches the supervisor")
+        let started = try await service.call(["action": "send", "sessionID": "legacy", "text": "run"], supervisorProvider: "codex", supervisorID: page.session.id)
+        XCTAssertTrue(started.contains("Started"))
+        try await waitUntil { !service.permissions(for: page.session.id).isEmpty }
+        let permission = try XCTUnwrap(service.permissions(for: page.session.id).first)
+        XCTAssertTrue(workerEvents.contains { $0.kind == .permission && $0.sessionID == page.session.id })
+        XCTAssertFalse(try service.approve(permission.id, option: "accept", supervisor: "another-thread"))
+        XCTAssertTrue(try service.approve(permission.id, option: "accept", supervisor: page.session.id))
+        try await waitUntil { workerEvents.contains { $0.message?.text.contains("Completed") == true } }
+        XCTAssertTrue(service.permissions(for: page.session.id).isEmpty)
+        let list = try await service.call(["action": "list"], supervisorProvider: "codex", supervisorID: page.session.id)
+        XCTAssertTrue(list.contains("Completed"))
+        _ = try await service.call(["action": "send", "sessionID": "legacy", "text": "wait"], supervisorProvider: "codex", supervisorID: page.session.id)
+        _ = try await service.call(["action": "stop", "sessionID": "legacy"], supervisorProvider: "codex", supervisorID: page.session.id)
+        try await waitUntil { workerEvents.contains { $0.message?.text.contains("Stopped") == true } }
+    }
+    func testSupervisorCreatesProjectWorkersAndRejectsExternalActiveTargets() async throws {
+        let suite = "Nocturne-supervisor-" + UUID().uuidString, defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let service = ChatSupervisorService(configurations: [configuration()], directory: root, defaults: defaults)
+        defer { service.reset() }
+        let agent = try await agent(), page = try await service.open(using: agent)
+        let created = try await service.call(["action": "create", "sourceSessionID": "legacy", "text": "wait"], supervisorProvider: "codex", supervisorID: page.session.id)
+        let result = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(created.utf8)) as? [String: String])
+        XCTAssertEqual(result["directory"], root.path); XCTAssertEqual(result["sessionID"], "new")
+        for arguments in [["action": "send", "sessionID": "external-active", "text": "run"], ["action": "stop", "sessionID": "external-active"], ["action": "send", "sessionID": page.session.id, "text": "run"]] {
+            do { _ = try await service.call(arguments, supervisorProvider: "codex", supervisorID: page.session.id); XCTFail("Unsafe target accepted") }
+            catch { XCTAssertFalse(error.localizedDescription.isEmpty) }
+        }
+        let workerPID = try XCTUnwrap(Int32(try String(contentsOf: root.appendingPathComponent("agent.pid"))))
+        service.reset()
+        try await waitUntil { kill(workerPID, 0) != 0 }
+    }
+    func testSupervisorOpensOverAuthenticatedConnectionAndOlderPagesCannotSwitchThreads() async throws {
+        let key = try SecureStore.randomKey(), identity = try TestDeviceIdentity()
+        let store = try WorkspaceDeviceStore(url: root.appendingPathComponent("devices.json"))
+        let server = try WorkspaceServer(folder: root, name: "Supervisor Mac", devices: store, permissions: .init(chats: true), chatAgents: [configuration("modern")])
+        let client = WorkspaceConnection(identity: identity.identity()), model = ChatWorkspaceModel(connection: client)
+        defer { client.disconnect(); server.stop() }
+        let ready = expectation(description: "Ready"); var signalled = false
+        server.onStatus = { status, _ in if status == "Ready", !signalled { signalled = true; ready.fulfill() } }
+        try server.start(secret: key, port: 0); await fulfillment(of: [ready], timeout: 5)
+        try await client.connect(PairingInvitation(host: "127.0.0.1", port: XCTUnwrap(server.listeningPort), name: "Supervisor Mac", secret: key, enrollmentToken: store.createInvitation()))
+        await model.refresh(); XCTAssertTrue(model.supportsSupervisor)
+        await model.openSupervisor(); XCTAssertNil(model.error); XCTAssertTrue(model.selected?.isSupervisor == true)
+        let id = try XCTUnwrap(model.selected?.id)
+        await model.open(ChatSessionInfo(id: "other-thread", title: "Other", directory: root.path), older: true)
+        XCTAssertEqual(model.selected?.id, id)
+        try await model.prepareVoice()
+        try await model.prepareVoice() // Retrying after a canceled voice start is harmless.
+        model.draft = "list agents"; await model.send()
+        try await waitUntil { !model.responding }
+        XCTAssertTrue(model.messages.contains { $0.text.contains("providers") })
+        await model.openSupervisor(); XCTAssertEqual(model.selected?.id, id)
+    }
+    func testNewCodexThreadCanOpenBeforeItsFirstTurnIsMaterialized() async throws {
+        let agent = try await agent("unmaterialized")
+        let session = try await agent.create(supervisor: true)
+        let page = try await agent.load(session.id, cursor: nil, archived: false)
+        XCTAssertEqual(page.session.id, session.id); XCTAssertTrue(page.messages.isEmpty); XCTAssertTrue(page.canPrompt)
+    }
     func testCodexListsEverySourceAndModelProviderAndPagesArchivedHistory() async throws {
         let agent = try await agent()
         let first = try await agent.list(cursor: nil, archived: false)
@@ -238,6 +319,48 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(events.last?.kind, .closed)
         XCTAssertFalse(events.contains { $0.kind == .failed })
     }
+    func testVoiceCanContinueWhenAnotherClientOwnsTheThread() async throws {
+        let agent = try await agent("voice-writer")
+        let session = try await agent.prepareVoiceSession("legacy", allowContinuation: true)
+        XCTAssertEqual(session.id, "voice-continuation"); XCTAssertEqual(session.title, "Voice · A conversation")
+        XCTAssertEqual(session.directory, root.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("voice-started").path))
+        var events: [ChatVoiceEvent] = []
+        agent.emitVoice = { events.append($0) }
+        try await agent.startVoice(session.id, lease: "lease", sdp: Self.offerSDP)
+        XCTAssertTrue(events.contains { $0.kind == .answer && $0.sessionID == session.id })
+        XCTAssertTrue(events.allSatisfy { $0.sessionID == session.id })
+        try await agent.stopVoice(lease: "lease")
+        let forks = try String(contentsOf: root.appendingPathComponent("voice-forked"), encoding: .utf8)
+        XCTAssertEqual(forks, "legacy\n", "Starting the prepared call must not fork a second time")
+    }
+    func testVoicePreflightNeverForksForOtherErrorsOrTheSupervisor() async throws {
+        for mode in ["voice-resume-failure", "voice-writer"] {
+            let agent = try await agent(mode)
+            if mode == "voice-writer" { agent.supervisorSession = { $0 == "legacy" } }
+            do { _ = try await agent.prepareVoiceSession("legacy", allowContinuation: true); XCTFail("Unexpected voice preparation") }
+            catch { XCTAssertTrue(error.localizedDescription.contains(mode == "voice-writer" ? "supervisor is open" : "fixture resume failure")) }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("voice-forked").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("voice-started").path))
+        }
+    }
+    func testHostKeepsPreparedVoiceWriterUntilCallStarts() async throws {
+        let host = ChatHostSession(configurations: [configuration("voice-writer")], directory: root, enabled: true)
+        defer { host.close() }
+        func send(_ packet: Packet) async -> Packet {
+            await withCheckedContinuation { continuation in
+                host.handle(packet) { if $0.id == packet.id { continuation.resume(returning: $0) } }
+            }
+        }
+        var open = Packet(.chatVoiceOpen); open.chatRequest = ChatRequest(providerID: "codex", sessionID: "legacy")
+        let prepared = await send(open); XCTAssertNil(prepared.error)
+        let session = try XCTUnwrap(prepared.chatSession)
+        var start = Packet(.chatVoiceStart); start.chatRequest = ChatRequest(providerID: "codex", sessionID: session.id); start.chatRequest?.voiceSDP = Self.offerSDP
+        let started = await send(start); XCTAssertNil(started.error)
+        XCTAssertEqual(started.chatVoiceEvent?.sessionID, session.id)
+        var stop = Packet(.chatVoiceStop); stop.chatRequest = start.chatRequest; stop.chatRequest?.voiceID = started.chatVoiceEvent?.voiceID
+        let stopped = await send(stop); XCTAssertNil(stopped.error)
+    }
     func testVoiceRejectsSignedOutAndAPIKeyAccountsBeforeCallCreation() async throws {
         for mode in ["voice-signed-out", "voice-platform-key", "voice-platform-provider"] {
             let agent = try await agent(mode)
@@ -328,6 +451,15 @@ final class ChatTests: XCTestCase {
         host.expireVoice(now: ProcessInfo.processInfo.systemUptime + ChatVoice.leaseTimeout + 1)
         try await waitUntil { events.contains { $0.kind == .failed } && kill(pid, 0) != 0 }
     }
+    func testProviderCloseDrainsQueuedWritesWithoutUsingClosedHandles() async throws {
+        for _ in 0..<20 {
+            let rpc = try AgentRPC(configuration: configuration("voice"), directory: root, chatGPTOnly: true)
+            _ = try await rpc.call("voice/testEnvironment")
+            for _ in 0..<8 { rpc.notify("initialized") }
+            rpc.close()
+            try await rpc.waitUntilExit()
+        }
+    }
     func testVoiceChildNeverReceivesPlatformKeyEnvironment() async throws {
         let previous = getenv("OPENAI_API_KEY").map { String(cString: $0) }
         setenv("OPENAI_API_KEY", "fixture-only", 1)
@@ -381,6 +513,59 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(options.first?.choices.map(\.value), ["fixture-fast", "fixture-deep"])
         let changed = try await agent.configure(session.id, id: "agent-model", value: "fixture-deep")
         XCTAssertEqual(changed.first?.value, "fixture-deep")
+    }
+    func testInstalledCodexVoiceContinuationWithCompetingWriterWithoutInference() async throws {
+        guard ProcessInfo.processInfo.environment["NOCTURNE_TEST_CODEX_VOICE_PREFLIGHT"] == "1" else { throw XCTSkip("Opt-in installed Codex writer conflict and voice preparation; no inference or microphone.") }
+        let configuration = ChatAgentConfiguration.defaults[0]
+        let owner = try AgentRPC(configuration: configuration, directory: root)
+        defer { owner.close() }
+        _ = try await owner.call("initialize", ["clientInfo": ["name": "nocturne-test", "version": "1.0"], "capabilities": ["experimentalApi": true]])
+        owner.notify("initialized")
+        let started = try await owner.call("thread/start", ["cwd": root.path, "historyMode": "legacy"])
+        let source = try XCTUnwrap((started["thread"] as? [String: Any])?["id"] as? String)
+        _ = try await owner.call("thread/name/set", ["threadId": source, "name": "Nocturne voice writer fixture"])
+        let voice = try ChatAgentSession(configuration: configuration, directory: root, chatGPTOnly: true); agents.append(voice)
+        var continuation: String?
+        do {
+            try await voice.initialize()
+            let prepared = try await voice.prepareVoiceSession(source, allowContinuation: true); continuation = prepared.id
+            XCTAssertNotEqual(prepared.id, source)
+            XCTAssertEqual(prepared.title, "Voice · Nocturne voice writer fixture")
+            XCTAssertEqual(URL(fileURLWithPath: prepared.directory).resolvingSymlinksInPath(), root.resolvingSymlinksInPath())
+            let again = try await voice.prepareVoiceSession(prepared.id)
+            XCTAssertEqual(again.id, prepared.id)
+            // The original client still owns and can operate its original thread.
+            _ = try await owner.call("thread/name/set", ["threadId": source, "name": "Nocturne voice writer fixture still owned"])
+            try await voice.releaseForVoice(prepared.id)
+        } catch {
+            voice.close()
+            if let continuation { _ = try? await owner.call("thread/archive", ["threadId": continuation]) }
+            _ = try? await owner.call("thread/archive", ["threadId": source])
+            throw error
+        }
+        if let continuation { _ = try await owner.call("thread/archive", ["threadId": continuation]) }
+        _ = try await owner.call("thread/archive", ["threadId": source])
+    }
+    func testInstalledCodexSupervisorToolsWithoutInference() async throws {
+        guard ProcessInfo.processInfo.environment["NOCTURNE_TEST_CODEX_SUPERVISOR"] == "1" else { throw XCTSkip("Opt-in installed Codex supervisor registration and handoff; no inference or microphone.") }
+        let configuration = ChatAgentConfiguration.defaults[0]
+        let agent = try ChatAgentSession(configuration: configuration, directory: root); agents.append(agent)
+        try await agent.initialize()
+        let session = try await agent.create(supervisor: true)
+        let page = try await agent.load(session.id, cursor: nil, archived: false)
+        XCTAssertEqual(page.session.id, session.id); XCTAssertTrue(page.messages.isEmpty)
+        try await agent.releaseForVoice(session.id)
+        let rpc = try AgentRPC(configuration: configuration, directory: root, chatGPTOnly: true)
+        defer { rpc.close() }
+        _ = try await rpc.call("initialize", ["clientInfo": ["name": "nocturne", "version": "1.0"], "capabilities": ["experimentalApi": true]])
+        rpc.notify("initialized")
+        do {
+            let resumed = try await rpc.call("thread/resume", ["threadId": session.id, "excludeTurns": true])
+            XCTAssertEqual((resumed["thread"] as? [String: Any])?["id"] as? String, session.id)
+        } catch {
+            _ = try? await rpc.call("thread/archive", ["threadId": session.id]); throw error
+        }
+        _ = try await rpc.call("thread/archive", ["threadId": session.id])
     }
     func testInstalledCodexModelSelectionWithoutInference() async throws {
         guard ProcessInfo.processInfo.environment["NOCTURNE_TEST_CODEX_MODELS"] == "1" else { throw XCTSkip("Opt-in installed Codex model catalog and ephemeral thread settings; no inference.") }
@@ -497,6 +682,10 @@ for line in sys.stdin:
             reply(rid, {'data':[thread('legacy' if i == 0 else str(i), 'Archived' if p['archived'] else 'Chat '+str(i)) for i in range(45)], 'nextCursor':'remote-page'})
     elif method == 'thread/read':
         t = thread(p['threadId'])
+        if p['threadId'] == 'external-active': t['status'] = {'type':'active','activeFlags':[]}
+        if p.get('includeTurns') and mode == 'unmaterialized':
+            send({'id':rid,'error':{'code':-32600,'message':'thread supervisor is not materialized yet; includeTurns is unavailable before first user message'}})
+            continue
         if p.get('includeTurns'):
             t['turns'] = [{'id':'turn','items':[item('u','Hello','userMessage'), item('a','🌙'*10000), {'id':'secret','type':'reasoning','content':['private reasoning']}]}]
         reply(rid, {'thread':t})
@@ -510,8 +699,30 @@ for line in sys.stdin:
         values = [item('one','first')] if p.get('cursor') else [item('three','third'),item('two','second')]
         reply(rid, {'data':[{'turnId':'t','item':i} for i in values], 'nextCursor':None if p.get('cursor') else 'older'})
     elif method in ('thread/resume','thread/start'):
-        if method == 'thread/start': thread_directories['new'] = p['cwd']
-        reply(rid, {'thread':thread(p.get('threadId','new'))})
+        tid = p.get('threadId','new')
+        if method == 'thread/resume' and mode == 'voice-writer' and tid == 'legacy':
+            send({'jsonrpc':'2.0','id':rid,'error':{'code':-32600,'message':'thread legacy already has an active writer'}})
+            continue
+        if method == 'thread/resume' and mode == 'voice-resume-failure':
+            send({'jsonrpc':'2.0','id':rid,'error':{'code':-32600,'message':'fixture resume failure'}})
+            continue
+        if method == 'thread/resume' and mode == 'voice-writer' and tid == 'voice-continuation':
+            raise AssertionError('The prepared provider must be reused, not resumed in a second process')
+        if method == 'thread/start':
+            if p.get('dynamicTools'):
+                assert p['dynamicTools'][0]['name'] == 'nocturne_agents' and p['dynamicTools'][0]['type'] == 'function'
+                assert 'supervisor' in p['developerInstructions']
+                tid = 'supervisor'
+            thread_directories[tid] = p['cwd']
+        reply(rid, {'thread':thread(tid)})
+    elif method == 'thread/fork':
+        assert mode == 'voice-writer' and p['threadId'] == 'legacy'
+        assert p['deferGoalContinuation'] and p['excludeTurns'] and p['modelProvider'] == 'openai'
+        assert p['sandbox'] == 'workspace-write' and p['approvalPolicy'] == 'on-request'
+        with open(os.path.join(cwd,'voice-forked'),'a') as f: f.write(p['threadId']+'\n')
+        reply(rid, {'thread':thread('voice-continuation')})
+    elif method == 'thread/name/set':
+        reply(rid, {})
     elif method == 'voice/testEnvironment':
         reply(rid, {'platformKeyPresent': any(os.environ.get(k) for k in ['OPENAI_API_KEY','CODEX_API_KEY','AZURE_OPENAI_API_KEY']), 'originatorOverridePresent': bool(os.environ.get('CODEX_INTERNAL_ORIGINATOR_OVERRIDE'))})
     elif method == 'account/read':
@@ -562,7 +773,9 @@ for line in sys.stdin:
         reply(rid, {'turn':{'id':'active-turn','status':'inProgress'}})
         event('turn/started',{'threadId':sid,'turn':{'id':'active-turn'}})
         event('item/completed',{'threadId':sid,'item':item('sent',p['input'][0]['text'],'userMessage')})
-        if p['input'][0]['text'] != 'wait':
+        if sid == 'supervisor':
+            send({'jsonrpc':'2.0','id':'supervisor-tool','method':'item/tool/call','params':{'threadId':sid,'turnId':'active-turn','callId':'manage-1','tool':'nocturne_agents','arguments':{'action':'list'}}})
+        elif p['input'][0]['text'] != 'wait':
             event('turn/diff/updated',{'threadId':sid,'turnId':'active-turn','diff':'diff --git a/notes.txt b/notes.txt\n@@ -1 +1 @@\n-old\n+agent edit\n'})
             event('item/agentMessage/delta',{'threadId':sid,'itemId':'answer','delta':'Hello '})
             pending = rid
@@ -596,6 +809,10 @@ for line in sys.stdin:
     elif method == 'session/cancel':
         reply(pending, {'stopReason':'cancelled'})
         pending = None
+    elif method is None and rid == 'supervisor-tool':
+        assert q['result']['success']
+        event('item/completed', {'threadId':sid,'item':item('supervisor-answer',q['result']['contentItems'][0]['text'])})
+        event('turn/completed',{'threadId':sid,'turn':{'id':'active-turn','status':'completed'}})
     elif method is None and rid == 'approval':
         if mode.startswith('acp'):
             assert q['result']['outcome']['outcome'] in ('selected','cancelled')
