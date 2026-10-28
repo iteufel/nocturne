@@ -17,6 +17,7 @@ final class ClientVoiceChat: ObservableObject {
     private let chat: ChatWorkspaceModel
     private let audio: VoiceAudioDevice
     private let requestPermission: () async -> Bool
+    private let applicationState: () -> UIApplication.State
     private var connection: WorkspaceConnection?
     private var voiceID: String?, sessionID: String?, providerID: String?
     private var generation = UUID()
@@ -25,8 +26,9 @@ final class ClientVoiceChat: ObservableObject {
     private var answerTask: Task<Void, Never>?, connectionDeadline: Task<Void, Never>?, endTask: Task<Void, Never>?
     private var observers: Set<AnyCancellable> = [], globalObservers: Set<AnyCancellable> = []
 
-    init(chat: ChatWorkspaceModel, audio: VoiceAudioDevice? = nil, requestPermission: @escaping () async -> Bool = { await AVAudioApplication.requestRecordPermission() }) {
+    init(chat: ChatWorkspaceModel, audio: VoiceAudioDevice? = nil, requestPermission: @escaping () async -> Bool = { await AVAudioApplication.requestRecordPermission() }, applicationState: @escaping () -> UIApplication.State = { UIApplication.shared.applicationState }) {
         self.chat = chat; self.audio = audio ?? ClientVoiceAudio(); self.requestPermission = requestPermission
+        self.applicationState = applicationState
         chat.$voiceEngaged.dropFirst().sink { [weak self] engaged in
             if !engaged, self?.engaged == true { self?.stop() }
         }.store(in: &globalObservers)
@@ -36,7 +38,7 @@ final class ClientVoiceChat: ObservableObject {
         }.store(in: &globalObservers)
     }
     func startSupervisorIfEnabled(_ enabled: Bool) {
-        guard enabled, chat.selected?.isSupervisor == true, UIApplication.shared.applicationState == .active else { return }
+        guard enabled, chat.selected?.isSupervisor == true, applicationState() == .active else { return }
         start()
     }
     func start() {
