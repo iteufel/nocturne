@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import NocturneKit
 
 /// A readability callback can already be queued when its handler is removed.
@@ -71,7 +72,14 @@ final class AgentRPC {
         }
         // Drain stderr so a verbose provider cannot deadlock. It may contain private diagnostic data.
         errors.fileHandleForReading.readabilityHandler = { _ in if errorReader.read()?.isEmpty == true { errorReader.close() } }
-        do { try process.run() } catch { close(); throw error }
+        do {
+            // The provider can exit while stdin writes are queued. Report EPIPE to
+            // the request instead of delivering SIGPIPE to the entire host process.
+            guard fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            try process.run()
+        } catch { close(); throw error }
         try? input.fileHandleForReading.close()
         try? output.fileHandleForWriting.close()
         try? errors.fileHandleForWriting.close()
