@@ -22,6 +22,7 @@ final class ServerModel: ObservableObject {
     private let engineExecutable: URL
     private let port: UInt16
     private let appWindows = AppWindowSessionManager(host: NativeAppWindowHost())
+    private let simulators = SimulatorSessionManager(backend: SimctlSimulatorBackend())
     private let desktop = DesktopSessionManager(host: NativeDesktopHost())
     @Published private(set) var running = false
     @Published private(set) var starting = false
@@ -148,7 +149,7 @@ final class ServerModel: ObservableObject {
                 // Chat grants can be revoked immediately while startup is pending.
                 let permissions = HostPermissions(terminal: configuration.terminal, files: configuration.files,
                     microphone: configuration.microphone, chats: appliedSettings.chats)
-                let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: permissions, appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil, chatAgents: chatAgents)
+                let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: permissions, appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil, simulators: configuration.simulators ? simulators : nil, chatAgents: chatAgents)
                 if let tunnel = remoteTunnel {
                     host.authorizeRemoteDevice = { [weak tunnel] port, device in
                         guard let tunnel else { throw NocturneError.disconnected }

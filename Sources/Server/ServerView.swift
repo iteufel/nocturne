@@ -285,6 +285,8 @@ struct ServerView: View {
                 VStack(spacing: 20) {
                     Toggle(isOn: $model.settings.screenSharing) { FeatureRow(icon: "display", title: "Screen sharing", subtitle: "Start and keep screen and app sharing ready while Nocturne is open. Files and terminal work independently when this is off.") }.toggleStyle(.switch)
                     Divider()
+                    Toggle(isOn: $model.settings.simulators) { FeatureRow(icon: "iphone", title: "Simulator preview", subtitle: "Show a running iOS simulator to paired devices. Preview only; touch control is unavailable. Requires Xcode. No simulator is started or changed.") }.toggleStyle(.switch)
+                    Divider()
                     Toggle(isOn: $model.settings.terminal) { FeatureRow(icon: "terminal", title: "Terminal", subtitle: "Shells keep running when devices disconnect. Applying changes closes all terminal tabs, including background shells.") }.toggleStyle(.switch)
                     Divider()
                     Toggle(isOn: $model.settings.files) { FeatureRow(icon: "folder", title: "File sharing", subtitle: "Allow paired devices to read and upload files in the folder below. Existing files are never overwritten.") }.toggleStyle(.switch)
