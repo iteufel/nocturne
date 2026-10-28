@@ -34,8 +34,8 @@ final class MacAppWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         let menu = NSMenu()
-        for (title, action) in [("Fit window to app", #selector(fitToApp)), ("Reconnect", #selector(reconnect)),
-                                ("Toggle full screen", #selector(fullScreen)), ("Close stream", #selector(closeStream))] {
+        for (title, action) in [(L("Fit window to app"), #selector(fitToApp)), (L("Reconnect"), #selector(reconnect)),
+                                (L("Toggle full screen"), #selector(fullScreen)), (L("Close stream"), #selector(closeStream))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: ""); item.target = self; menu.addItem(item)
         }
         window.contentView = MacAppWindowContentView(stream: stream, menu: menu)
@@ -143,7 +143,7 @@ private struct MacAppVideoContent: View {
             if let error = stream.error {
                 VStack(spacing: 12) {
                     Text(error).font(.callout).multilineTextAlignment(.center)
-                    Button("Reconnect") { stream.reconnect() }
+                    Button(L("Reconnect")) { stream.reconnect() }
                 }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity).background(.black)
             } else if !stream.ready {
                 ProgressView(stream.status).frame(maxWidth: .infinity, maxHeight: .infinity).background(.black)

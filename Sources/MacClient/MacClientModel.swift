@@ -32,21 +32,21 @@ public final class MacClientModel: ObservableObject {
             let data = try read(Self.account)
             pairedServers = try data.map { try JSONDecoder().decode(PairedServerList.self, from: $0) } ?? PairedServerList()
             loaded = true; error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = NocturneLocalization.message(error.localizedDescription) }
     }
     public func addHost(_ code: String) -> Bool {
         do {
             guard let url = URL(string: code.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw NocturneError.invalidInvitation }
             let invitation = try PairingInvitation(url: url)
             if let local = try read("server-key"), local == invitation.secret {
-                throw NocturneError.remote("This is your own Mac’s pairing code. Copy a code from the other Mac’s Pair a device window.")
+                throw NocturneError.remote(L("This is your own Mac’s pairing code. Copy a code from the other Mac’s Pair a device window."))
             }
             try open(invitation)
             showAddHost = false; return true
         } catch {
             self.error = (error as? NocturneError) == .invalidInvitation
-                ? "This pairing code is invalid. Copy a new code from Pair a device on the other Mac."
-                : error.localizedDescription
+                ? L("This pairing code is invalid. Copy a new code from Pair a device on the other Mac.")
+                : NocturneLocalization.message(error.localizedDescription)
             return false
         }
     }
@@ -54,12 +54,12 @@ public final class MacClientModel: ObservableObject {
         do {
             guard let paired = pairedServers[id] else { return }
             try open(paired.invitation)
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = NocturneLocalization.message(error.localizedDescription) }
     }
     private func open(_ invitation: PairingInvitation) throws {
         load()
-        guard loaded else { throw NocturneError.remote("Unlock your Keychain and try again to keep your saved hosts.") }
-        guard session == nil else { throw NocturneError.remote("Disconnect your current desktop before connecting to another Mac.") }
+        guard loaded else { throw NocturneError.remote(L("Unlock your Keychain and try again to keep your saved hosts.")) }
+        guard session == nil else { throw NocturneError.remote(L("Disconnect your current desktop before connecting to another Mac.")) }
         if identity == nil { identity = try makeIdentity() }
         guard let identity else { throw NocturneError.invalidFrame }
         error = nil
@@ -86,7 +86,7 @@ public final class MacClientModel: ObservableObject {
                 var saved = self.pairedServers; saved.pair(invitation); try self.save(saved)
             }
             apps = browser; error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = NocturneLocalization.message(error.localizedDescription) }
     }
     public func closeApps() { apps?.stop(); apps = nil }
     public func openAppWindow(_ window: RemoteAppWindow, from browser: MacAppsModel) -> String? {
@@ -98,7 +98,7 @@ public final class MacClientModel: ObservableObject {
                 windowID: window.id, title: window.title)
             if appSessions[route.id] != nil { error = nil; return route.id }
             guard appSessions.values.filter({ $0.serverID == route.serverID }).count < AppStreaming.maximumWindowsPerDevice else {
-                throw NocturneError.remote("Close an app stream before opening another window.")
+                throw NocturneError.remote(L("Close an app stream before opening another window."))
             }
             let stream = MacDesktopSession(invitation: invitation, identity: identity, route: route, initialWindow: window)
             stream.onAuthenticated = { [weak self, weak stream] invitation in
@@ -106,7 +106,7 @@ public final class MacClientModel: ObservableObject {
                 var saved = self.pairedServers; saved.pair(invitation); try self.save(saved)
             }
             appSessions[route.id] = stream; error = nil; return route.id
-        } catch { self.error = error.localizedDescription; return nil }
+        } catch { self.error = NocturneLocalization.message(error.localizedDescription); return nil }
     }
     public func showAppWindow(_ id: String) {
         guard let stream = appSessions[id] else { return }
@@ -126,11 +126,11 @@ public final class MacClientModel: ObservableObject {
         do {
             guard session?.serverID != id, apps?.serverID != id,
                   !appSessions.values.contains(where: { $0.serverID == id }) else {
-                throw NocturneError.remote("Close this Mac’s desktop, apps, and app windows before forgetting it.")
+                throw NocturneError.remote(L("Close this Mac’s desktop, apps, and app windows before forgetting it."))
             }
-            guard loaded else { throw NocturneError.remote("Unlock your Keychain and load your saved hosts first.") }
+            guard loaded else { throw NocturneError.remote(L("Unlock your Keychain and load your saved hosts first.")) }
             var saved = pairedServers; saved.remove(id); try save(saved)
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = NocturneLocalization.message(error.localizedDescription) }
     }
     private func save(_ list: PairedServerList) throws {
         guard loaded else { throw NocturneError.disconnected }

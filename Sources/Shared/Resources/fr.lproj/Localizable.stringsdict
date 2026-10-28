@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>%d files</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d fichier</string>
+			<key>other</key>
+			<string>%d fichiers</string>
+			<key>many</key>
+			<string>%d fichiers</string>
+		</dict>
+	</dict>
+	<key>%d connected devices</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d appareil connecté</string>
+			<key>other</key>
+			<string>%d appareils connectés</string>
+			<key>many</key>
+			<string>%d appareils connectés</string>
+		</dict>
+	</dict>
+	<key>%d active connections</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d connexion active</string>
+			<key>other</key>
+			<string>%d connexions actives</string>
+			<key>many</key>
+			<string>%d connexions actives</string>
+		</dict>
+	</dict>
+	<key>%d checks and policies</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d vérification ou stratégie</string>
+			<key>other</key>
+			<string>%d vérifications et stratégies</string>
+			<key>many</key>
+			<string>%d vérifications et stratégies</string>
+		</dict>
+	</dict>
+	<key>%d open windows</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d fenêtre ouverte</string>
+			<key>other</key>
+			<string>%d fenêtres ouvertes</string>
+			<key>many</key>
+			<string>%d fenêtres ouvertes</string>
+		</dict>
+	</dict>
+	<key>Ran %d tool actions</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d action d’outil exécutée</string>
+			<key>other</key>
+			<string>%d actions d’outils exécutées</string>
+			<key>many</key>
+			<string>%d actions d’outils exécutées</string>
+		</dict>
+	</dict>
+	<key>%d connected</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d connecté</string>
+			<key>other</key>
+			<string>%d connectés</string>
+			<key>many</key>
+			<string>%d connectés</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

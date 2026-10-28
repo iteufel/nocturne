@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Nocturne",
+    defaultLocalization: "en",
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .library(name: "NocturneKit", targets: ["NocturneKit"]),
@@ -13,7 +14,7 @@ let package = Package(
     dependencies: [.package(url: "https://github.com/stasel/WebRTC.git", exact: "155.0.0")],
     targets: [
         .binaryTarget(name: "NocturneRemote", path: "Vendor/NocturneRemote.xcframework"),
-        .target(name: "NocturneKit", dependencies: ["NocturneRemote"], path: "Sources/Shared",
+        .target(name: "NocturneKit", dependencies: ["NocturneRemote"], path: "Sources/Shared", resources: [.process("Resources")],
             linkerSettings: [.linkedFramework("SystemConfiguration"), .linkedFramework("Security"),
                 .linkedFramework("CoreWLAN", .when(platforms: [.macOS])), .linkedLibrary("resolv")]),
         .target(name: "NocturneFiles", dependencies: ["NocturneKit"], path: "Sources/FileProvider"),

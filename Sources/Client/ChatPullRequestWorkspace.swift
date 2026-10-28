@@ -26,25 +26,25 @@ struct ChatPullRequestWorkspace: View {
                     VStack(alignment: .leading, spacing: 24) {
                         HStack(spacing: 10) {
                             Label(state(request), systemImage: "arrow.triangle.pull").foregroundStyle(ChatStyle.prColor(request.state)).font(.caption.weight(.semibold))
-                            Text("\(request.fileCount ?? project.prFiles.count) files").font(.caption).foregroundStyle(ChatStyle.secondary)
+                            Text(LCount("%d files", request.fileCount ?? project.prFiles.count)).font(.caption).foregroundStyle(ChatStyle.secondary)
                             Spacer()
                         }
                         Text(request.title).font(.system(size: 23, weight: .semibold)).textSelection(.enabled)
                         HStack(alignment: .firstTextBaseline) {
                             Text(request.author).font(.subheadline)
                             Spacer()
-                            if let date = ChatStyle.date(request.updatedAt) { Text("Updated " + ChatStyle.age(date) + " ago").font(.caption).foregroundStyle(ChatStyle.secondary) }
+                            if let date = ChatStyle.date(request.updatedAt) { Text(L("Updated %@", ChatStyle.age(date))).font(.caption).foregroundStyle(ChatStyle.secondary) }
                         }
                         Text(request.target + " ← " + request.source).font(.system(.caption, design: .monospaced)).foregroundStyle(ChatStyle.secondary).textSelection(.enabled)
                         HStack(spacing: 0) {
                             ForEach(["Overview", "Guide", "Activity"], id: \.self) { value in
                                 Button { tab = value } label: {
-                                    Text(value).font(.subheadline.weight(tab == value ? .semibold : .regular)).foregroundStyle(tab == value ? Color.primary : ChatStyle.secondary)
+                                    Text(L(value)).font(.subheadline.weight(tab == value ? .semibold : .regular)).foregroundStyle(tab == value ? Color.primary : ChatStyle.secondary)
                                         .padding(.horizontal, 18).padding(.vertical, 11).background(tab == value ? ChatStyle.selected : .clear, in: RoundedRectangle(cornerRadius: 10))
                                 }.buttonStyle(.plain).accessibilityAddTraits(tab == value ? [.isSelected] : []).accessibilityIdentifier("prTab-" + value)
                             }
                         }.padding(3).accessibilityIdentifier("prWorkspaceTabs")
-                        if watching { Label("Watching while this PR is open", systemImage: "eye").font(.caption).foregroundStyle(ChatStyle.blue) }
+                        if watching { Label(L("Watching while this PR is open"), systemImage: "eye").font(.caption).foregroundStyle(ChatStyle.blue) }
                         if let error = project.error { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
                         if project.busy { ProgressView().controlSize(.small) }
                         switch tab {
@@ -71,56 +71,56 @@ struct ChatPullRequestWorkspace: View {
         .sheet(isPresented: $editing) { DeveloperPullRequestView(model: project) }
     }
     private func state(_ request: PullRequestInfo) -> String {
-        if request.draft { return "Draft" }
-        return ["completed", "merged"].contains(request.state) ? "Merged" : request.state == "active" ? "Open" : request.state.capitalized
+        if request.draft { return L("Draft") }
+        return ["completed", "merged"].contains(request.state) ? L("Merged") : NocturneLocalization.pullRequestState(request.state)
     }
     private func overview(_ request: PullRequestInfo) -> some View {
         VStack(alignment: .leading, spacing: 26) {
             VStack(alignment: .leading, spacing: 20) {
                 DisclosureGroup {
                     ForEach(Array(request.checks.enumerated()), id: \.offset) { _, check in Text(check).font(.caption).padding(.vertical, 5) }
-                } label: { Label(request.checks.isEmpty ? "No checks reported" : "\(request.checks.count) checks and policies", systemImage: request.checks.isEmpty ? "minus" : "checkmark.circle").font(.subheadline) }.tint(ChatStyle.secondary)
+                } label: { Label(request.checks.isEmpty ? L("No checks reported") : LCount("%d checks and policies", request.checks.count), systemImage: request.checks.isEmpty ? "minus" : "checkmark.circle").font(.subheadline) }.tint(ChatStyle.secondary)
                 DisclosureGroup {
-                    if request.reviewers.isEmpty { Text("No reviewers assigned").font(.caption).foregroundStyle(ChatStyle.secondary) }
+                    if request.reviewers.isEmpty { Text(L("No reviewers assigned")).font(.caption).foregroundStyle(ChatStyle.secondary) }
                     ForEach(request.reviewers, id: \.self) { reviewer in Text(reviewer).font(.caption).padding(.vertical, 5) }
-                } label: { Label("Reviewers", systemImage: "person.2").font(.subheadline) }.tint(ChatStyle.secondary)
+                } label: { Label(L("Reviewers"), systemImage: "person.2").font(.subheadline) }.tint(ChatStyle.secondary)
                 if let mergeable = request.mergeable {
-                    Label(mergeable ? "No conflicts with " + request.target : "Conflicts with " + request.target, systemImage: mergeable ? "checkmark.circle" : "exclamationmark.triangle")
+                    Label(mergeable ? L("No conflicts with %@", request.target) : L("Conflicts with %@", request.target), systemImage: mergeable ? "checkmark.circle" : "exclamationmark.triangle")
                         .font(.subheadline).foregroundStyle(mergeable ? ChatStyle.green : .orange)
                 }
                 if ["merged", "completed", "closed", "abandoned"].contains(request.state) {
-                    Text("This pull request is " + state(request).lowercased() + ".").font(.caption).foregroundStyle(ChatStyle.secondary)
+                    Text(L("This pull request is %@.", state(request))).font(.caption).foregroundStyle(ChatStyle.secondary)
                 }
             }.padding(22).background(ChatStyle.surface, in: RoundedRectangle(cornerRadius: 22))
             VStack(alignment: .leading, spacing: 16) {
-                Text("Description").font(.headline)
-                ChatMarkdown(text: request.body.isEmpty ? "No description provided." : request.body)
+                Text(L("Description")).font(.headline)
+                ChatMarkdown(text: request.body.isEmpty ? L("No description provided.") : request.body)
             }
             VStack(alignment: .leading, spacing: 14) {
-                HStack { Text("Changes").font(.headline); Spacer(); if let n = request.additions { Text("+\(n)").foregroundStyle(ChatStyle.green) }; if let n = request.deletions { Text("−\(n)").foregroundStyle(.red) } }
+                HStack { Text(L("Changes")).font(.headline); Spacer(); if let n = request.additions { Text("+\(n)").foregroundStyle(ChatStyle.green) }; if let n = request.deletions { Text("−\(n)").foregroundStyle(.red) } }
                 ForEach(project.prFiles) { file in
                     Button { selectedFile = file } label: { DeveloperChangeRow(file: file).padding(.horizontal, 14).background(ChatStyle.surface, in: RoundedRectangle(cornerRadius: 12)) }.buttonStyle(.plain).disabled(project.busy)
                 }
-                if project.hasMoreFiles { Button("Load more files") { Task { await project.loadPullRequestFiles() } }.disabled(project.busy) }
+                if project.hasMoreFiles { Button(L("Load more files")) { Task { await project.loadPullRequestFiles() } }.disabled(project.busy) }
             }
             Menu {
-                Button("Explain this PR", systemImage: "book") { runHelper(.explain, request: request) }
-                Button("Address feedback", systemImage: "wrench.and.screwdriver") { runHelper(.feedback, request: request) }.disabled(!["open", "active"].contains(request.state) || project.snapshot?.branch != request.source)
-                Button("Resolve conflicts", systemImage: "arrow.triangle.branch") { runHelper(.conflicts, request: request) }.disabled(request.mergeable != false || project.snapshot?.branch != request.source)
-            } label: { Label("Ask the agent", systemImage: "sparkles").padding(.horizontal, 18).padding(.vertical, 12).modifier(ChatGlass()) }.disabled(locked || !chat.canPrompt).accessibilityIdentifier("prAgentHelpers")
-            if project.snapshot?.branch != request.source { Text("Open the PR's source checkout in Worktrees to address feedback or conflicts.").font(.caption).foregroundStyle(ChatStyle.secondary) }
+                Button(L("Explain this PR"), systemImage: "book") { runHelper(.explain, request: request) }
+                Button(L("Address feedback"), systemImage: "wrench.and.screwdriver") { runHelper(.feedback, request: request) }.disabled(!["open", "active"].contains(request.state) || project.snapshot?.branch != request.source)
+                Button(L("Resolve conflicts"), systemImage: "arrow.triangle.branch") { runHelper(.conflicts, request: request) }.disabled(request.mergeable != false || project.snapshot?.branch != request.source)
+            } label: { Label(L("Ask the agent"), systemImage: "sparkles").padding(.horizontal, 18).padding(.vertical, 12).modifier(ChatGlass()) }.disabled(locked || !chat.canPrompt).accessibilityIdentifier("prAgentHelpers")
+            if project.snapshot?.branch != request.source { Text(L("Open the PR's source checkout in Worktrees to address feedback or conflicts.")).font(.caption).foregroundStyle(ChatStyle.secondary) }
         }
     }
     private func guideView(_ request: PullRequestInfo) -> some View {
         VStack(alignment: .leading, spacing: 20) {
-            Label("Review guide", systemImage: "list.number").font(.headline)
+            Label(L("Review guide"), systemImage: "list.number").font(.headline)
             if guide.isEmpty {
-                Text("Get a tour of the change, with code excerpts and notes on what needs attention.").font(.subheadline).foregroundStyle(ChatStyle.secondary).lineSpacing(5)
+                Text(L("Get a tour of the change, with code excerpts and notes on what needs attention.")).font(.subheadline).foregroundStyle(ChatStyle.secondary).lineSpacing(5)
             } else { ChatMarkdown(text: guide) }
             if chat.responding, guideStart != nil {
-                HStack { ProgressView(); Text("Writing guide…").font(.caption); Spacer(); Button("Stop") { Task { await chat.stop() } } }
+                HStack { ProgressView(); Text(L("Writing guide…")).font(.caption); Spacer(); Button(L("Stop")) { Task { await chat.stop() } } }
             } else {
-                Button(guide.isEmpty ? "Write guide" : "Rewrite guide") {
+                Button(guide.isEmpty ? L("Write guide") : L("Rewrite guide")) {
                     guideStart = chat.messages.count; send(PullRequestAgentPrompt.make(request, files: project.prFiles, activity: [], task: .guide), reveal: false)
                 }.buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black).disabled(locked || !chat.canPrompt).accessibilityIdentifier("writeReviewGuide")
             }
@@ -129,7 +129,7 @@ struct ChatPullRequestWorkspace: View {
     private var activityView: some View {
         VStack(alignment: .leading, spacing: 20) {
             if project.activity.isEmpty, !project.busy {
-                Text(chat.connection.capabilities.contains(DeveloperProtocol.actionsCapability) ? "No comments or reviews returned." : "Update Nocturne on your Mac to load PR activity.").font(.subheadline).foregroundStyle(ChatStyle.secondary)
+                Text(chat.connection.capabilities.contains(DeveloperProtocol.actionsCapability) ? L("No comments or reviews returned.") : L("Update Nocturne on your Mac to load PR activity.")).font(.subheadline).foregroundStyle(ChatStyle.secondary)
             }
             ForEach(project.activity) { activity in
                 VStack(alignment: .leading, spacing: 12) {

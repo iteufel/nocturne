@@ -32,7 +32,7 @@ public final class PullRequestInboxModel: ObservableObject {
         defer { if generation == epoch { busy = false; readerConnection?.disconnect(); readerConnection = nil } }
         let reader: ChatWorkspaceModel
         do { reader = try await makeReader(epoch: epoch) }
-        catch { if generation == epoch { errors = [error.localizedDescription] }; return }
+        catch { if generation == epoch { errors = [NocturneLocalization.message(error.localizedDescription)] }; return }
         var directories = Set<String>(), repositories = Set<String>(), scanned = 0
         for session in reader.sessions where session.isSupervisor != true && directories.insert(session.directory).inserted {
             guard scanned < 20, generation == epoch, !Task.isCancelled else { break }
@@ -52,7 +52,7 @@ public final class PullRequestInboxModel: ObservableObject {
                     if response.hasMore { projects.append((session, remote, forge, 2)) }
                 }
             } catch is CancellationError { return }
-            catch { if generation == epoch { errors.append(URL(fileURLWithPath: session.directory).lastPathComponent + ": " + error.localizedDescription) } }
+            catch { if generation == epoch { errors.append(URL(fileURLWithPath: session.directory).lastPathComponent + ": " + NocturneLocalization.message(error.localizedDescription)) } }
         }
         hasMore = !projects.isEmpty
     }
@@ -62,7 +62,7 @@ public final class PullRequestInboxModel: ObservableObject {
         defer { if generation == epoch { busy = false; readerConnection?.disconnect(); readerConnection = nil } }
         let reader: ChatWorkspaceModel
         do { reader = try await makeReader(epoch: epoch) }
-        catch { if generation == epoch { errors = [error.localizedDescription] }; return }
+        catch { if generation == epoch { errors = [NocturneLocalization.message(error.localizedDescription)] }; return }
         let pending = projects; projects = []
         for (session, remote, repository, page) in pending {
             do {
@@ -71,7 +71,7 @@ public final class PullRequestInboxModel: ObservableObject {
                 guard epoch == generation, !Task.isCancelled else { return }
                 append(response, session: session, remote: remote, repository: repository)
                 if response.hasMore { projects.append((session, remote, repository, page + 1)) }
-            } catch { if epoch == generation { errors.append(repository.name + ": " + error.localizedDescription); projects.append((session, remote, repository, page)) } }
+            } catch { if epoch == generation { errors.append(repository.name + ": " + NocturneLocalization.message(error.localizedDescription)); projects.append((session, remote, repository, page)) } }
         }
         hasMore = !projects.isEmpty
     }

@@ -1,0 +1,16 @@
+{
+  "Stream/StreamManager.m": [
+    "%u ms (variance: %u ms)",
+    "N/A",
+    "\nHost processing latency min/max/avg: %.1f/%.1f/%.1f ms",
+    "Video stream: %dx%d %.2f FPS (Codec: %@)\nFrames dropped by your network connection: %.2f%%\nAverage network latency: %@%@"
+  ],
+  "ViewControllers/StreamFrameViewController.m": [
+    "Starting %@...",
+    "Tip: Tap the Play/Pause button on the Apple TV Remote to disconnect from your PC",
+    "Tip: Swipe from the left edge to disconnect from your PC",
+    "%s in progress...",
+    "Slow connection to PC\nReduce your bitrate",
+    "Poor connection to PC"
+  ]
+}

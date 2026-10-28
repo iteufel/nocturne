@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 require 'xcodeproj'
 require 'fileutils'
+require 'json'
 
 ROOT = File.expand_path('..', __dir__)
 Dir.chdir(ROOT)
@@ -20,6 +21,21 @@ def product(project, target, package, name)
   build_file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
   build_file.product_ref = dependency
   target.frameworks_build_phase.files << build_file
+end
+
+# Native InfoPlist resources must be in each main app/extension bundle.
+def localization_resources(project, target, group, product, prefix)
+  project.root_object.development_region = 'en'
+  project.root_object.known_regions = %w[en de fr it es Base]
+  target.resources_build_phase.files.to_a.each do |build|
+    build.remove_from_project if build.file_ref&.display_name == 'InfoPlist.strings'
+  end
+  variant = group.new_variant_group('InfoPlist.strings')
+  %w[en de fr it es].each do |language|
+    child = variant.new_file("#{prefix}Resources/Localization/#{product}/#{language}.lproj/InfoPlist.strings")
+    child.name = language
+  end
+  target.resources_build_phase.add_file_reference(variant)
 end
 
 client = Xcodeproj::Project.open('Vendor/moonlight-ios/Moonlight.xcodeproj')
@@ -45,6 +61,16 @@ target.source_build_phase.add_file_reference(group.new_file('../../.build/Engine
 def overlay(client_target, client_group, filename)
   source = File.read("Vendor/moonlight-ios/Limelight/#{filename}")
   revised = yield(source)
+  # Localize only reachable streaming UI. Diagnostics, identifiers and source
+  # dependencies remain unchanged. The manifest is checked against the pin.
+  manifest = JSON.parse(File.read('scripts/streaming-localization.json'))
+  (manifest[filename] || []).each do |key|
+    literal = '@' + key.dump
+    raise "Upstream localized text changed: #{filename}: #{key}" unless revised.scan(literal).length == 1
+    localized = "NSLocalizedStringFromTable(#{literal}, @\"Streaming\", nil)"
+    revised = revised.sub('[NSString stringWithFormat:' + literal, '[NSString localizedStringWithFormat:' + literal)
+    revised = revised.sub(literal, localized)
+  end
   name = File.basename(filename)
   File.write(".build/EngineOverrides/#{name}", "#import \"NocturneStreamLifecycle.h\"\n" + revised)
   client_target.source_build_phase.files.to_a.each do |build|
@@ -151,6 +177,13 @@ Dir.glob('{Sources/Client,Sources/Design}/**/*.{swift,m,h}').sort.each do |path|
 end
 icons = group.new_file('../../Resources/Client.xcassets')
 target.resources_build_phase.add_file_reference(icons)
+localization_resources(client, target, group, 'Client', '../../')
+streaming_strings = group.new_variant_group('Streaming.strings')
+%w[en de fr it es].each do |language|
+  child = streaming_strings.new_file("../../Resources/Localization/Client/#{language}.lproj/Streaming.strings")
+  child.name = language
+end
+target.resources_build_phase.add_file_reference(streaming_strings)
 target.resources_build_phase.add_file_reference(group.new_file('../../Resources/PrivacyInfo.xcprivacy'))
 kit = package(client, '../..'); terminal = package(client, '../SwiftTerm')
 product(client, target, kit, 'NocturneKit'); product(client, target, terminal, 'SwiftTerm')
@@ -195,6 +228,7 @@ Dir.glob('Sources/FileProvider/**/*.swift').sort.each do |path|
 end
 product(client, files, kit, 'NocturneKit')
 files.resources_build_phase.add_file_reference(files_group.new_file('../../Resources/PrivacyInfo.xcprivacy'))
+localization_resources(client, files, files_group, 'Files', '../../')
 files.build_configurations.each do |config|
   settings = config.build_settings
   settings['PRODUCT_NAME'] = 'Nocturne Files'
@@ -261,6 +295,7 @@ Dir.glob('{Sources/Server,Sources/Design}/**/*.swift').sort.each do |path|
   host.source_build_phase.add_file_reference(group.new_file(path))
 end
 host.resources_build_phase.add_file_reference(group.new_file('Resources/Server.xcassets'))
+localization_resources(mac, host, group, 'Server', '')
 # Client-only bootstrap does not need the Mac runtime. Packaging validates it
 # when the server is actually built.
 phase = host.new_shell_script_build_phase('Package streaming server runtime')
@@ -298,6 +333,8 @@ workspace.save_as('Nocturne.xcworkspace')
 info = Xcodeproj::Plist.read_from_path('Vendor/moonlight-ios/Limelight/Limelight-Info.plist')
 %w[UIMainStoryboardFile UIMainStoryboardFile~ipad UIRequiredDeviceCapabilities UILaunchStoryboardName].each { |key| info.delete(key) }
 info['CFBundleDisplayName'] = 'Nocturne'
+info['CFBundleDevelopmentRegion'] = 'en'
+info['CFBundleLocalizations'] = %w[en de fr it es]
 info['UIRequiresFullScreen'] = false
 info['UIStatusBarHidden'] = false
 info['UIViewControllerBasedStatusBarAppearance'] = true

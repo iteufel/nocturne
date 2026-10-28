@@ -22,7 +22,7 @@ public final class MacVideoView: NSView {
         super.init(frame: frame)
         wantsLayer = true; layer?.backgroundColor = NSColor.black.cgColor
         videoLayer.videoGravity = .resizeAspect; layer?.addSublayer(videoLayer)
-        setAccessibilityLabel("Remote Mac desktop")
+        setAccessibilityLabel(L("Remote Mac desktop"))
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }

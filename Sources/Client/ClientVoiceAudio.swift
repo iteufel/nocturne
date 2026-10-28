@@ -36,11 +36,11 @@ final class ClientVoiceAudio: VoiceAudioDevice {
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification,
             object: AVAudioSession.sharedInstance(), queue: .main) { [weak self] note in
             guard (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue else { return }
-            Task { @MainActor in self?.continuation?.yield(.failed("Voice chat was interrupted by another audio session. Start it again when you are ready.")) }
+            Task { @MainActor in self?.continuation?.yield(.failed(L("Voice chat was interrupted by another audio session. Start it again when you are ready."))) }
         })
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification,
             object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.continuation?.yield(.failed("The audio system restarted. Start voice chat again.")) }
+            Task { @MainActor in self?.continuation?.yield(.failed(L("The audio system restarted. Start voice chat again."))) }
         })
         return VoiceAudioOffer(sdp: offer.sdp, events: stream.stream)
     }

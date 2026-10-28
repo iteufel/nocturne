@@ -10,9 +10,9 @@ struct MacComputersView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Another Mac.\nRight here.")
+                    Text(L("Another Mac.\nRight here."))
                         .font(.system(size: 38, weight: .semibold, design: .rounded)).tracking(-1.2)
-                    Text("Connect to a Mac running Nocturne. Open its desktop with sound, keyboard, and mouse, or give each app window its own space.")
+                    Text(L("Connect to a Mac running Nocturne. Open its desktop with sound, keyboard, and mouse, or give each app window its own space."))
                         .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if let stream = client.session {
@@ -21,26 +21,26 @@ struct MacComputersView: View {
                             Image(systemName: "display.2").font(.title).foregroundStyle(MoonStyle.accent)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(stream.name).font(.headline)
-                                Text("Desktop window open").font(.caption).foregroundStyle(.secondary)
+                                Text(L("Desktop window open")).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Button("Show desktop") { openWindow(id: "remote-desktop") }.buttonStyle(PrimaryButtonStyle())
-                            Button("Disconnect") { client.disconnect() }
+                            Button(L("Show desktop")) { openWindow(id: "remote-desktop") }.buttonStyle(PrimaryButtonStyle())
+                            Button(L("Disconnect")) { client.disconnect() }
                         }
                     }
                 }
                 if client.pairedServers.servers.isEmpty {
                     ContentUnavailableView {
-                        Label("Connect to your first Mac", systemImage: "desktopcomputer")
+                        Label(L("Connect to your first Mac"), systemImage: "desktopcomputer")
                     } description: {
-                        Text("On the other Mac, open Pair a device and copy its pairing code. Then add it here.")
+                        Text(L("On the other Mac, open Pair a device and copy its pairing code. Then add it here."))
                     } actions: {
-                        Button("Add host", systemImage: "plus") { client.showAddHost = true }
+                        Button(L("Add host"), systemImage: "plus") { client.showAddHost = true }
                             .buttonStyle(PrimaryButtonStyle()).disabled(client.session != nil)
                     }.frame(maxWidth: .infinity).padding(.vertical, 30)
                 } else {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Paired hosts").font(.headline)
+                        Text(L("Paired hosts")).font(.headline)
                         ForEach(client.pairedServers.servers) { paired in
                             MoonPanel {
                                 HStack(spacing: 16) {
@@ -50,37 +50,37 @@ struct MacComputersView: View {
                                         Text(paired.invitation.host).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                     }
                                     Spacer()
-                                    Button("Connect") { client.connect(paired.id) }
+                                    Button(L("Connect")) { client.connect(paired.id) }
                                         .buttonStyle(PrimaryButtonStyle()).disabled(client.session != nil)
                                         .accessibilityIdentifier("connectMac-\(paired.id)")
-                                    Button("Apps", systemImage: "square.grid.2x2") {
+                                    Button(L("Apps"), systemImage: "square.grid.2x2") {
                                         client.browseApps(paired.id); openWindow(id: "remote-apps")
                                     }.accessibilityIdentifier("macApps-\(paired.id)")
                                     Menu {
-                                        Button("Forget host", role: .destructive) { forgetting = paired }
+                                        Button(L("Forget host"), role: .destructive) { forgetting = paired }
                                             .disabled(client.session?.serverID == paired.id)
                                     } label: { Image(systemName: "ellipsis.circle") }
-                                        .menuStyle(.borderlessButton).fixedSize().help("Host actions")
+                                        .menuStyle(.borderlessButton).fixedSize().help(L("Host actions"))
                                 }
                             }
                         }
                     }
                 }
-                Label("This Mac keeps sharing while you connect to another host.", systemImage: "arrow.left.arrow.right")
+                Label(L("This Mac keeps sharing while you connect to another host."), systemImage: "arrow.left.arrow.right")
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(32).frame(maxWidth: 950).frame(maxWidth: .infinity)
         }
         .background { NocturneBackdrop() }
-        .navigationTitle("Computers")
+        .navigationTitle(L("Computers"))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("Add host", systemImage: "plus") { client.showAddHost = true }.disabled(client.session != nil)
+                Button(L("Add host"), systemImage: "plus") { client.showAddHost = true }.disabled(client.session != nil)
             }
         }
         .onAppear { client.load() }
-        .confirmationDialog("Forget \(forgetting?.name ?? "host")?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }), titleVisibility: .visible) {
-            if let paired = forgetting { Button("Forget host", role: .destructive) { client.forget(paired.id); forgetting = nil } }
-        } message: { Text("Removes its saved pairing from this Mac. You can pair it again with a new code.") }
+        .confirmationDialog(forgetting.map { L("Forget %@?", $0.name) } ?? L("Forget this host?"), isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }), titleVisibility: .visible) {
+            if let paired = forgetting { Button(L("Forget host"), role: .destructive) { client.forget(paired.id); forgetting = nil } }
+        } message: { Text(L("Removes its saved pairing from this Mac. You can pair it again with a new code.")) }
     }
 }
 
@@ -90,13 +90,13 @@ struct MacAddHostView: View {
     @State private var code = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Label("Add a Mac", systemImage: "desktopcomputer").font(.title2.weight(.semibold))
-            Text("On the other Mac, open Nocturne → Pair a device → Copy pairing code. Paste that code here within five minutes.")
+            Label(L("Add a Mac"), systemImage: "desktopcomputer").font(.title2.weight(.semibold))
+            Text(L("On the other Mac, open Nocturne → Pair a device → Copy pairing code. Paste that code here within five minutes."))
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            SecureField("Pairing code", text: $code).textFieldStyle(.roundedBorder)
+            SecureField(L("Pairing code"), text: $code).textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("macPairingCode")
                 .onChange(of: code) { _, _ in client.error = nil }
-            Button("Paste pairing code", systemImage: "doc.on.clipboard") {
+            Button(L("Paste pairing code"), systemImage: "doc.on.clipboard") {
                 if let value = NSPasteboard.general.string(forType: .string) { code = value }
             }
             if let error = client.error {
@@ -105,8 +105,8 @@ struct MacAddHostView: View {
             }
             HStack {
                 Spacer()
-                Button("Cancel") { client.error = nil; dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Add & connect") { _ = client.addHost(code) }
+                Button(L("Cancel")) { client.error = nil; dismiss() }.keyboardShortcut(.cancelAction)
+                Button(L("Add & connect")) { _ = client.addHost(code) }
                     .buttonStyle(PrimaryButtonStyle()).keyboardShortcut(.defaultAction)
                     .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

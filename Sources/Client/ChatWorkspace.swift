@@ -16,9 +16,9 @@ struct ChatWorkspace: View {
     var body: some View {
         Group {
             if connection.state != .connected {
-                ServerEmptyView(icon: "bubble.left.and.bubble.right", title: "Your conversations.\nWithin reach.", detail: "Connect to your Mac to read and continue your Codex and other agent conversations.", action: connect)
+                ServerEmptyView(icon: "bubble.left.and.bubble.right", title: L("Your conversations.\nWithin reach."), detail: L("Connect to your Mac to read and continue your Codex and other agent conversations."), action: connect)
             } else if !connection.capabilities.contains(ChatProtocol.capability) {
-                ContentUnavailableView("Allow chat access", systemImage: "bubble.left.and.bubble.right", description: Text("Enable Agent chats in Nocturne on your Mac, then reconnect."))
+                ContentUnavailableView(L("Allow chat access"), systemImage: "bubble.left.and.bubble.right", description: Text(L("Enable Agent chats in Nocturne on your Mac, then reconnect.")))
             } else {
                 ChatBarEnvironment { usesSystemBar in
                     ChatWorkspaceCanvas(chat: model, connection: connection, voice: voice, scope: identity + "." + model.providerID, usesSystemBar: usesSystemBar, exit: exit)
@@ -101,7 +101,7 @@ private struct ChatWorkspaceCanvas: View {
                 .onChange(of: wide) { _, value in sidebar = value }
         }
         .background(ChatStyle.canvas.ignoresSafeArea()).environment(\.colorScheme, darkChat ? .dark : systemScheme).preferredColorScheme(darkChat ? .dark : nil).tint(ChatStyle.blue)
-        .navigationTitle(usesSystemBar ? "" : "Chats")
+        .navigationTitle(usesSystemBar ? "" : L("Chats"))
         .toolbar(usesSystemBar ? .visible : .hidden, for: .navigationBar, .bottomBar)
         .toolbar(.hidden, for: .tabBar)
         .toolbarColorScheme(darkChat ? .dark : nil, for: .navigationBar, .bottomBar)
@@ -119,9 +119,9 @@ private struct ChatWorkspaceCanvas: View {
     @ViewBuilder private func sheetContent(_ destination: ChatWorkspaceSheet) -> some View {
         switch destination {
         case .worktrees: DeveloperWorktreesView(model: project)
-        case .changes: NavigationStack { DeveloperProjectPane(model: project, tab: .changes).navigationTitle("Review changes").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { sheet = nil } } } }
-        case .terminal: NavigationStack { TerminalWorkspace(connection: connection, connect: {}).navigationTitle("Terminal").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { sheet = nil } } } }
-        case .files: NavigationStack { FilesWorkspace(connection: connection, connect: {}).navigationTitle("Files").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { sheet = nil } } } }
+        case .changes: NavigationStack { DeveloperProjectPane(model: project, tab: .changes).navigationTitle(L("Review changes")).navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Done")) { sheet = nil } } } }
+        case .terminal: NavigationStack { TerminalWorkspace(connection: connection, connect: {}).navigationTitle(L("Terminal")).toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Done")) { sheet = nil } } } }
+        case .files: NavigationStack { FilesWorkspace(connection: connection, connect: {}).navigationTitle(L("Files")).toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Done")) { sheet = nil } } } }
         case .git: ChatGitActionsView(project: project) {
             selectedPRURL = project.selectedPR?.url; mode = .pullRequests; sheet = nil
             Task { await inbox.refresh() }
@@ -138,11 +138,11 @@ private struct ChatWorkspaceCanvas: View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
                 if !usesSystemBar {
-                    ChatCircleButton(title: sidebar && wide ? "Expand conversation" : "Show sidebar", symbol: sidebar && wide ? "arrow.up.left.and.arrow.down.right" : "sidebar.left", action: toggleSidebar).modifier(ChatGlass()).accessibilityIdentifier("chatSidebarToggle")
+                    ChatCircleButton(title: sidebar && wide ? L("Expand conversation") : L("Show sidebar"), symbol: sidebar && wide ? "arrow.up.left.and.arrow.down.right" : "sidebar.left", action: toggleSidebar).modifier(ChatGlass()).accessibilityIdentifier("chatSidebarToggle")
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(mode == .pullRequests ? project.selectedPR.map { "#\($0.number)" } ?? "Pull requests" : threadTitle).font(.system(size: 20, weight: .semibold)).lineLimit(1)
-                    Text(mode == .pullRequests ? (selectedPRURL == nil ? "GitHub & Azure DevOps" : project.snapshot?.forge.map { $0.organization + "/" + $0.name } ?? "Pull request") : projectName + " · " + connection.name).font(.caption).foregroundStyle(ChatStyle.secondary).lineLimit(1)
+                    Text(mode == .pullRequests ? project.selectedPR.map { "#\($0.number)" } ?? L("Pull requests") : threadTitle).font(.system(size: 20, weight: .semibold)).lineLimit(1)
+                    Text(mode == .pullRequests ? (selectedPRURL == nil ? "GitHub & Azure DevOps" : project.snapshot?.forge.map { $0.organization + "/" + $0.name } ?? L("Pull request")) : projectName + " · " + connection.name).font(.caption).foregroundStyle(ChatStyle.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }.padding(.leading, 20).padding(.trailing, usesSystemBar ? 20 : 74).padding(.top, 12).padding(.bottom, 12)
@@ -153,7 +153,7 @@ private struct ChatWorkspaceCanvas: View {
                 else { ChatTranscript(model: chat).padding(.trailing, usesSystemBar ? 0 : (wide ? 60 : 48)) }
             } else if project.selectedPR != nil, selectedPRURL != nil {
                 ChatPullRequestWorkspace(project: project, chat: chat, showThread: { mode = .threads }, helper: $prHelper, watching: $watchingPR).padding(.trailing, usesSystemBar ? 0 : (wide ? 82 : 60))
-            } else { ChatEmptyState(symbol: "sidebar.left", title: "Select a pull request", detail: "Choose a pull request from the sidebar to review it.") }
+            } else { ChatEmptyState(symbol: "sidebar.left", title: L("Select a pull request"), detail: L("Choose a pull request from the sidebar to review it.")) }
             if let permission = chat.permissions.first { permissionView(permission).padding(.trailing, !usesSystemBar && wide ? 80 : 0) }
             if let error = chat.error { errorView(error) { chat.error = nil } }
             if let error = voice.error { errorView(error) { voice.dismissError() } }
@@ -162,18 +162,18 @@ private struct ChatWorkspaceCanvas: View {
                     Image(systemName: "arrow.triangle.branch")
                     Text(notice)
                     Spacer(minLength: 0)
-                    Button(action: chat.dismissVoiceContinuationNotice) { Image(systemName: "xmark") }.accessibilityLabel("Dismiss voice notice")
+                    Button(action: chat.dismissVoiceContinuationNotice) { Image(systemName: "xmark") }.accessibilityLabel(L("Dismiss voice notice"))
                 }.font(.caption).foregroundStyle(ChatStyle.secondary).padding(12).background(ChatStyle.surface).padding(.horizontal, 16)
             }
             if voice.engaged { voiceControls.padding(.trailing, !usesSystemBar && wide ? 80 : 0).padding(.horizontal, 16).padding(.bottom, 12) }
             else if mode == .threads { composer(wide: wide) }
         }.background(ChatStyle.canvas).overlay(alignment: .trailing) { if !usesSystemBar { tools(wide: wide) } }
     }
-    private var projectName: String { chat.selected?.isSupervisor == true ? "All agents" : ChatStyle.projectName(project.snapshot?.root ?? chat.selected?.directory ?? "") }
+    private var projectName: String { chat.selected?.isSupervisor == true ? L("All agents") : ChatStyle.projectName(project.snapshot?.root ?? chat.selected?.directory ?? "") }
     private var threadTitle: String {
-        guard let selected = chat.selected else { return "New thread" }
+        guard let selected = chat.selected else { return L("New thread") }
         if selected.isSupervisor == true { return ChatSupervisor.title }
-        if chat.messages.isEmpty { return "New thread" }
+        if chat.messages.isEmpty { return L("New thread") }
         if selected.title == "New conversation", let first = chat.messages.first(where: { $0.role == .user }) { return String(first.text.prefix(90)) }
         return navigation.title(selected)
     }
@@ -181,9 +181,9 @@ private struct ChatWorkspaceCanvas: View {
         VStack(spacing: 18) {
             Spacer()
             Image(systemName: "person.crop.circle.badge.checkmark").font(.system(size: 38, weight: .light)).foregroundStyle(ChatStyle.purple)
-            Text("One conversation. All your agents.").font(.title2.weight(.semibold)).multilineTextAlignment(.center)
-            Text("Ask for progress, send a fix to a project, or start a new feature.").font(.subheadline).foregroundStyle(ChatStyle.secondary).multilineTextAlignment(.center)
-            Toggle("Start voice when opened", isOn: $navigation.supervisorStartsVoice).font(.subheadline).frame(maxWidth: 300)
+            Text(L("One conversation. All your agents.")).font(.title2.weight(.semibold)).multilineTextAlignment(.center)
+            Text(L("Ask for progress, send a fix to a project, or start a new feature.")).font(.subheadline).foregroundStyle(ChatStyle.secondary).multilineTextAlignment(.center)
+            Toggle(L("Start voice when opened"), isOn: $navigation.supervisorStartsVoice).font(.subheadline).frame(maxWidth: 300)
                 .accessibilityIdentifier("supervisorAutoVoice")
             Spacer(); Spacer().frame(maxHeight: 60)
         }.padding(28).padding(.trailing, usesSystemBar ? 0 : 60).frame(maxWidth: .infinity)
@@ -191,74 +191,70 @@ private struct ChatWorkspaceCanvas: View {
     private var newThreadHero: some View {
         VStack(spacing: 24) {
             Spacer()
-            VStack(spacing: 10) {
-                Text("What should we build").font(.system(size: 26, weight: .medium))
-                HStack(spacing: 0) {
-                    Text("in ").font(.system(size: 26, weight: .medium))
-                    Button { sidebar = true } label: { Text(projectName).underline(color: ChatStyle.secondary).font(.system(size: 26, weight: .medium)) }.buttonStyle(.plain)
-                    Text("?").font(.system(size: 26, weight: .medium))
-                }
-            }.multilineTextAlignment(.center)
-            Label("on " + connection.name, systemImage: "laptopcomputer").font(.subheadline).foregroundStyle(ChatStyle.secondary)
-            if chat.selected == nil { Button("New thread", systemImage: "plus") { newThread(wide: false) }.buttonStyle(.borderedProminent).disabled(locked || chat.provider?.available != true).accessibilityIdentifier("startProjectThread") }
+            Button { sidebar = true } label: {
+                Text(L("What should we build in %@?", projectName))
+                    .font(.system(size: 26, weight: .medium)).multilineTextAlignment(.center)
+            }.buttonStyle(.plain)
+            Label(L("on %@", connection.name), systemImage: "laptopcomputer").font(.subheadline).foregroundStyle(ChatStyle.secondary)
+            if chat.selected == nil { Button(L("New thread"), systemImage: "plus") { newThread(wide: false) }.buttonStyle(.borderedProminent).disabled(locked || chat.provider?.available != true).accessibilityIdentifier("startProjectThread") }
             Spacer(); Spacer().frame(maxHeight: 80)
         }.padding(.horizontal, 24).padding(.trailing, usesSystemBar ? 0 : 60).frame(maxWidth: .infinity)
     }
     @ViewBuilder private var gitActions: some View {
         Section(project.snapshot?.branch ?? "Git") {
-            if connection.capabilities.contains(DeveloperProtocol.actionsCapability) { Button("Commit, push & PR", systemImage: "arrow.up.right.circle") { sheet = .git }.disabled(locked) }
-            Button("Review changes", systemImage: "text.bubble") { sheet = .changes }
-            Button("Worktrees", systemImage: "arrow.triangle.branch") { sheet = .worktrees }.disabled(locked)
-            Button("Refresh project", systemImage: "arrow.clockwise") { Task { await project.refresh() } }
-            if let branch = project.snapshot?.branch { Button("Copy branch", systemImage: "doc.on.doc") { UIPasteboard.general.string = branch } }
+            if connection.capabilities.contains(DeveloperProtocol.actionsCapability) { Button(L("Commit, push & PR"), systemImage: "arrow.up.right.circle") { sheet = .git }.disabled(locked) }
+            Button(L("Review changes"), systemImage: "text.bubble") { sheet = .changes }
+            Button(L("Worktrees"), systemImage: "arrow.triangle.branch") { sheet = .worktrees }.disabled(locked)
+            Button(L("Refresh project"), systemImage: "arrow.clockwise") { Task { await project.refresh() } }
+            if let branch = project.snapshot?.branch { Button(L("Copy branch"), systemImage: "doc.on.doc") { UIPasteboard.general.string = branch } }
         }
     }
     @ViewBuilder private var prHelperActions: some View {
         if let request = project.selectedPR {
-            Button("Explain this PR", systemImage: "book") { prHelper = .explain }
-            Button("Address feedback", systemImage: "wrench.and.screwdriver") { prHelper = .feedback }.disabled(!["open", "active"].contains(request.state) || project.snapshot?.branch != request.source)
-            Button("Resolve conflicts", systemImage: "arrow.triangle.branch") { prHelper = .conflicts }.disabled(request.mergeable != false || project.snapshot?.branch != request.source)
+            Button(L("Explain this PR"), systemImage: "book") { prHelper = .explain }
+            Button(L("Address feedback"), systemImage: "wrench.and.screwdriver") { prHelper = .feedback }.disabled(!["open", "active"].contains(request.state) || project.snapshot?.branch != request.source)
+            Button(L("Resolve conflicts"), systemImage: "arrow.triangle.branch") { prHelper = .conflicts }.disabled(request.mergeable != false || project.snapshot?.branch != request.source)
         }
     }
     @ViewBuilder private var prActions: some View {
         if let request = project.selectedPR {
-            if let url = URL(string: request.url), url.scheme == "https" { Link("Open on " + (project.snapshot?.forge?.kind == .github ? "GitHub" : "Azure DevOps"), destination: url); ShareLink("Share…", item: url) }
-            Button("Copy link", systemImage: "link") { UIPasteboard.general.string = request.url }
-            Button("Edit title and description", systemImage: "pencil") { sheet = .prEditor }.disabled(locked || project.busy)
-            Button(watchingPR ? "Stop watching" : "Watch while open", systemImage: "eye") { watchingPR.toggle() }
-            Button("Worktrees", systemImage: "arrow.triangle.branch") { sheet = .worktrees }.disabled(locked)
-            Button("Refresh PR", systemImage: "arrow.clockwise") { Task { await project.openPullRequest(request.number) } }.disabled(project.busy)
+            if let url = URL(string: request.url), url.scheme == "https" { Link(L("Open on %@", project.snapshot?.forge?.kind == .github ? "GitHub" : "Azure DevOps"), destination: url); ShareLink(L("Share…"), item: url) }
+            Button(L("Copy link"), systemImage: "link") { UIPasteboard.general.string = request.url }
+            Button(L("Edit title and description"), systemImage: "pencil") { sheet = .prEditor }.disabled(locked || project.busy)
+            Button(watchingPR ? L("Stop watching") : L("Watch while open"), systemImage: "eye") { watchingPR.toggle() }
+            Button(L("Worktrees"), systemImage: "arrow.triangle.branch") { sheet = .worktrees }.disabled(locked)
+            Button(L("Refresh PR"), systemImage: "arrow.clockwise") { Task { await project.openPullRequest(request.number) } }.disabled(project.busy)
         }
     }
     @available(iOS 27.1, *)
     @ToolbarContentBuilder private var systemToolbar: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
-            Button(sidebar ? "Hide sidebar" : "Show sidebar", systemImage: "sidebar.left", action: toggleSidebar)
+            Button(sidebar ? L("Hide sidebar") : L("Show sidebar"), systemImage: "sidebar.left", action: toggleSidebar)
                 .accessibilityIdentifier("chatSidebarToggle")
         }.visibilityPriority(.high)
         ToolbarItem(placement: .topBarPinnedTrailing) {
             if mode == .threads {
-                Button("New thread", systemImage: "square.and.pencil") { newThread(wide: true) }.disabled(locked || chat.provider?.available != true)
+                Button(L("New thread"), systemImage: "square.and.pencil") { newThread(wide: true) }.disabled(locked || chat.provider?.available != true)
             } else if selectedPRURL != nil {
-                Button("Back to pull requests", systemImage: "chevron.left") { selectedPRURL = nil; watchingPR = false; project.closePullRequest() }
+                Button(L("Back to pull requests"), systemImage: "chevron.left") { selectedPRURL = nil; watchingPR = false; project.closePullRequest() }
             }
         }.visibilityPriority(.high)
         ToolbarItemGroup(placement: .topBarTrailing) {
             if mode == .threads, chat.selected != nil, chat.selected?.isSupervisor != true {
-                Button("Terminal", systemImage: "terminal") { composing = false; sheet = .terminal }.disabled(!connection.capabilities.contains("terminal"))
-                Menu { gitActions } label: { Label("Git tools", systemImage: "point.topleft.down.curvedto.point.bottomright.up") }.accessibilityIdentifier("chatGitTools")
-                Button("Files", systemImage: "folder") { composing = false; sheet = .files }.disabled(!connection.capabilities.contains("files"))
+                Button(L("Terminal"), systemImage: "terminal") { composing = false; sheet = .terminal }.disabled(!connection.capabilities.contains("terminal"))
+                Menu { gitActions } label: { Label(L("Git tools"), systemImage: "point.topleft.down.curvedto.point.bottomright.up") }.accessibilityIdentifier("chatGitTools")
+                Button(L("Files"), systemImage: "folder") { composing = false; sheet = .files }.disabled(!connection.capabilities.contains("files"))
             } else if selectedPRURL != nil {
-                Menu { prHelperActions } label: { Label("PR agent helpers", systemImage: "bubble.left.and.bubble.right") }.disabled(locked || project.busy || !chat.canPrompt)
+                Menu { prHelperActions } label: { Label(L("PR agent helpers"), systemImage: "bubble.left.and.bubble.right") }.disabled(locked || project.busy || !chat.canPrompt)
             }
         }
         ToolbarItemGroup(placement: .bottomBar) {
             Spacer()
-            Button("Threads", systemImage: "bubble.left") { composing = false; mode = .threads }.tint(mode == .threads ? ChatStyle.blue : .primary).accessibilityIdentifier("chatThreadsMode")
-            Button("Pull requests", systemImage: "arrow.triangle.pull", action: showPullRequests).tint(mode == .pullRequests ? ChatStyle.blue : .primary).accessibilityIdentifier("chatPullRequestsMode")
+            Button(L("Threads"), systemImage: "bubble.left") { composing = false; mode = .threads }.tint(mode == .threads ? ChatStyle.blue : .primary).accessibilityIdentifier("chatThreadsMode")
+            Button(L("Pull requests"), systemImage: "arrow.triangle.pull", action: showPullRequests).tint(mode == .pullRequests ? ChatStyle.blue : .primary).accessibilityIdentifier("chatPullRequestsMode")
         }.visibilityPriority(.high)
         ToolbarOverflowMenu {
-            if mode == .pullRequests, selectedPRURL != nil { Section("Pull request") { prActions } }
+            if mode == .pullRequests, selectedPRURL != nil { Section(L("Pull request")) { prActions } }
             ChatSettingsActions(chat: chat, darkChat: $darkChat, saveDraft: saveDraft, exit: exit)
         }
     }
@@ -270,23 +266,23 @@ private struct ChatWorkspaceCanvas: View {
     private func tools(wide: Bool) -> some View {
         VStack(spacing: 14) {
             if mode == .threads {
-                ChatCircleButton(title: "New thread", symbol: "square.and.pencil") { newThread(wide: wide) }.modifier(ChatGlass()).disabled(locked || chat.provider?.available != true)
+                ChatCircleButton(title: L("New thread"), symbol: "square.and.pencil") { newThread(wide: wide) }.modifier(ChatGlass()).disabled(locked || chat.provider?.available != true)
             } else if project.selectedPR != nil, selectedPRURL != nil {
-                ChatCircleButton(title: "Back to pull requests", symbol: "chevron.left") { selectedPRURL = nil; watchingPR = false; project.closePullRequest() }.modifier(ChatGlass())
-                Menu { prHelperActions } label: { Image(systemName: "bubble.left.and.bubble.right").font(.title3).frame(width: 44, height: 44).modifier(ChatGlass()) }.disabled(locked || project.busy || !chat.canPrompt).accessibilityLabel("PR agent helpers")
-                Menu { prActions } label: { Image(systemName: "ellipsis").font(.title3).frame(width: 44, height: 44).modifier(ChatGlass()) }.accessibilityLabel("Pull request actions")
+                ChatCircleButton(title: L("Back to pull requests"), symbol: "chevron.left") { selectedPRURL = nil; watchingPR = false; project.closePullRequest() }.modifier(ChatGlass())
+                Menu { prHelperActions } label: { Image(systemName: "bubble.left.and.bubble.right").font(.title3).frame(width: 44, height: 44).modifier(ChatGlass()) }.disabled(locked || project.busy || !chat.canPrompt).accessibilityLabel(L("PR agent helpers"))
+                Menu { prActions } label: { Image(systemName: "ellipsis").font(.title3).frame(width: 44, height: 44).modifier(ChatGlass()) }.accessibilityLabel(L("Pull request actions"))
             }
             if chat.selected != nil, chat.selected?.isSupervisor != true, mode == .threads {
                 VStack(spacing: 2) {
-                    ChatCircleButton(title: "Terminal", symbol: "terminal") { sheet = .terminal }.disabled(!connection.capabilities.contains("terminal"))
-                    Menu { gitActions } label: { Image(systemName: "point.topleft.down.curvedto.point.bottomright.up").font(.system(size: 21)).foregroundStyle(Color.primary).frame(width: 44, height: 44) }.accessibilityLabel("Git tools").accessibilityIdentifier("chatGitTools")
-                    ChatCircleButton(title: "Files", symbol: "folder") { sheet = .files }.disabled(!connection.capabilities.contains("files"))
+                    ChatCircleButton(title: L("Terminal"), symbol: "terminal") { sheet = .terminal }.disabled(!connection.capabilities.contains("terminal"))
+                    Menu { gitActions } label: { Image(systemName: "point.topleft.down.curvedto.point.bottomright.up").font(.system(size: 21)).foregroundStyle(Color.primary).frame(width: 44, height: 44) }.accessibilityLabel(L("Git tools")).accessibilityIdentifier("chatGitTools")
+                    ChatCircleButton(title: L("Files"), symbol: "folder") { sheet = .files }.disabled(!connection.capabilities.contains("files"))
                 }.padding(3).modifier(ChatGlass())
             }
             Spacer(minLength: 8)
             VStack(spacing: 2) {
-                ChatCircleButton(title: "Threads", symbol: "bubble.left", selected: mode == .threads) { composing = false; mode = .threads }.accessibilityIdentifier("chatThreadsMode")
-                ChatCircleButton(title: "Pull requests", symbol: "arrow.triangle.pull", selected: mode == .pullRequests, action: showPullRequests).accessibilityIdentifier("chatPullRequestsMode")
+                ChatCircleButton(title: L("Threads"), symbol: "bubble.left", selected: mode == .threads) { composing = false; mode = .threads }.accessibilityIdentifier("chatThreadsMode")
+                ChatCircleButton(title: L("Pull requests"), symbol: "arrow.triangle.pull", selected: mode == .pullRequests, action: showPullRequests).accessibilityIdentifier("chatPullRequestsMode")
             }.padding(3).modifier(ChatGlass())
         }.padding(.top, 12).padding(.bottom, wide ? 24 : (mode == .threads ? 170 : 20)).padding(.trailing, 12).frame(width: 64)
     }
@@ -294,8 +290,8 @@ private struct ChatWorkspaceCanvas: View {
         VStack(alignment: .leading, spacing: 12) {
             if let selected = chat.selected, selected.isSupervisor != true, project.snapshot != nil {
                 HStack(spacing: 14) {
-                    Label("Current checkout", systemImage: "folder")
-                    Button { sheet = .worktrees } label: { Label(project.snapshot?.branch ?? "Checkout", systemImage: "arrow.triangle.branch").lineLimit(1) }.disabled(locked)
+                    Label(L("Current checkout"), systemImage: "folder")
+                    Button { sheet = .worktrees } label: { Label(project.snapshot?.branch ?? L("Checkout"), systemImage: "arrow.triangle.branch").lineLimit(1) }.disabled(locked)
                     Spacer(minLength: 0)
                 }.font(.caption).foregroundStyle(ChatStyle.secondary).accessibilityIdentifier("chatCheckout").accessibilityValue(selected.directory)
             }
@@ -309,17 +305,17 @@ private struct ChatWorkspaceCanvas: View {
             VStack(spacing: 8) {
                 HStack(alignment: .bottom, spacing: 8) {
                     Menu {
-                        Button("Attach text files", systemImage: "paperclip") { importing = true }
-                        Button("Files on your Mac", systemImage: "folder") { sheet = .files }
-                        Button("New worktree", systemImage: "arrow.triangle.branch") { sheet = .worktrees }.disabled(chat.selected == nil)
+                        Button(L("Attach text files"), systemImage: "paperclip") { importing = true }
+                        Button(L("Files on your Mac"), systemImage: "folder") { sheet = .files }
+                        Button(L("New worktree"), systemImage: "arrow.triangle.branch") { sheet = .worktrees }.disabled(chat.selected == nil)
                     } label: { Image(systemName: "plus").font(.system(size: 24, weight: .light)).foregroundStyle(Color.primary).frame(width: 44, height: 44) }.disabled(locked)
-                    TextField(chat.selected?.isSupervisor == true ? "Tell the supervisor what to do…" : "Ask the repo agent…", text: $chat.draft, axis: .vertical).lineLimit(1...6).font(.system(size: 16)).padding(.vertical, 12).frame(minHeight: 44).focused($composing).disabled(chat.loading || chat.loadingOlder || chat.responding || chat.configuring || chat.selected == nil).accessibilityIdentifier("chatComposer").onSubmit(send)
+                    TextField(chat.selected?.isSupervisor == true ? L("Tell the supervisor what to do…") : L("Ask the repo agent…"), text: $chat.draft, axis: .vertical).lineLimit(1...6).font(.system(size: 16)).padding(.vertical, 12).frame(minHeight: 44).focused($composing).disabled(chat.loading || chat.loadingOlder || chat.responding || chat.configuring || chat.selected == nil).accessibilityIdentifier("chatComposer").onSubmit(send)
                     if chat.supportsVoice {
-                        Button { voice.start() } label: { Image(systemName: "mic").font(.title3).frame(width: 44, height: 44) }.disabled(locked).accessibilityLabel("Start voice chat").accessibilityIdentifier("startVoiceChat")
+                        Button { voice.start() } label: { Image(systemName: "mic").font(.title3).frame(width: 44, height: 44) }.disabled(locked).accessibilityLabel(L("Start voice chat")).accessibilityIdentifier("startVoiceChat")
                     }
                     Button { if chat.responding { Task { await chat.stop() } } else { send() } } label: {
                         Image(systemName: chat.responding ? "stop.fill" : "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44).background(chat.responding ? Color.red.opacity(0.8) : ChatStyle.blue.opacity(chat.draft.isEmpty ? 0.28 : 0.9), in: Circle())
-                    }.disabled(!chat.responding && (locked || chat.selected == nil || chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)).keyboardShortcut(.return, modifiers: .command).accessibilityLabel(chat.responding ? "Stop reply" : "Send message").accessibilityIdentifier(chat.responding ? "stopChat" : "sendChat")
+                    }.disabled(!chat.responding && (locked || chat.selected == nil || chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)).keyboardShortcut(.return, modifiers: .command).accessibilityLabel(chat.responding ? L("Stop reply") : L("Send message")).accessibilityIdentifier(chat.responding ? "stopChat" : "sendChat")
                 }
                 if !chat.options.isEmpty || chat.optionsError != nil {
                     Divider().overlay(Color.primary.opacity(0.06))
@@ -376,24 +372,24 @@ private struct ChatWorkspaceCanvas: View {
     private func importFiles(_ result: Result<[URL], Error>) {
         do {
             let files = try result.get(); var text = chat.draft
-            guard files.count <= 8 else { throw NocturneError.remote("Attach up to eight text files at a time.") }
+            guard files.count <= 8 else { throw NocturneError.remote(L("Attach up to eight text files at a time.")) }
             for file in files {
                 let access = file.startAccessingSecurityScopedResource(); defer { if access { file.stopAccessingSecurityScopedResource() } }
-                guard (try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 16_384 else { throw NocturneError.remote("Attach text files up to 16 KB each.") }
+                guard (try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 16_384 else { throw NocturneError.remote(L("Attach text files up to 16 KB each.")) }
                 let data = try Data(contentsOf: file, options: .mappedIfSafe)
-                guard data.count <= 16_384, !data.contains(0), let contents = String(data: data, encoding: .utf8) else { throw NocturneError.remote("Attach UTF-8 text files up to 16 KB each.") }
+                guard data.count <= 16_384, !data.contains(0), let contents = String(data: data, encoding: .utf8) else { throw NocturneError.remote(L("Attach UTF-8 text files up to 16 KB each.")) }
                 text += "\n\nFile: " + file.lastPathComponent + "\n```\n" + contents + "\n```"
             }
-            guard text.utf8.count <= ChatProtocol.maximumPromptBytes else { throw NocturneError.remote("The attached text is too large for one message.") }
+            guard text.utf8.count <= ChatProtocol.maximumPromptBytes else { throw NocturneError.remote(L("The attached text is too large for one message.")) }
             chat.draft = text
-        } catch { chat.error = error.localizedDescription }
+        } catch { chat.error = NocturneLocalization.message(error.localizedDescription) }
     }
     private func errorView(_ message: String, dismiss: @escaping () -> Void) -> some View {
-        HStack(alignment: .top) { Image(systemName: "exclamationmark.circle"); Text(message).textSelection(.enabled); Spacer(); Button(action: dismiss) { Image(systemName: "xmark") }.accessibilityLabel("Dismiss error") }.font(.caption).foregroundStyle(.orange).padding(12).background(ChatStyle.surface).padding(.horizontal, 16)
+        HStack(alignment: .top) { Image(systemName: "exclamationmark.circle"); Text(message).textSelection(.enabled); Spacer(); Button(action: dismiss) { Image(systemName: "xmark") }.accessibilityLabel(L("Dismiss error")) }.font(.caption).foregroundStyle(.orange).padding(12).background(ChatStyle.surface).padding(.horizontal, 16)
     }
     private func permissionView(_ permission: ChatPermission) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(permission.title, systemImage: "hand.raised").font(.subheadline.weight(.semibold))
+            Label(NocturneLocalization.message(permission.title), systemImage: "hand.raised").font(.subheadline.weight(.semibold))
             ScrollView { Text(permission.detail).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 140)
             ViewThatFits(in: .horizontal) {
                 HStack { ForEach(permission.options) { permissionButton(permission, $0) } }
@@ -402,18 +398,18 @@ private struct ChatWorkspaceCanvas: View {
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(ChatStyle.surface, in: RoundedRectangle(cornerRadius: 18)).padding(12)
     }
     private func permissionButton(_ permission: ChatPermission, _ option: ChatPermissionOption) -> some View {
-        Button(option.title, role: option.destructive ? .destructive : nil) { Task { await chat.decide(permission, option: option) } }.buttonStyle(.bordered).font(.subheadline)
+        Button(NocturneLocalization.message(option.title), role: option.destructive ? .destructive : nil) { Task { await chat.decide(permission, option: option) } }.buttonStyle(.bordered).font(.subheadline)
     }
     private var voiceControls: some View {
         HStack(spacing: 12) {
             Image(systemName: voice.speaking ? "waveform" : voice.muted ? "mic.slash" : "mic.fill").foregroundStyle(voice.muted ? ChatStyle.secondary : ChatStyle.green)
             VStack(alignment: .leading, spacing: 4) {
-                Text(voice.starting ? "Connecting voice…" : voice.ending ? "Ending voice chat…" : voice.muted ? "Microphone muted" : voice.speaking ? "Codex is speaking" : "Listening").font(.subheadline.weight(.semibold)).accessibilityIdentifier("voiceStatus")
-                Text("You can interrupt Codex while it speaks.").font(.caption).foregroundStyle(ChatStyle.secondary)
+                Text(voice.starting ? L("Connecting voice…") : voice.ending ? L("Ending voice chat…") : voice.muted ? L("Microphone muted") : voice.speaking ? L("Codex is speaking") : L("Listening")).font(.subheadline.weight(.semibold)).accessibilityIdentifier("voiceStatus")
+                Text(L("You can interrupt Codex while it speaks.")).font(.caption).foregroundStyle(ChatStyle.secondary)
             }
             Spacer(minLength: 0)
-            Button { voice.toggleMuted() } label: { Image(systemName: voice.muted ? "mic.slash.fill" : "mic.fill").frame(width: 40, height: 44) }.disabled(!voice.active).accessibilityLabel(voice.muted ? "Unmute microphone" : "Mute microphone").accessibilityIdentifier("voiceMute")
-            Button(role: .destructive) { voice.end() } label: { Image(systemName: "phone.down.fill").frame(width: 40, height: 44) }.disabled(voice.ending).accessibilityLabel("End voice chat").accessibilityIdentifier("endVoiceChat")
+            Button { voice.toggleMuted() } label: { Image(systemName: voice.muted ? "mic.slash.fill" : "mic.fill").frame(width: 40, height: 44) }.disabled(!voice.active).accessibilityLabel(voice.muted ? L("Unmute microphone") : L("Mute microphone")).accessibilityIdentifier("voiceMute")
+            Button(role: .destructive) { voice.end() } label: { Image(systemName: "phone.down.fill").frame(width: 40, height: 44) }.disabled(voice.ending).accessibilityLabel(L("End voice chat")).accessibilityIdentifier("endVoiceChat")
         }.padding(16).modifier(ChatGlass())
     }
 }

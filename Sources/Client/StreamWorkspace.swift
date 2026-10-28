@@ -50,10 +50,10 @@ struct StreamWorkspace: View {
                 .clipped()
                 .offset(x: layout.video.minX, y: layout.video.minY)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Stream")
+                .accessibilityLabel(L("Stream"))
                 .accessibilityAction { openControls() }
-                .accessibilityAction(named: Text("Open stream controls")) { openControls() }
-                .accessibilityAction(named: Text("Show keyboard")) { showKeyboard() }
+                .accessibilityAction(named: Text(L("Open stream controls"))) { openControls() }
+                .accessibilityAction(named: Text(L("Show keyboard"))) { showKeyboard() }
 
                 if workspace.showTools {
                     StreamToolsPanel(model: model, connection: model.server, showTools: $workspace.showTools, tool: $tool)
@@ -64,7 +64,7 @@ struct StreamWorkspace: View {
                 }
 
                 if showControlsHint {
-                    Label(model.mouseConnected ? "⌘⇧M releases the pointer and opens controls" : "Swipe from the left edge for controls, from the right edge for the keyboard", systemImage: "arrow.left.and.right")
+                    Label(model.mouseConnected ? L("⌘⇧M releases the pointer and opens controls") : L("Swipe from the left edge for controls, from the right edge for the keyboard"), systemImage: "arrow.left.and.right")
                         .font(.footnote.weight(.medium)).foregroundStyle(.white)
                         .padding(.horizontal, 16).padding(.vertical, 12)
                         .background(.regularMaterial, in: Capsule())
@@ -119,8 +119,8 @@ private struct StreamToolsPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker("Tool", selection: $tool) { Text("Terminal").tag(0); Text("Files").tag(1); Text("Chats").tag(2) }.pickerStyle(.segmented)
-                Button("Hide tools", systemImage: "xmark") { showTools = false }
+                Picker(L("Tool"), selection: $tool) { Text(L("Terminal")).tag(0); Text(L("Files")).tag(1); Text(L("Chats")).tag(2) }.pickerStyle(.segmented)
+                Button(L("Hide tools"), systemImage: "xmark") { showTools = false }
                     .labelStyle(.iconOnly).buttonStyle(NocturneGlassButtonStyle())
             }.padding(12)
             GeometryReader { geometry in
@@ -163,56 +163,56 @@ struct StreamControlsMenu: View {
         NavigationStack {
             Form {
                 Section {
-                    Button("Show keyboard", systemImage: "keyboard") { showKeyboard(); dismiss() }
+                    Button(L("Show keyboard"), systemImage: "keyboard") { showKeyboard(); dismiss() }
                         .disabled(!session.videoReady).accessibilityIdentifier("desktopKeyboard")
                 }
                 Section {
                     Toggle(isOn: Binding(get: { microphone.active || microphone.starting }, set: { _ in toggleMicrophone() })) {
-                        Label(microphone.starting ? "Connecting microphone…" : "Microphone", systemImage: microphone.active ? "mic.fill" : "mic.slash")
+                        Label(microphone.starting ? L("Connecting microphone…") : L("Microphone"), systemImage: microphone.active ? "mic.fill" : "mic.slash")
                     }.accessibilityIdentifier("streamMicrophone")
                     if microphone.active { Text(microphone.inputName).font(.caption).foregroundStyle(.secondary) }
-                    Button("Microphone setup", systemImage: "info.circle") { showMicrophoneInfo = true }
-                } footer: { Text("Your microphone stays muted until you turn it on.") }
+                    Button(L("Microphone setup"), systemImage: "info.circle") { showMicrophoneInfo = true }
+                } footer: { Text(L("Your microphone stays muted until you turn it on.")) }
 
                 Section {
-                    Toggle("Fill entire screen", isOn: Binding(get: { session.preferences.fillEntireScreen }, set: model.setFillEntireScreen))
+                    Toggle(L("Fill entire screen"), isOn: Binding(get: { session.preferences.fillEntireScreen }, set: model.setFillEntireScreen))
                         .accessibilityIdentifier("streamFillEntireScreen")
-                    Picker("Input mode", selection: Binding(get: { session.preferences.inputMode }, set: model.setInputMode)) {
+                    Picker(L("Input mode"), selection: Binding(get: { session.preferences.inputMode }, set: model.setInputMode)) {
                         ForEach(StreamInputMode.allCases) { mode in Label(mode.title, systemImage: mode.symbol).tag(mode) }
                     }
                 } footer: {
-                    Text("Off keeps the picture inside the safe area, clear of the camera and rounded corners. On fills the screen, cropping edges when needed to preserve proportions.")
+                    Text(L("Off keeps the picture inside the safe area, clear of the camera and rounded corners. On fills the screen, cropping edges when needed to preserve proportions."))
                 }
 
                 Section {
-                    Toggle("Lock pointer", isOn: $lockPointer)
+                    Toggle(L("Lock pointer"), isOn: $lockPointer)
                         .accessibilityIdentifier("streamLockPointer")
                 } footer: {
-                    Text("Keeps your mouse or trackpad inside the stream in full screen. Press ⌘⇧M or swipe from the left edge to release it and open controls. The pointer is free while controls, Terminal, or Files are open.")
+                    Text(L("Keeps your mouse or trackpad inside the stream in full screen. Press ⌘⇧M or swipe from the left edge to release it and open controls. The pointer is free while controls, Terminal, or Files are open."))
                 }
 
                 Section {
-                    Button("Terminal", systemImage: "terminal") { tool = 0; showTools = true; dismiss() }
-                    Button("Files", systemImage: "folder") { tool = 1; showTools = true; dismiss() }
-                    Button("Chats", systemImage: "bubble.left.and.bubble.right") { tool = 2; showTools = true; dismiss() }
-                    if showTools { Button("Hide tools", systemImage: "sidebar.right") { showTools = false; dismiss() } }
+                    Button(L("Terminal"), systemImage: "terminal") { tool = 0; showTools = true; dismiss() }
+                    Button(L("Files"), systemImage: "folder") { tool = 1; showTools = true; dismiss() }
+                    Button(L("Chats"), systemImage: "bubble.left.and.bubble.right") { tool = 2; showTools = true; dismiss() }
+                    if showTools { Button(L("Hide tools"), systemImage: "sidebar.right") { showTools = false; dismiss() } }
                 }
                 Section {
-                    Button(session.videoReady ? "Disconnect stream" : "Cancel connection", systemImage: "xmark", role: .destructive) { dismiss(); model.endStream() }
+                    Button(session.videoReady ? L("Disconnect stream") : L("Cancel connection"), systemImage: "xmark", role: .destructive) { dismiss(); model.endStream() }
                         .accessibilityIdentifier("closeDesktopStream")
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(session.app.name + " · " + session.host.name)
-                        if let size = session.size { Text("\(size.width) × \(size.height) · \(size.frameRate) fps") }
+                        if let size = session.size { Text(L("%@ × %@ · %@ fps", size.width.formatted(), size.height.formatted(), size.frameRate.formatted())) }
                     }
                 }
             }
-            .navigationTitle("Stream controls").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .navigationTitle(L("Stream controls")).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Done")) { dismiss() } } }
         }
         .tint(MoonStyle.accent).preferredColorScheme(.dark)
-        .alert("Client microphone", isPresented: $showMicrophoneInfo) {
-            Button("Done", role: .cancel) {}
+        .alert(L("Client microphone"), isPresented: $showMicrophoneInfo) {
+            Button(L("Done"), role: .cancel) {}
         } message: { Text(microphoneExplanation) }
         .onChange(of: microphone.error, initial: true) { _, error in if error != nil { showMicrophoneInfo = true } }
     }
@@ -224,8 +224,8 @@ struct StreamControlsMenu: View {
 
     private var microphoneExplanation: String {
         if let error = microphone.error { return error }
-        if !session.videoReady { return "Your stream is still connecting. Unmute after it starts." }
-        return "On your Mac, open Nocturne → Sharing, enable Client microphone, and install the microphone input. Pair using the server’s QR code and reconnect after enabling it.\n\nChoose Nocturne Microphone as the input in Discord or your game. Headphones help keep game audio out of voice chat."
+        if !session.videoReady { return L("Your stream is still connecting. Unmute after it starts.") }
+        return L("On your Mac, open Nocturne → Sharing, enable Client microphone, and install the microphone input. Pair using the server’s QR code and reconnect after enabling it.\n\nChoose Nocturne Microphone as the input in Discord or your game. Headphones help keep game audio out of voice chat.")
     }
 }
 
@@ -257,8 +257,8 @@ final class StreamControlsGestureView: UIView, UIGestureRecognizerDelegate {
         set { edgeGesture.isEnabled = newValue; keyboardGesture.isEnabled = newValue }
     }
     private weak var gestureWindow: UIWindow?
-    private lazy var edgeGesture = makeGesture(edge: .left, name: "Nocturne stream controls")
-    private lazy var keyboardGesture = makeGesture(edge: .right, name: "Nocturne stream keyboard")
+    private lazy var edgeGesture = makeGesture(edge: .left, name: L("Nocturne stream controls"))
+    private lazy var keyboardGesture = makeGesture(edge: .right, name: L("Nocturne stream keyboard"))
     private func makeGesture(edge: UIRectEdge, name: String) -> StreamEdgeGesture {
         // A scene-relative edge region also works in an iPad window.
         // Ignore all touches outside it so ordinary stream input is unaffected.

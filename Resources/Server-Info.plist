@@ -1,23 +1,53 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleDevelopmentRegion</key><string>en</string>
-<key>CFBundleDisplayName</key><string>Nocturne</string>
-<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
-<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-<key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
-<key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
-<key>LSMinimumSystemVersion</key><string>14.0</string>
-<key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
-<!-- Auxiliary executables share this bundle. Only the main UI opts into the Dock. -->
-<key>LSUIElement</key><true/>
-<key>NSHighResolutionCapable</key><true/>
-<key>NSLocalNetworkUsageDescription</key><string>Connect directly to your paired Macs, iPhones, and iPads for streaming.</string>
-<key>NSBonjourServices</key><array><string>_nocturne._tcp</string><string>_nvstream._tcp</string></array>
-<key>NSScreenCaptureUsageDescription</key><string>Stream this Mac’s display to your paired devices.</string>
-<key>NSAudioCaptureUsageDescription</key><string>Include your Mac’s audio in the stream.</string>
-<key>NSMicrophoneUsageDescription</key><string>Capture audio when a microphone or loopback audio source is selected.</string>
-<key>NSPrincipalClass</key><string>NSApplication</string>
-</dict></plist>
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Nocturne</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect directly to your paired Macs, iPhones, and iPads for streaming.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_nocturne._tcp</string>
+		<string>_nvstream._tcp</string>
+	</array>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Stream this Mac’s display to your paired devices.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Include your Mac’s audio in the stream.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Capture audio when a microphone or loopback audio source is selected.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>de</string>
+		<string>fr</string>
+		<string>it</string>
+		<string>es</string>
+	</array>
+</dict>
+</plist>
