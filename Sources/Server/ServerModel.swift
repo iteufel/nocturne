@@ -47,7 +47,18 @@ final class ServerModel: ObservableObject {
             settings.chats = newValue; appliedSettings.chats = newValue
             defaults.set(newValue, forKey: "allowChats")
             server?.updatePermissions(.init(terminal: appliedSettings.terminal, files: appliedSettings.files,
-                microphone: appliedSettings.microphone, chats: newValue))
+                microphone: appliedSettings.microphone, chats: newValue, browser: appliedSettings.browser))
+            if newValue { startEnabledServices() }
+            else if !appliedSettings.hasEnabledServices { stop() }
+        }
+    }
+    var browserEnabled: Bool {
+        get { settings.browser }
+        set {
+            settings.browser = newValue; appliedSettings.browser = newValue
+            defaults.set(newValue, forKey: "allowBrowser")
+            server?.updatePermissions(.init(terminal: appliedSettings.terminal, files: appliedSettings.files,
+                microphone: appliedSettings.microphone, chats: appliedSettings.chats, browser: newValue))
             if newValue { startEnabledServices() }
             else if !appliedSettings.hasEnabledServices { stop() }
         }
@@ -147,7 +158,7 @@ final class ServerModel: ObservableObject {
                 }
                 // Chat grants can be revoked immediately while startup is pending.
                 let permissions = HostPermissions(terminal: configuration.terminal, files: configuration.files,
-                    microphone: configuration.microphone, chats: appliedSettings.chats)
+                    microphone: configuration.microphone, chats: appliedSettings.chats, browser: appliedSettings.browser)
                 let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: permissions, appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil, chatAgents: chatAgents)
                 if let tunnel = remoteTunnel {
                     host.authorizeRemoteDevice = { [weak tunnel] port, device in
