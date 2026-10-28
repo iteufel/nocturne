@@ -47,3 +47,7 @@ Accessed 2026-10-28:
 - [Apple: Capturing screenshots and videos from devices](https://developer.apple.com/documentation/xcode/capturing-screenshots-and-videos-from-devices) — native-resolution capture independent of the Mac display.
 - [Apple: XCUICoordinate](https://developer.apple.com/documentation/xcuiautomation/xcuicoordinate) and [XCUIDevice.orientation](https://developer.apple.com/documentation/xcuiautomation/xcuidevice/orientation) — test gestures and orientation semantics.
 - [Apple: App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) — 2.5.1 and Mac App Store constraints in 2.4.5.
+
+## Publication blocker
+
+The authorized attempt to create the independent GitHub branch `codex/simulator-channel` at the documented base was rejected by `github_create_branch` with the exact response `user rejected MCP tool call`. No branch/commit upload or PR creation followed. The rejection was not retried through Git, gh, another API, another identity, or permission changes. There is therefore no PR URL or remote PR-check result. Local commits and an exported patch remain available for review. This does not resolve the separate missing touch-backend blocker.
