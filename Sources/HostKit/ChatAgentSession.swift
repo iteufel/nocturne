@@ -47,7 +47,11 @@ final class ChatAgentSession {
     private var listRemoteCursor: String?
     private var listToken: String?
     private var listArchived = false
+    private var didReadApprovalRequirements = false
+    private var allowedApprovalPolicies: Set<String>?
     private var modelCatalog: [[String: Any]]?
+    private var lastActivities: [String: ChatActivity] = [:]
+    private var approvalPolicies: [String: String] = [:]
     private var sessionOptions: [String: [ChatConfigOption]] = [:]
     private struct Approval {
         let rpcID: Any
@@ -55,6 +59,7 @@ final class ChatAgentSession {
         let sessionID: String
         let options: Set<String>
         let permissions: [String: Any]
+        let decisions: [String: Any]
     }
     private var approvals: [String: Approval] = [:]
 
@@ -225,8 +230,10 @@ final class ChatAgentSession {
                     _ = try await rpc.call("thread/resume", params)
                     opened.insert(id)
                 }
-                let result = try await rpc.call("turn/start", ["threadId": id,
-                    "input": [["type": "text", "text": text, "text_elements": [Any]()]]])
+                var params: [String: Any] = ["threadId": id,
+                    "input": [["type": "text", "text": text, "text_elements": [Any]()]]]
+                if let policy = approvalPolicies[id] { params["approvalPolicy"] = policy }
+                let result = try await rpc.call("turn/start", params)
                 activeTurn = (result["turn"] as? [String: Any])?["id"] as? String
                 if cancelRequested { try await cancel(id) }
             } else {
@@ -270,6 +277,17 @@ final class ChatAgentSession {
     }
     func options(for id: String) async throws -> [ChatConfigOption] {
         if configuration.transport == .acp { return sessionOptions[id] ?? [] }
+        if !didReadApprovalRequirements {
+            do {
+                let result = try await rpc.call("configRequirements/read")
+                if let raw = (result["requirements"] as? [String: Any])?["allowedApprovalPolicies"], !(raw is NSNull) {
+                    allowedApprovalPolicies = Set((raw as? [Any] ?? []).compactMap { $0 as? String })
+                }
+            } catch let error as AgentRPCError where error.unsupported {
+                // Legacy providers enforce policy support when turn/start is submitted.
+            }
+            didReadApprovalRequirements = true
+        }
         if modelCatalog == nil {
             var catalog: [[String: Any]] = [], cursor: String?, seen = Set<String>()
             repeat {
@@ -286,7 +304,7 @@ final class ChatAgentSession {
         let result = try await rpc.call("thread/read", ["threadId": id, "includeTurns": false])
         let thread = result["thread"] as? [String: Any] ?? [:]
         let catalog = modelCatalog ?? []
-        guard let fallback = catalog.first(where: { $0["isDefault"] as? Bool == true }) ?? catalog.first else { return [] }
+        guard let fallback = catalog.first(where: { $0["isDefault"] as? Bool == true }) ?? catalog.first else { return [Self.approvalPolicyOption(value: approvalPolicies[id] ?? "on-request", allowed: allowedApprovalPolicies)] }
         let model = thread["model"] as? String ?? fallback["model"] as? String ?? ""
         let current = catalog.first { $0["model"] as? String == model } ?? [:]
         let effort = thread["reasoningEffort"] as? String ?? current["defaultReasoningEffort"] as? String ?? ""
@@ -300,10 +318,21 @@ final class ChatAgentSession {
             guard let value = row["reasoningEffort"] as? String else { return nil }; return ChatConfigChoice(value, name: value.capitalized)
         }
         if !efforts.isEmpty { options.append(ChatConfigOption(id: "effort", name: "Reasoning", category: "thought_level", value: effort, choices: efforts)) }
+        options.append(Self.approvalPolicyOption(value: approvalPolicies[id] ?? "on-request", allowed: allowedApprovalPolicies))
         return options
     }
     func configure(_ session: String, id: String, value: String) async throws -> [ChatConfigOption] {
-        guard activeSession == nil, voiceID == nil else { throw NocturneError.remote("Finish the current reply or voice call before changing models.") }
+        guard activeSession == nil, voiceID == nil else { throw NocturneError.remote("Finish the current reply or voice call before changing chat settings.") }
+        // A chat-local override is applied only to subsequent text turns. No config file,
+        // sandbox, pending approval or other conversation is changed.
+        if configuration.transport == .codex, id == "nocturne.approvalPolicy" {
+            guard known[session] != nil else { throw NocturneError.invalidFrame }
+            var updated = try await self.options(for: session)
+            guard updated.first(where: { $0.id == id })?.choices.contains(where: { $0.value == value }) == true else { throw NocturneError.invalidFrame }
+            approvalPolicies[session] = value
+            if let index = updated.firstIndex(where: { $0.id == id }) { updated[index].value = value }
+            return updated
+        }
         let options = try await options(for: session)
         guard let option = options.first(where: { $0.id == id }), option.choices.contains(where: { $0.value == value }) else { throw NocturneError.invalidFrame }
         if configuration.transport == .codex {
@@ -316,33 +345,47 @@ final class ChatAgentSession {
             _ = try await rpc.call("thread/settings/update", params)
             return try await self.options(for: session)
         }
+        if id == "nocturne.acpMode" {
+            _ = try await rpc.call("session/set_mode", ["sessionId": session, "modeId": value])
+            var updated = sessionOptions[session] ?? []
+            if let index = updated.firstIndex(where: { $0.id == id }) { updated[index].value = value }
+            sessionOptions[session] = updated; return updated
+        }
         let response = try await rpc.call("session/set_config_option", ["sessionId": session, "configId": id, "value": value])
         sessionOptions[session] = Self.acpOptions(response)
         return sessionOptions[session] ?? []
     }
-    private static func acpOptions(_ result: [String: Any]) -> [ChatConfigOption] {
+    static func acpOptions(_ result: [String: Any]) -> [ChatConfigOption] {
         func flatten(_ choices: [[String: Any]]) -> [ChatConfigChoice] {
             choices.flatMap { row -> [ChatConfigChoice] in
                 if let group = row["options"] as? [[String: Any]] { return flatten(group) }
                 guard let value = row["value"] as? String, let name = row["name"] as? String else { return [] }
-                return [ChatConfigChoice(value, name: name)]
+                return [ChatConfigChoice(value, name: name, detail: row["description"] as? String)]
             }
         }
-        return (result["configOptions"] as? [[String: Any]] ?? []).prefix(24).compactMap { row in
+        var options: [ChatConfigOption] = (result["configOptions"] as? [[String: Any]] ?? []).prefix(24).compactMap { row in
             guard row["type"] as? String == "select", let id = row["id"] as? String,
                   let name = row["name"] as? String, let current = row["currentValue"] as? String else { return nil }
             let choices = Array(flatten(row["options"] as? [[String: Any]] ?? []).prefix(500))
             guard !choices.isEmpty else { return nil }
-            return ChatConfigOption(id: id, name: name, category: row["category"] as? String, value: current, choices: choices)
+            return ChatConfigOption(id: id, name: name, category: row["category"] as? String, value: current, choices: choices, detail: row["description"] as? String)
         }
+        if !options.contains(where: { $0.category == "mode" }), let modes = result["modes"] as? [String: Any], let current = modes["currentModeId"] as? String {
+            let choices = (modes["availableModes"] as? [[String: Any]] ?? []).compactMap { row -> ChatConfigChoice? in
+                guard let id = row["id"] as? String, let name = row["name"] as? String else { return nil }
+                return .init(id, name: name, detail: row["description"] as? String)
+            }
+            if !choices.isEmpty { options.append(.init(id: "nocturne.acpMode", name: "Approval mode", category: "mode", value: current, choices: choices)) }
+        }
+        return options
     }
     func approve(_ id: String, option: String) throws {
         guard let approval = approvals[id], approval.options.contains(option) else { throw NocturneError.invalidFrame }
         approvals.removeValue(forKey: id)
         if configuration.transport == .acp { rpc.respond(approval.rpcID, result: ["outcome": ["outcome": "selected", "optionId": option]]) }
         else if approval.method == "item/permissions/requestApproval" {
-            rpc.respond(approval.rpcID, result: ["permissions": option == "accept" ? approval.permissions : [:], "scope": "turn"])
-        } else { rpc.respond(approval.rpcID, result: ["decision": option]) }
+            rpc.respond(approval.rpcID, result: ["permissions": ["accept", "acceptForSession"].contains(option) ? approval.permissions : [:], "scope": option == "acceptForSession" ? "session" : "turn"])
+        } else { rpc.respond(approval.rpcID, result: ["decision": approval.decisions[option] ?? option]) }
         emit?(ChatEvent(providerID: configuration.id, sessionID: approval.sessionID, kind: .permissionResolved, detail: id))
     }
     private func cancelApprovals() {
@@ -354,9 +397,17 @@ final class ChatAgentSession {
         }
         approvals.removeAll()
     }
+    private func activity(_ session: String, _ phase: ChatActivity.Phase, _ detail: String) {
+        guard !replaying else { return }
+        let value = ChatActivity(phase, detail)
+        guard lastActivities[session] != value else { return }
+        lastActivities[session] = value
+        var event = ChatEvent(providerID: configuration.id, sessionID: session, kind: .configured)
+        event.activity = value; emit?(event)
+    }
     private func finish(_ id: String, error: String? = nil, detail: String? = nil) {
         guard activeSession == id || voiceSession == id else { return }
-        cancelApprovals(); activeSession = nil; activeTurn = nil
+        cancelApprovals(); activeSession = nil; activeTurn = nil; lastActivities.removeValue(forKey: id)
         emit?(ChatEvent(providerID: configuration.id, sessionID: id, kind: error == nil ? .completed : .failed, detail: error ?? detail))
     }
     private func notification(_ method: String, _ params: [String: Any]) {
@@ -374,13 +425,29 @@ final class ChatAgentSession {
             var event = ChatEvent(providerID: configuration.id, sessionID: session, kind: .diffUpdated)
             event.diff = text; emit?(event)
         case "turn/started":
+            activity(session, .working, "Working")
             activeTurn = (params["turn"] as? [String: Any])?["id"] as? String
             emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .diffUpdated))
+        case "serverRequest/resolved":
+            if let requestID = params["requestId"] {
+                for (id, approval) in approvals where String(describing: approval.rpcID) == String(describing: requestID) {
+                    approvals.removeValue(forKey: id)
+                    emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .permissionResolved, detail: id))
+                }
+            }
+        case "item/started":
+            if let item = params["item"] as? [String: Any] {
+                let type = item["type"] as? String ?? ""
+                activity(session, type == "reasoning" ? .thinking : type == "agentMessage" ? .working : .tool,
+                    type == "reasoning" ? "Thinking" : type == "commandExecution" ? "Running command" : type == "fileChange" ? "Editing files" : type == "agentMessage" ? "Writing reply" : "Using tool")
+            }
         case "item/agentMessage/delta":
+            activity(session, .working, "Writing reply")
             if let text = params["delta"] as? String, let id = params["itemId"] as? String {
                 emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .delta, message: ChatMessage(id: id, role: .assistant, text: text)))
             }
         case "item/completed":
+            activity(session, .working, "Working")
             if let item = params["item"] as? [String: Any], let message = Self.codexMessage(item) {
                 emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .message, message: message))
             }
@@ -400,10 +467,19 @@ final class ChatAgentSession {
     private func acpUpdate(_ session: String, _ update: [String: Any]) {
         guard session == transcriptSession else { return }
         let kind = update["sessionUpdate"] as? String ?? ""
+        if kind == "current_mode_update", let mode = update["currentModeId"] as? String,
+           var options = sessionOptions[session], let index = options.firstIndex(where: { $0.id == "nocturne.acpMode" }) {
+            options[index].value = mode; sessionOptions[session] = options
+            var event = ChatEvent(providerID: configuration.id, sessionID: session, kind: .configured)
+            event.options = options; emit?(event); return
+        }
         if kind == "config_option_update" {
             sessionOptions[session] = Self.acpOptions(update)
             var event = ChatEvent(providerID: configuration.id, sessionID: session, kind: .configured)
             event.options = sessionOptions[session]; emit?(event); return
+        }
+        if kind == "agent_thought_chunk", session == activeSession, !replaying {
+            activity(session, .thinking, "Thinking"); return
         }
         if kind == "agent_message_chunk" || kind == "user_message_chunk" {
             let role: ChatRole = kind == "user_message_chunk" ? .user : .assistant
@@ -418,6 +494,7 @@ final class ChatAgentSession {
                 replayBytes += text.utf8.count
                 if replayBytes > 32 * 1_048_576 { rpc.close(error: NocturneError.remote("This conversation is too large to load from this ACP provider.")) }
             } else if session == activeSession, role == .assistant {
+                activity(session, .working, "Writing reply")
                 emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .delta, message: ChatMessage(id: id, role: role, text: text)))
             }
         } else if kind == "tool_call" || kind == "tool_call_update" {
@@ -428,7 +505,12 @@ final class ChatAgentSession {
             guard !text.isEmpty else { return }
             let message = ChatMessage(id: "tool:" + id, role: .tool, text: text)
             if let index = transcript.firstIndex(where: { $0.id == message.id }) { transcript[index] = message } else { transcript.append(message) }
-            if !replaying { emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .message, message: message)) }
+            if !replaying {
+                let status = update["status"] as? String
+                activity(session, status == "completed" || status == "failed" ? .working : .tool,
+                    status == "failed" ? "Tool failed; agent continuing" : status == "completed" ? "Working" : toolTitles[id] ?? "Using tool")
+                emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .message, message: message))
+            }
         }
     }
     private func request(_ rpcID: Any, _ method: String, _ params: [String: Any]) {
@@ -449,20 +531,25 @@ final class ChatAgentSession {
             return
         }
         let options: [ChatPermissionOption]
+        var decisions: [String: Any] = [:]
         let title: String, detail: String
         if configuration.transport == .acp, method == "session/request_permission" {
             options = (params["options"] as? [[String: Any]] ?? []).compactMap {
                 guard let id = $0["optionId"] as? String, let name = $0["name"] as? String else { return nil }
-                return ChatPermissionOption(id: id, title: name, destructive: ($0["kind"] as? String)?.hasPrefix("reject") == true)
+                let kind = $0["kind"] as? String
+                return ChatPermissionOption(id: id, title: name, destructive: kind?.hasPrefix("reject") == true,
+                    scope: kind == "allow_always" || kind == "reject_always" ? "Provider remembers this choice. Scope and revocation are managed by the provider on your Mac." : "This request only.")
             }
             let tool = params["toolCall"] as? [String: Any] ?? [:]
             title = tool["title"] as? String ?? "Allow this action?"
             detail = (tool["rawInput"].flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.prettyPrinted, .fragmentsAllowed]) })
                 .flatMap { String(data: $0, encoding: .utf8) } ?? "The agent is waiting for your decision."
         } else if configuration.transport == .codex, ["item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/permissions/requestApproval"].contains(method) {
-            options = [.init(id: "accept", title: "Allow once"), .init(id: "decline", title: "Deny", destructive: true)]
-            title = method == "item/fileChange/requestApproval" ? "Allow file changes?" : method == "item/permissions/requestApproval" ? "Allow additional access?" : "Allow this command?"
-            detail = [params["command"] as? String, params["reason"] as? String, params["cwd"] as? String,
+            let offered = Self.codexApprovalOptions(method: method, params: params)
+            options = offered.options; decisions = offered.decisions
+            let network = params["networkApprovalContext"] as? [String: Any]
+            title = network != nil ? "Allow network access?" : method == "item/fileChange/requestApproval" ? "Allow file changes?" : method == "item/permissions/requestApproval" ? "Allow additional access?" : "Allow this command?"
+            detail = [network?["host"] as? String, network?["protocol"] as? String, params["command"] as? String, params["reason"] as? String, params["cwd"] as? String,
                 (params["permissions"].flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.prettyPrinted]) }).flatMap { String(data: $0, encoding: .utf8) }]
                 .compactMap { $0 }.joined(separator: "\n\n")
         } else {
@@ -473,9 +560,48 @@ final class ChatAgentSession {
         }
         guard !options.isEmpty else { rpc.reject(rpcID, message: "The provider supplied no permission options."); return }
         let id = UUID().uuidString
-        approvals[id] = Approval(rpcID: rpcID, method: method, sessionID: session, options: Set(options.map(\.id)), permissions: params["permissions"] as? [String: Any] ?? [:])
+        approvals[id] = Approval(rpcID: rpcID, method: method, sessionID: session, options: Set(options.map(\.id)), permissions: params["permissions"] as? [String: Any] ?? [:], decisions: decisions)
         emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .permission,
             permission: ChatPermission(id: id, title: title, detail: String(detail.prefix(16_384)), options: options)))
+    }
+
+    static func approvalPolicyOption(value: String, allowed: Set<String>? = nil) -> ChatConfigOption {
+        ChatConfigOption(id: "nocturne.approvalPolicy", name: "Approval policy", category: "mode", value: value, choices: [
+            .init("on-request", name: "Ask when needed (default)", detail: "Codex decides when to request approval."),
+            .init("untrusted", name: "Ask for untrusted commands", detail: "Codex may run trusted commands without asking."),
+            .init("never", name: "Automatic within sandbox", detail: "Codex never asks for escalation. Actions requiring approval fail; this grants no extra access.")
+        ].filter { allowed?.contains($0.value) ?? true }, detail: "This chat’s next text turns, during this connection only. Workspace sandbox stays enabled. Voice uses its own default. Return to Ask when needed to undo. Provider and managed restrictions still apply.")
+    }
+
+    /// Keep actual response payloads on the host; the client can only select an offered id.
+    static func codexApprovalOptions(method: String, params: [String: Any]) -> (options: [ChatPermissionOption], decisions: [String: Any]) {
+        let permissions = method == "item/permissions/requestApproval"
+        let command = method == "item/commandExecution/requestApproval"
+        // Older App Servers omit availableDecisions. These are their documented native choices.
+        let explicit = params["availableDecisions"].map { !($0 is NSNull) } ?? false
+        var raw: [Any] = explicit ? (params["availableDecisions"] as? [Any] ?? []) : ["accept", "acceptForSession", "decline", "cancel"]
+        if command, !explicit, let prefix = params["proposedExecpolicyAmendment"] as? [String], !prefix.isEmpty {
+            raw.append(["acceptWithExecpolicyAmendment": ["execpolicy_amendment": prefix]])
+        }
+        if permissions, !explicit { raw = ["accept", "acceptForSession", "decline"] }
+        var options: [ChatPermissionOption] = [], decisions: [String: Any] = [:]
+        for row in raw {
+            if let value = row as? String, ["accept", "acceptForSession", "decline", "cancel"].contains(value), !permissions || value != "cancel" {
+                guard decisions[value] == nil else { continue }
+                let title = value == "accept" ? (permissions ? "Allow for this turn" : "Allow once") : value == "acceptForSession" ? "Allow for session" : value == "cancel" ? "Stop turn" : "Deny"
+                let scope = value == "acceptForSession" ? "Provider session cache for this request’s command, files or access. Ends with the provider session; not a global setting." : "This request only."
+                options.append(.init(id: value, title: title, destructive: value == "decline" || value == "cancel", scope: scope)); decisions[value] = value
+            } else if command, let object = row as? [String: Any], object.count == 1,
+                      let amendment = object["acceptWithExecpolicyAmendment"] as? [String: Any], amendment.count == 1,
+                      let prefix = amendment["execpolicy_amendment"] as? [String], !prefix.isEmpty,
+                      prefix == params["proposedExecpolicyAmendment"] as? [String] {
+                let id = "execpolicy"
+                guard decisions[id] == nil else { continue }
+                options.append(.init(id: id, title: "Always allow matching prefix", scope: "Codex saves this rule on your Mac: " + prefix.joined(separator: " ") + ". May affect other chats. Revoke in Codex rules on your Mac."))
+                decisions[id] = object
+            }
+        }
+        return (options, decisions)
     }
 
     static func codexSession(_ value: [String: Any]) -> ChatSessionInfo? {

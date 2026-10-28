@@ -12,6 +12,7 @@ public final class ChatWorkspaceModel: ObservableObject {
     @Published public private(set) var permissions: [ChatPermission] = []
     @Published public private(set) var loading = false
     @Published public private(set) var loadingOlder = false
+    @Published public private(set) var activities: [String: ChatActivity] = [:]
     @Published public private(set) var responding = false
     @Published public private(set) var respondingSince: Date?
     @Published public private(set) var canPrompt = false
@@ -27,6 +28,10 @@ public final class ChatWorkspaceModel: ObservableObject {
     @Published public private(set) var configuring = false
     @Published public private(set) var optionsError: String?
     @Published public private(set) var latestTurnDiff: RepositoryText?
+    public func activity(for session: String) -> ChatActivity? {
+        if selected?.id == session, !permissions.isEmpty { return ChatActivity(.waiting, "Waiting for approval") }
+        return activities[session]
+    }
     public var provider: ChatProvider? { providers.first { $0.id == providerID } }
     public var supportsVoice: Bool {
         provider?.supportsVoice == true && connection.capabilities.contains(ChatVoice.capability) && selected != nil && canPrompt && !archived && !configuring
@@ -48,7 +53,7 @@ public final class ChatWorkspaceModel: ObservableObject {
         }.store(in: &observers)
     }
     public func reset() {
-        generation = UUID(); providers = []; providerID = "codex"; sessions = []; clearConversation()
+        generation = UUID(); activities = [:]; providers = []; providerID = "codex"; sessions = []; clearConversation()
         sessionCursor = nil; hasMoreSessions = false; loading = false; archived = false; notice = nil; error = nil
     }
     private func clearConversation() {
@@ -94,6 +99,7 @@ public final class ChatWorkspaceModel: ObservableObject {
     public func dismissVoiceContinuationNotice() { voiceContinuationNotice = nil }
     public func detachVoice(_ connection: WorkspaceConnection) {
         guard voiceConnection === connection else { return }
+        if let id = selected?.id { activities.removeValue(forKey: id) }
         voiceObserver = nil; voiceConnection = nil; voiceEngaged = false; permissions = []; responding = false; respondingSince = nil
     }
     private var available: Bool { connection.state == .connected && connection.capabilities.contains(ChatProtocol.capability) }
@@ -113,7 +119,7 @@ public final class ChatWorkspaceModel: ObservableObject {
     }
     public func chooseProvider(_ id: String) async {
         guard id != providerID, providers.contains(where: { $0.id == id }), !responding, !loading, !loadingOlder, !voiceEngaged, !configuring else { return }
-        generation = UUID(); providerID = id; sessions = []; sessionCursor = nil; hasMoreSessions = false
+        generation = UUID(); activities = [:]; providerID = id; sessions = []; sessionCursor = nil; hasMoreSessions = false
         archived = false; notice = nil; error = nil; clearConversation()
         await moreSessions()
     }
@@ -233,6 +239,7 @@ public final class ChatWorkspaceModel: ObservableObject {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         guard text.utf8.count <= ChatProtocol.maximumPromptBytes else { error = "This message is too long. Send less than 64 KB of text."; return }
+        activities[session.id] = ChatActivity(.working, "Sending request")
         let epoch = generation; responding = true; respondingSince = Date(); error = nil; permissions = []; draft = ""; latestTurnDiff = nil
         let id = UUID().uuidString; pendingUserID = id
         messages.append(ChatMessage(id: id, role: .user, text: text))
@@ -243,6 +250,7 @@ public final class ChatWorkspaceModel: ObservableObject {
         } catch {
             guard generation == epoch else { return }
             responding = false; respondingSince = nil; permissions = []; self.error = error.localizedDescription
+            activities[session.id] = ChatActivity(.failed, "Failed")
             // Preserve the unsent text for retry when the request itself was rejected.
             draft = text; messages.removeAll { $0.id == id }; pendingUserID = nil
         }
@@ -274,7 +282,9 @@ public final class ChatWorkspaceModel: ObservableObject {
     private func receive(_ event: ChatEvent) {
         guard available, event.providerID == providerID, event.sessionID == selected?.id else { return }
         switch event.kind {
-        case .configured: options = event.options ?? options
+        case .configured:
+            options = event.options ?? options
+            if let activity = event.activity { activities[event.sessionID] = activity }
         case .diffUpdated: latestTurnDiff = event.diff
         case .message, .delta:
             guard let message = event.message else { return }
@@ -287,8 +297,12 @@ public final class ChatWorkspaceModel: ObservableObject {
         case .permission:
             if let permission = event.permission, !permissions.contains(where: { $0.id == permission.id }) { permissions.append(permission) }
         case .permissionResolved: permissions.removeAll { $0.id == event.detail }
-        case .completed: responding = false; respondingSince = nil; permissions = []; notice = event.detail; pendingUserID = nil
-        case .failed: responding = false; respondingSince = nil; permissions = []; error = event.detail; pendingUserID = nil
+        case .completed:
+            activities[event.sessionID] = ChatActivity(event.detail == "Stopped" ? .stopped : .completed, event.detail == "Stopped" ? "Stopped" : "Completed")
+            responding = false; respondingSince = nil; permissions = []; notice = event.detail; pendingUserID = nil
+        case .failed:
+            activities[event.sessionID] = ChatActivity(.failed, "Failed")
+            responding = false; respondingSince = nil; permissions = []; error = event.detail; pendingUserID = nil
         }
     }
 }

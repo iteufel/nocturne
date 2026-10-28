@@ -78,8 +78,9 @@ public struct ChatPermissionOption: Codable, Identifiable, Equatable {
     public let id: String
     public let title: String
     public let destructive: Bool
-    public init(id: String, title: String, destructive: Bool = false) {
-        self.id = id; self.title = title; self.destructive = destructive
+    public let scope: String?
+    public init(id: String, title: String, destructive: Bool = false, scope: String? = nil) {
+        self.id = id; self.title = title; self.destructive = destructive; self.scope = scope
     }
 }
 
@@ -103,6 +104,7 @@ public struct ChatEvent: Codable, Equatable {
     public var detail: String?
     public var options: [ChatConfigOption]?
     public var diff: RepositoryText?
+    public var activity: ChatActivity?
     public init(providerID: String, sessionID: String, kind: Kind, message: ChatMessage? = nil,
                 permission: ChatPermission? = nil, detail: String? = nil) {
         self.providerID = providerID; self.sessionID = sessionID; self.kind = kind
@@ -126,4 +128,13 @@ public struct ChatRequest: Codable {
     public init(providerID: String = "codex", sessionID: String? = nil) {
         self.providerID = providerID; self.sessionID = sessionID
     }
+}
+
+/// Provider-reported phases, never elapsed-time estimates or invented percentages.
+public struct ChatActivity: Codable, Equatable {
+    public enum Phase: String, Codable { case working, thinking, tool, waiting, completed, stopped, failed }
+    public let phase: Phase
+    public let detail: String
+    public var isActive: Bool { [.working, .thinking, .tool].contains(phase) }
+    public init(_ phase: Phase, _ detail: String) { self.phase = phase; self.detail = String(detail.prefix(256)) }
 }
