@@ -59,7 +59,8 @@ struct ChatThreadSidebar: View {
                             Image(systemName: "person.crop.circle.badge.checkmark").font(.title2).foregroundStyle(ChatStyle.purple)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Supervisor").font(.system(size: 17, weight: .semibold))
-                                Text("Manage your agents").font(.caption).foregroundStyle(ChatStyle.secondary)
+                                if let session = chat.selected, session.isSupervisor == true, let activity = chat.activity(for: session.id) { activityLabel(activity) }
+                                else { Text("Manage your agents").font(.caption).foregroundStyle(ChatStyle.secondary) }
                             }
                             Spacer(minLength: 0)
                             Image(systemName: navigation.supervisorStartsVoice ? "mic.fill" : "pin.fill").font(.caption).foregroundStyle(ChatStyle.secondary)
@@ -135,6 +136,14 @@ struct ChatThreadSidebar: View {
                 Button("Save") { if let renaming { navigation.rename(renaming.id, title: title) }; renaming = nil }
             }
     }
+    private func activityLabel(_ activity: ChatActivity) -> some View {
+        HStack(spacing: 5) {
+            if activity.isActive { ProgressView().controlSize(.mini) }
+            else { Image(systemName: activity.phase == .waiting ? "hand.raised.fill" : activity.phase == .failed ? "exclamationmark.circle.fill" : activity.phase == .stopped ? "stop.circle" : "checkmark.circle") }
+            Text(activity.detail).font(.caption2.weight(.semibold)).lineLimit(2)
+        }.foregroundStyle(activity.phase == .failed || activity.phase == .waiting ? Color.orange : ChatStyle.blue)
+            .accessibilityElement(children: .combine).accessibilityIdentifier("chatActivityStatus")
+    }
     private func row(_ session: ChatSessionInfo, group: ChatNavigationState.Group) -> some View {
         Button { open(session) } label: {
             VStack(alignment: .leading, spacing: 8) {
@@ -142,8 +151,8 @@ struct ChatThreadSidebar: View {
                     ChatProjectMark(name: ChatStyle.projectName(session.directory))
                     Text(ChatStyle.projectName(session.directory)).font(.caption).foregroundStyle(ChatStyle.secondary).lineLimit(1)
                     Spacer(minLength: 4)
-                    if group == .working {
-                        HStack(spacing: 5) { ProgressView().controlSize(.mini); Text("Working").font(.caption2.weight(.semibold)) }.foregroundStyle(ChatStyle.blue)
+                    if let activity = chat.activity(for: session.id) {
+                        activityLabel(activity)
                     } else if let date = session.updatedAt { Text(ChatStyle.age(date)).font(.caption2).foregroundStyle(ChatStyle.secondary).lineLimit(1) }
                 }
                 Text(navigation.title(session)).font(.system(size: 17, weight: .medium)).lineLimit(2).multilineTextAlignment(.leading)

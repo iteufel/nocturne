@@ -215,8 +215,10 @@ final class ChatTests: XCTestCase {
         model.draft = "run"; await model.send()
         try await waitUntil { !model.permissions.isEmpty }
         let permission = try XCTUnwrap(model.permissions.first)
+        XCTAssertEqual(model.activity(for: try XCTUnwrap(model.selected?.id))?.phase, .waiting)
         await model.decide(permission, option: try XCTUnwrap(permission.options.first))
         try await waitUntil { !model.responding }
+        XCTAssertEqual(model.activity(for: try XCTUnwrap(model.selected?.id))?.phase, .completed)
         XCTAssertTrue(model.messages.contains { $0.text == "Hello world" })
         XCTAssertEqual(model.messages.filter { $0.role == .user && $0.text == "run" }.count, 1)
         model.draft = "wait"; await model.send(); try await waitUntil { model.responding }
@@ -228,7 +230,7 @@ final class ChatTests: XCTestCase {
         do { _ = try await client.request(Packet(.chatProviders)); XCTFail("Revoked chats remained accessible") }
         catch { XCTAssertEqual(error as? NocturneError, .remote(NocturneError.permissionDenied.localizedDescription)) }
         client.disconnect()
-        XCTAssertTrue(model.messages.isEmpty); XCTAssertTrue(model.providers.isEmpty); XCTAssertNil(model.selected)
+        XCTAssertTrue(model.messages.isEmpty); XCTAssertTrue(model.providers.isEmpty); XCTAssertTrue(model.activities.isEmpty); XCTAssertNil(model.selected)
     }
     func testChatAccessDefaultsOff() async throws {
         let session = ChatHostSession(configurations: [configuration()], directory: root, enabled: false)
