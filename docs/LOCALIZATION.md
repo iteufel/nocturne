@@ -36,16 +36,15 @@ such as `Match device`, tab IDs, appearance raw values and status comparisons st
 unchanged. Only their UI labels are localized. Provider-generated metadata and
 external service prose remain provider-owned.
 
-This is an isolated localization change based on `main` commit
-`49ee687583adb5b82617cdc024f4bbdcf92cb861`, implemented in the separate clone
-`/private/tmp/nocturne-localization`, branch `codex/localization-five-languages`.
-No commits or features from the CallKit/push, chat-status/approvals, or
-headless-lockscreen branches are included. Existing baseline chat/approval and
-headless text is localized without importing those branches' new behavior.
-Integrators should reuse the shared English keys and `L`/`LCount` APIs for new
-presentation text, keep protocol/storage values stable, and add translations in
-all five languages when those independent features land. Changes to nearby UI or
-project generation may require ordinary textual conflict resolution.
+This localization branch has been merged normally with `main` commit
+`86b8a1b6e6f9ecae8ed402c7d93dcb9478daef8d`, preserving the CallKit and local
+attention behavior already on `main`. Its new settings, local notification copy,
+Live Activity controls, authentication reasons and system-call errors use the
+same five native language tables. Remote APNs payloads remain stable protocol
+content; only the local presentation boundary translates them. No code from the
+other independent chat-status, browser, simulator or headless-lockscreen PRs is
+included. Integrators should reuse `L`/`LCount` for presentation text and keep
+protocol and storage values stable. There is no in-app language selector.
 
 ## Verification
 

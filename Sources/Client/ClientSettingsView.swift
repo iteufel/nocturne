@@ -4,6 +4,7 @@ import NocturneKit
 struct ClientSettingsView: View {
     @ObservedObject var model: ClientModel
     var showOnboarding: () -> Void = {}
+    @ObservedObject private var attention = AgentAttentionCenter.shared
     @AppStorage("nocturne.appearance") private var appearance = NocturneAppearance.system
     var body: some View {
         Form {
@@ -15,6 +16,14 @@ struct ClientSettingsView: View {
                         Text("\(model.pairedServers.servers.count)").foregroundStyle(.secondary)
                     }
                 }.accessibilityIdentifier("pairedHostsSettings")
+            }.listRowBackground(MoonStyle.surface)
+            Section(L("Agent attention")) {
+                Toggle(L("Notifications for pending requests"), isOn: Binding(get: { attention.notificationsEnabled },
+                    set: { enabled in Task { await attention.setNotifications(enabled) } }))
+                Toggle(L("Live Activities"), isOn: Binding(get: { attention.activitiesEnabled }, set: attention.setActivities))
+                Text(attention.status).font(.caption).foregroundStyle(MoonStyle.secondary)
+                Text(L("Connected requests can show local alerts. Remote delivery needs a configured push server. Decisions require device authentication; open Chats to inspect request details."))
+                    .font(.caption).foregroundStyle(MoonStyle.secondary)
             }.listRowBackground(MoonStyle.surface)
             Section(L("Appearance")) {
                 Picker(L("Style"), selection: $appearance) {

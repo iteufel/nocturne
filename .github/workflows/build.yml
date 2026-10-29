@@ -116,7 +116,9 @@ jobs:
   verify:
     name: Test the iPhone and iPad client
     runs-on: xcode-27
-    timeout-minutes: 45
+    # A cold Xcode 27 test build can take 35 minutes before either device runs.
+    # Keep time for both device suites; expiry must never replace their results.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -239,6 +241,14 @@ jobs:
         uses: Apple-Actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
         with:
           bundle-id: app.nocturne.client.files
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+      - name: Download the Attention widget provisioning profile
+        uses: Apple-Actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
+        with:
+          bundle-id: app.nocturne.client.attention
           profile-type: IOS_APP_STORE
           issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
           api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}

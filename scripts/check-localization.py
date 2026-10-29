@@ -147,6 +147,8 @@ let values: [String: Any] = [
     "streaming": Bundle.main.localizedString(forKey: "N/A", value: nil, table: "Streaming"),
     "permission": Bundle.main.localizedInfoDictionary?["NSCameraUsageDescription"] as? String ?? "missing",
     "files": L("Files"), "unknown": L("user text %s 🤖"),
+    "attention": L("Nocturne needs your attention"),
+    "attentionIntent": String(localized: LocalizedStringResource("Decide pending Nocturne request", bundle: .atURL(NocturneLocalization.bundleURL))),
     "argument": L("Open %@", "literal %@ / O'Neil 🤖"),
     "error": NocturneLocalization.message("Install tool-%@ on your Mac or set its full path in Sharing → Chat providers."),
     "keychain": NocturneLocalization.message("Keychain operation failed (-50)."),
@@ -168,6 +170,8 @@ print(String(data: try JSONSerialization.data(withJSONObject: values), encoding:
             assert output['streaming'] == read_strings(ROOT / f'Resources/Localization/Client/{language}.lproj/Streaming.strings')['N/A']
             assert output['permission'] == read_strings(ROOT / f'Resources/Localization/Client/{language}.lproj/InfoPlist.strings')['NSCameraUsageDescription']
             assert output['files'] == tables[language]['Files'], (preference, output)
+            assert output['attention'] == tables[language]['Nocturne needs your attention']
+            assert output['attentionIntent'] == tables[language]['Decide pending Nocturne request']
             assert output['unknown'] == 'user text %s 🤖'
             assert output['opaque'] == 'opaque agent reply %s'
             assert output['keychain'] == tables[language]['Keychain operation failed (%@).'].replace('%@', '-50')
@@ -184,7 +188,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: values), encoding:
                 assert output['actions'][index] == plurals[language]['Ran %d tool actions']['count'][category].replace('%d', str(number))
             assert output['development'] == 'en'
             assert output['state'] == tables[language]['Open']
-            print(f'PASS: native Bundle negotiation {preference} → {language}, fallback, interpolation, remote error and plurals')
+            print(f'PASS: native Bundle negotiation {preference} → {language}, fallback, attention/intent resources, interpolation, remote error and plurals')
 
 
 if __name__ == '__main__':

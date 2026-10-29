@@ -175,6 +175,10 @@ Dir.glob('{Sources/Client,Sources/Design}/**/*.{swift,m,h}').sort.each do |path|
   reference = group.new_file('../../' + path)
   target.source_build_phase.add_file_reference(reference) unless path.end_with?('.h')
 end
+# Shared attributes/intent compile in the app and widget; LiveActivityIntent runs in the app.
+Dir.glob('Sources/AttentionActivity/**/*.swift').sort.each do |path|
+  target.source_build_phase.add_file_reference(group.new_file('../../' + path))
+end
 icons = group.new_file('../../Resources/Client.xcassets')
 target.resources_build_phase.add_file_reference(icons)
 localization_resources(client, target, group, 'Client', '../../')
@@ -188,6 +192,7 @@ target.resources_build_phase.add_file_reference(group.new_file('../../Resources/
 kit = package(client, '../..'); terminal = package(client, '../SwiftTerm')
 product(client, target, kit, 'NocturneKit'); product(client, target, terminal, 'SwiftTerm')
 product(client, target, kit, 'NocturneVoice')
+target.add_system_framework('CallKit')
 target.build_configurations.each do |config|
   settings = config.build_settings
   settings['PRODUCT_NAME'] = 'Nocturne'
@@ -256,6 +261,37 @@ target.add_dependency(files)
 embed_files = target.new_copy_files_build_phase('Embed Files extension')
 embed_files.dst_subfolder_spec = '13'
 embed_files.add_file_reference(files.product_reference).settings = { 'ATTRIBUTES' => ['RemoveHeadersOnCopy'] }
+
+attention = client.new_target(:app_extension, 'Nocturne Attention', :ios, '17.0')
+attention_group = client.main_group.new_group('Nocturne Attention')
+Dir.glob('{Sources/AttentionActivity,Sources/AttentionWidget}/**/*.swift').sort.each do |path|
+  attention.source_build_phase.add_file_reference(attention_group.new_file('../../' + path))
+end
+product(client, attention, kit, 'NocturneKit')
+attention.build_configurations.each do |config|
+  settings = config.build_settings
+  settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'app.nocturne.client.attention'
+  settings['PRODUCT_NAME'] = 'Nocturne Attention'
+  settings['INFOPLIST_FILE'] = '../../Resources/Attention-Info.plist'
+  settings['SWIFT_VERSION'] = '5.0'
+  settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = '$(inherited) NOCTURNE_ATTENTION_WIDGET'
+  settings['APPLICATION_EXTENSION_API_ONLY'] = 'YES'
+  settings['TARGETED_DEVICE_FAMILY'] = '1,2'
+  settings['SKIP_INSTALL'] = 'YES'
+  settings['CODE_SIGN_STYLE'] = '$(NOCTURNE_CODE_SIGN_STYLE)'
+  settings['CODE_SIGN_IDENTITY'] = '$(NOCTURNE_CODE_SIGN_IDENTITY)'
+  settings['DEVELOPMENT_TEAM'] = '$(NOCTURNE_DEVELOPMENT_TEAM)'
+  settings['NOCTURNE_CODE_SIGN_STYLE'] = 'Automatic'
+  settings['NOCTURNE_CODE_SIGN_IDENTITY'] = 'Apple Development'
+  settings['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = '$(NOCTURNE_CODE_SIGN_IDENTITY)'
+  settings['PROVISIONING_PROFILE_SPECIFIER'] = '$(NOCTURNE_ATTENTION_PROVISIONING_PROFILE_SPECIFIER)'
+  settings['MARKETING_VERSION'] = '1.0'
+  settings['CURRENT_PROJECT_VERSION'] = '1'
+end
+target.add_dependency(attention)
+embed_attention = target.new_copy_files_build_phase('Embed Attention extension')
+embed_attention.dst_subfolder_spec = '13'
+embed_attention.add_file_reference(attention.product_reference).settings = { 'ATTRIBUTES' => ['RemoveHeadersOnCopy'] }
 
 client_tests = client.new_target(:unit_test_bundle, 'NocturneClientTests', :ios, '17.0')
 client_tests.add_dependency(target)
@@ -346,6 +382,7 @@ info['NSBluetoothPeripheralUsageDescription'] = 'Connect compatible Bluetooth mi
 info['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Nocturne on your Mac.'
 info['NSMicrophoneUsageDescription'] = 'Talk with Codex in live voice chats, or send your microphone to your paired Mac for Discord and games when you unmute a stream.'
 info['UIBackgroundModes'] = ['audio']
+info['NSSupportsLiveActivities'] = true
 info['UIApplicationSceneManifest'] = {
   'UIApplicationSupportsMultipleScenes' => true,
   'UISceneConfigurations' => {'UIWindowSceneSessionRoleApplication' => [
