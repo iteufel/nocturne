@@ -50,8 +50,10 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: remote
-      - name: Test build orchestration
-        run: python3 scripts/tests/test-build-orchestration.py
+      - name: Test build orchestration and dependency downloads
+        run: |
+          python3 scripts/tests/test-build-orchestration.py
+          python3 scripts/tests/test-sunshine-fetch.py
       - name: Check and test Rust services
         run: |
           cargo fmt --manifest-path remote/Cargo.toml --all --check

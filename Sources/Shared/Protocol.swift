@@ -15,6 +15,7 @@ public enum Operation: String, Codable {
     case terminalList, terminalAttach, terminalOpen, terminalInput, terminalResize, terminalClose, terminalOutput, terminalExit, terminalClosed
     case displayPrepare, displayHeartbeat, displayRelease
     case microphoneStart, microphoneAudio, microphoneStop
+    case simulatorList, simulatorOpen, simulatorFrame, simulatorClose, simulatorInput
     case appList, appIcon, appLaunch, appOpen, appResize, appInput, appHeartbeat, appClose, appVideo, appEnded
     case chatSupervisor, chatProviders, chatList, chatLoad, chatNew, chatPrompt, chatCancel, chatPermission, chatEvent
     case chatOptions, chatConfigure, chatRepository
@@ -92,6 +93,9 @@ public struct Packet: Codable {
     public var chatVoiceEvent: ChatVoiceEvent? = nil
     public var displays: [RemoteDesktopDisplay]? = nil
     public var displayID: UInt32? = nil
+    public var simulators: [RemoteSimulator]? = nil
+    public var simulatorID: String? = nil
+    public var simulatorFrame: SimulatorFrame? = nil
     public var audio: DesktopAudioFrame? = nil
     public init(_ operation: Operation, id: String = UUID().uuidString) { self.operation = operation; self.id = id }
     public func reply(error: String? = nil) -> Packet {
