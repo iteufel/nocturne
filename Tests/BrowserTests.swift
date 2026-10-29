@@ -172,12 +172,18 @@ final class BrowserHostTests: XCTestCase {
     }
     func testClosingAndLeaseExpiryTearDownDocumentWebSockets() async throws {
         let fixture = try BrowserFixture(); try await fixture.start(); defer { fixture.stop() }
-        let host = RemoteBrowserHost(leaseSeconds: 0.5), access = BrowserAuthorization(); access.update(enabled: true)
+        // A cold CI WebKit launch/snapshot may take longer than the short test lease.
+        // Advance idle time only after readiness, while retaining the real lease timer
+        // and real WebSocket teardown instead of racing browser startup against 0.5 s.
+        var now = Date()
+        let host = RemoteBrowserHost(leaseSeconds: 0.5, now: { now }), access = BrowserAuthorization(); access.update(enabled: true)
         let id = UUID().uuidString; defer { host.reset() }
         try await open(host, access: access, id: id)
         _ = try await host.handle(command(.navigate, id: id, value: fixture.url("/page")), authorization: access)
         _ = try await ready(host, access: access, id: id, title: "ready:asset:socket-ok:browser=private")
+        XCTAssertEqual(fixture.closedSockets, 0)
         // Stop polling, exactly as when a phone disappears without a graceful close.
+        now = now.addingTimeInterval(0.6)
         for _ in 0..<60 where fixture.closedSockets == 0 { try await Task.sleep(nanoseconds: 50_000_000) }
         XCTAssertGreaterThan(fixture.closedSockets, 0, "Expired document must release its WebSocket without another command")
         do { _ = try await host.handle(command(.frame, id: id), authorization: access); XCTFail("Expired session remained usable") } catch {}

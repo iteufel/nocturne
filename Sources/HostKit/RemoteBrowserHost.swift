@@ -24,7 +24,10 @@ final class RemoteBrowserHost {
     private var sessionID: String?
     private var authorizationRevision: UUID?
     private let leaseSeconds: TimeInterval
-    nonisolated init(leaseSeconds: TimeInterval = BrowserProtocol.leaseSeconds) { self.leaseSeconds = leaseSeconds }
+    private let now: @MainActor @Sendable () -> Date
+    nonisolated init(leaseSeconds: TimeInterval = BrowserProtocol.leaseSeconds, now: @escaping @MainActor @Sendable () -> Date = { Date() }) {
+        self.leaseSeconds = leaseSeconds; self.now = now
+    }
 
     func reset() { session?.close(); session = nil; sessionID = nil; authorizationRevision = nil }
     func refreshAuthorization(_ authorization: BrowserAuthorization) {
@@ -44,7 +47,7 @@ final class RemoteBrowserHost {
         if command.action == .open {
             guard session == nil else { throw NocturneError.remote("A browser is already open on this connection.") }
             guard Self.active < 4 else { throw NocturneError.remote("Close another browser session on this Mac first.") }
-            let page = BrowserPage(leaseSeconds: leaseSeconds)
+            let page = BrowserPage(leaseSeconds: leaseSeconds, now: now)
             Self.active += 1
             page.onClose = { Self.active -= 1 }
             session = page; sessionID = id
@@ -68,13 +71,15 @@ private final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate {
     private let window: NSWindow
     private var page = UUID().uuidString
     private var notice: String?
-    private var lastActivity = Date()
+    private var lastActivity: Date
+    private let now: @MainActor @Sendable () -> Date
     private var lease: Timer?
     private var commandInFlight = false
     private(set) var closed = false
     var onClose: (() -> Void)?
 
-    init(leaseSeconds: TimeInterval) {
+    init(leaseSeconds: TimeInterval, now: @escaping @MainActor @Sendable () -> Date) {
+        self.now = now; lastActivity = now()
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -94,7 +99,7 @@ private final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate {
         window.orderBack(nil)
         lease = Timer.scheduledTimer(withTimeInterval: min(5, leaseSeconds / 2), repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, Date().timeIntervalSince(self.lastActivity) > leaseSeconds else { return }
+                guard let self, self.now().timeIntervalSince(self.lastActivity) > leaseSeconds else { return }
                 self.close()
             }
         }
@@ -115,7 +120,7 @@ private final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard !closed else { throw NocturneError.disconnected }
         guard !commandInFlight else { throw NocturneError.remote("Wait for the current browser frame.") }
         commandInFlight = true; defer { commandInFlight = false }
-        lastActivity = Date()
+        lastActivity = now()
         switch command.action {
         case .open, .frame: break
         case .navigate:
