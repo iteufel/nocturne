@@ -38,6 +38,17 @@ def localization_resources(project, target, group, product, prefix)
   target.resources_build_phase.add_file_reference(variant)
 end
 
+# App Intents exports require the main bundle, even though ordinary UI uses Bundle.module.
+# Put the same dedicated table in both executables that declare AttentionDecisionIntent.
+def attention_intent_resources(project, target, group)
+  variant = group.new_variant_group('AppIntents.strings')
+  %w[en de fr it es].each do |language|
+    child = variant.new_file("../../Resources/Localization/AttentionIntents/#{language}.lproj/AppIntents.strings")
+    child.name = language
+  end
+  target.resources_build_phase.add_file_reference(variant)
+end
+
 client = Xcodeproj::Project.open('Vendor/moonlight-ios/Moonlight.xcodeproj')
 target = client.targets.find { |entry| entry.name == 'Moonlight' }
 target.name = 'Nocturne'
@@ -182,6 +193,7 @@ end
 icons = group.new_file('../../Resources/Client.xcassets')
 target.resources_build_phase.add_file_reference(icons)
 localization_resources(client, target, group, 'Client', '../../')
+attention_intent_resources(client, target, group)
 streaming_strings = group.new_variant_group('Streaming.strings')
 %w[en de fr it es].each do |language|
   child = streaming_strings.new_file("../../Resources/Localization/Client/#{language}.lproj/Streaming.strings")
@@ -268,6 +280,7 @@ Dir.glob('{Sources/AttentionActivity,Sources/AttentionWidget}/**/*.swift').sort.
   attention.source_build_phase.add_file_reference(attention_group.new_file('../../' + path))
 end
 product(client, attention, kit, 'NocturneKit')
+attention_intent_resources(client, attention, attention_group)
 attention.build_configurations.each do |config|
   settings = config.build_settings
   settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'app.nocturne.client.attention'

@@ -15,8 +15,6 @@ public func LCount(_ key: String, _ count: Int) -> String {
 
 public enum NocturneLocalization {
     static let bundle = Bundle.module
-    /// Shared native resources for App Intents metadata in the app and widget.
-    public static var bundleURL: URL { bundle.bundleURL }
 
     /// Localize only Nocturne's known error envelopes at the receiving UI boundary.
     /// Payloads, protocol identifiers, paths, commands, and provider prose stay intact.

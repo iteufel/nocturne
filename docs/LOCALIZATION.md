@@ -46,9 +46,34 @@ other independent chat-status, browser, simulator or headless-lockscreen PRs is
 included. Integrators should reuse `L`/`LCount` for presentation text and keep
 protocol and storage values stable. There is no in-app language selector.
 
+## App Intents metadata
+
+App Intents resolves its metadata from each executable's main bundle. The app
+and Attention extension both include the dedicated `AppIntents.strings` table in
+all five languages. Intent titles and parameter labels name that table and keep
+the default main bundle; ordinary UI continues to use the shared SwiftPM bundle.
+The Xcode metadata exporter rejects custom-bundle resources even when Swift
+SDK typechecking succeeds. The native runtime check covers the main-table
+lookup and English fallback, and the generator includes the same table in both
+targets.
+
+Apple documents [deferred App Intents string resolution](https://developer.apple.com/documentation/foundation/localizedstringresource)
+and [main-bundle lookup by default](https://developer.apple.com/videos/play/wwdc2025/225/).
+The main-bundle restriction is additionally enforced by the installed Apple
+`appintentsmetadataprocessor`; it is reproduced by the regression probe below.
+
 ## Verification
 
-Run `python3 scripts/check-localization.py --runtime` on macOS. It checks:
+Run `python3 scripts/check-localization.py --runtime` on macOS. With the existing
+`xcodeproj` gem used by bootstrap, also run
+`ruby scripts/test-attention-metadata.rb --verify-rejection`. This builds only the
+production intent declaration with a compile-only app boundary, never launches
+an app or sends a decision, and runs the real Xcode exporter for an app and an
+extension. It verifies their five bundled tables and proves that the exporter
+rejects the previous custom-bundle mistake. Full production builds remain CI
+checks.
+
+The localization runtime check covers:
 
 - Identical key sets, nonempty translations, format-variable preservation and all
   grammatical plural categories across the five languages.

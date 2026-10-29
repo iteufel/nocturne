@@ -108,6 +108,14 @@ def check():
             assert table.keys() == expected, (product, language, expected - table.keys())
             if language == 'en':
                 assert all(info[key] == value for key, value in table.items())
+    intent_keys = {'Decide pending Nocturne request', 'Request', 'Host', 'Provider', 'Session', 'Allow once'}
+    for language in LANGUAGES:
+        intents = read_strings(ROOT / f'Resources/Localization/AttentionIntents/{language}.lproj/AppIntents.strings')
+        assert intents.keys() == intent_keys
+        assert all(value == tables[language][key] for key, value in intents.items())
+    intent_source = (ROOT / 'Sources/AttentionActivity/AttentionActivity.swift').read_text()
+    assert '.atURL(' not in intent_source, 'App Intents metadata must resolve from the main bundle'
+    assert intent_source.count('table: "AppIntents"') == len(intent_keys)
     streaming = {language: read_strings(ROOT / f'Resources/Localization/Client/{language}.lproj/Streaming.strings') for language in LANGUAGES}
     manifest = json.loads((ROOT / 'scripts/streaming-localization.json').read_text())
     assert set(streaming['en']) == {key for keys in manifest.values() for key in keys}
@@ -136,6 +144,8 @@ def runtime(tables, plurals):
         shutil.copytree(RESOURCES, bundle)
         for language in LANGUAGES:
             shutil.copytree(ROOT / f'Resources/Localization/Client/{language}.lproj', resources / f'{language}.lproj')
+        for language in LANGUAGES:
+            shutil.copy2(ROOT / f'Resources/Localization/AttentionIntents/{language}.lproj/AppIntents.strings', resources / f'{language}.lproj/AppIntents.strings')
         info = {'CFBundleIdentifier': 'test.nocturne.localization', 'CFBundleExecutable': executable.name,
                 'CFBundleDevelopmentRegion': 'en', 'CFBundleLocalizations': list(LANGUAGES)}
         (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
@@ -148,7 +158,7 @@ let values: [String: Any] = [
     "permission": Bundle.main.localizedInfoDictionary?["NSCameraUsageDescription"] as? String ?? "missing",
     "files": L("Files"), "unknown": L("user text %s 🤖"),
     "attention": L("Nocturne needs your attention"),
-    "attentionIntent": String(localized: LocalizedStringResource("Decide pending Nocturne request", bundle: .atURL(NocturneLocalization.bundleURL))),
+    "attentionIntent": String(localized: LocalizedStringResource("Decide pending Nocturne request", table: "AppIntents")),
     "argument": L("Open %@", "literal %@ / O'Neil 🤖"),
     "error": NocturneLocalization.message("Install tool-%@ on your Mac or set its full path in Sharing → Chat providers."),
     "keychain": NocturneLocalization.message("Keychain operation failed (-50)."),
