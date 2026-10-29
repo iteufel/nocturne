@@ -90,6 +90,8 @@ private final class FakeDisplayEnvironment {
     var onConsole = true
     var loginDone = true
     var locked = false
+    var hasOtherDisplay = true
+    var displayActive = true
     var onSelect: (() -> Void)?
     weak var lastDisplay: FakeVirtualDisplay?
     let layout = FakeDisplayLayout()
@@ -100,7 +102,9 @@ private final class FakeDisplayEnvironment {
                 kCGSessionLoginDoneKey as String: self.loginDone,
                 "CGSSessionScreenIsLocked": self.locked
             ])
-        }, isScreenLocked: { self.locked }, create: {
+        }, isScreenLocked: { self.locked },
+           isDisplayActive: { _ in self.displayActive },
+           hasActiveDisplayOtherThan: { _ in self.hasOtherDisplay }, create: {
             self.sizes.append($0)
             let display = FakeVirtualDisplay(UInt32(100 + self.sizes.count))
             display.onSelect = self.onSelect
@@ -118,6 +122,105 @@ final class DisplayTests: XCTestCase {
     private let landscape = StreamDisplaySize(width: 2868, height: 1320, frameRate: 60)
     private func request(_ operation: NocturneKit.Operation = .displayPrepare, id: String, size: StreamDisplaySize? = nil) -> Packet {
         var packet = Packet(operation); packet.sessionID = id; packet.display = size; return packet
+    }
+    func testHeadlessIdleAndLockedReconnectPreserveOnlyFramebuffer() async throws {
+        for reason in ["release", "socket", "heartbeat"] {
+            let environment = FakeDisplayEnvironment()
+            environment.hasOtherDisplay = false
+            let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+            var targets: [UInt32] = []
+            let manager = DisplaySessionManager(driver: driver, timeout: 20) { targets.append($0) }
+            let bootstrap = try await manager.start()
+            weak var framebuffer = environment.lastDisplay
+            manager.restore()
+            XCTAssertNotNil(framebuffer, "Idle startup must keep the only real framebuffer")
+            environment.locked = true
+            environment.onSelect = { XCTFail("Locked reuse must not reconfigure a display mode") }
+            framebuffer?.onSelect = environment.onSelect
+            let connection = UUID(), id = UUID().uuidString
+            let reply = try await manager.handle(request(id: id, size: portrait), connection: connection, name: "iPad")
+            XCTAssertEqual(reply.displayID, bootstrap)
+            XCTAssertEqual(targets, [bootstrap])
+            XCTAssertEqual(environment.sizes.count, 1)
+            switch reason {
+            case "release": _ = try await manager.handle(request(.displayRelease, id: id), connection: connection, name: "iPad")
+            case "socket": manager.disconnected(connection)
+            default: manager.expire(now: Date().addingTimeInterval(21))
+            }
+            XCTAssertFalse(manager.isActive, "Keeping a framebuffer must never retain a control lease")
+            XCTAssertNil(manager.size)
+            XCTAssertNotNil(framebuffer)
+            let reconnect = try await manager.handle(request(id: UUID().uuidString, size: landscape), connection: UUID(), name: "iPhone")
+            XCTAssertEqual(reconnect.displayID, bootstrap)
+            XCTAssertTrue(environment.exclusions.isEmpty)
+            manager.stop()
+            XCTAssertNil(framebuffer, "Explicit Stop must release even the only headless framebuffer")
+        }
+    }
+    func testHeadlessUnlockAppliesDeferredSizeAndPhysicalAttachmentAllowsRemoval() async throws {
+        let environment = FakeDisplayEnvironment()
+        environment.hasOtherDisplay = false
+        let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+        defer { try? driver.stop() }
+        let initial = try await driver.start()
+        weak var previous = environment.lastDisplay
+        environment.locked = true
+        let locked = try await driver.apply(portrait, disablePhysicalDisplays: true)
+        XCTAssertEqual(locked, initial)
+        environment.locked = false
+        let resized = try await driver.apply(portrait, disablePhysicalDisplays: false)
+        XCTAssertNotEqual(resized, initial)
+        XCTAssertNil(previous)
+        XCTAssertEqual(environment.sizes.last, portrait)
+        weak var replacement = environment.lastDisplay
+        try driver.restore()
+        XCTAssertNotNil(replacement)
+        environment.hasOtherDisplay = true
+        try driver.restore()
+        XCTAssertNil(replacement, "An attached usable display makes idle virtual-monitor removal safe")
+    }
+    func testLockDuringHeadlessResizeKeepsPreviousFramebuffer() async throws {
+        let environment = FakeDisplayEnvironment()
+        environment.hasOtherDisplay = false
+        let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+        defer { try? driver.stop() }
+        let initial = try await driver.start()
+        weak var original = environment.lastDisplay
+        environment.onSelect = { [weak environment] in environment?.locked = true }
+        let target = try await driver.apply(portrait, disablePhysicalDisplays: true)
+        XCTAssertEqual(target, initial)
+        XCTAssertNotNil(original)
+        XCTAssertNil(environment.lastDisplay, "Discard the unpublished replacement rather than the login framebuffer")
+        XCTAssertTrue(environment.layout.primaryChanges.isEmpty)
+        environment.onSelect = nil; environment.locked = false
+        let unlocked = try await driver.apply(portrait, disablePhysicalDisplays: false)
+        XCTAssertNotEqual(unlocked, initial)
+        XCTAssertNil(original)
+    }
+    func testSessionLossDuringModePublicationCannotInstallReplacement() async throws {
+        let environment = FakeDisplayEnvironment()
+        let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+        defer { try? driver.stop() }
+        environment.onSelect = { [weak environment] in environment?.onConsole = false }
+        do { _ = try await driver.start(); XCTFail("An inactive session installed a framebuffer") } catch {}
+        XCTAssertNil(environment.lastDisplay)
+    }
+    func testLockedInactiveFramebufferIsRecreatedAndLogoutDoesNotRetainIt() async throws {
+        let environment = FakeDisplayEnvironment()
+        environment.hasOtherDisplay = false
+        let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+        defer { try? driver.stop() }
+        let initial = try await driver.start()
+        environment.locked = true
+        environment.displayActive = false
+        let replacement = try await driver.apply(portrait, disablePhysicalDisplays: false)
+        XCTAssertNotEqual(replacement, initial, "Do not return a stale display just because the session is locked")
+        weak var framebuffer = environment.lastDisplay
+        environment.displayActive = true
+        environment.onConsole = false
+        try driver.restore()
+        XCTAssertNil(framebuffer, "An inactive console session must not keep a headless display")
+        do { _ = try await driver.start(); XCTFail("Inactive session configured a display") } catch {}
     }
     func testLockedConsoleSessionCanPrepareResizeAndReleaseDisplay() async throws {
         let environment = FakeDisplayEnvironment()
