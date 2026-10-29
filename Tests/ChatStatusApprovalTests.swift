@@ -44,6 +44,7 @@ final class ChatStatusApprovalTests: XCTestCase {
         let amendment: [String: Any] = ["acceptWithExecpolicyAmendment": ["execpolicy_amendment": ["swift", "test"]]]
         let offered = ChatAgentSession.codexApprovalOptions(method: method, params: ["availableDecisions": ["acceptForSession", amendment], "proposedExecpolicyAmendment": ["swift", "test"]])
         XCTAssertEqual(offered.options.map(\.id), ["acceptForSession", "execpolicy"])
+        XCTAssertTrue(offered.options.allSatisfy { $0.action == nil }, "Session and saved-rule choices must never become local notification shortcuts")
         XCTAssertTrue(offered.options.last?.scope?.contains("other chats") == true)
         XCTAssertEqual(try JSONSerialization.data(withJSONObject: offered.decisions["execpolicy"]!, options: [.sortedKeys]), try JSONSerialization.data(withJSONObject: amendment, options: [.sortedKeys]))
         let mismatch = ChatAgentSession.codexApprovalOptions(method: method, params: ["availableDecisions": [amendment], "proposedExecpolicyAmendment": ["sh"]])
@@ -51,6 +52,7 @@ final class ChatStatusApprovalTests: XCTestCase {
         let files = ChatAgentSession.codexApprovalOptions(method: "item/fileChange/requestApproval", params: [:])
         XCTAssertEqual(files.options.map(\.id), ["accept", "acceptForSession", "decline", "cancel"])
         XCTAssertNil(files.decisions["execpolicy"])
+        XCTAssertEqual(files.options.filter { $0.action != nil }.map(\.id), ["accept", "decline"])
     }
     func testSessionApprovalRequiresUserChoiceAndCannotBeReplayed() async throws {
         let session = try await start()
@@ -59,9 +61,9 @@ final class ChatStatusApprovalTests: XCTestCase {
         let permission = try XCTUnwrap(events.compactMap(\.permission).first)
         XCTAssertEqual(permission.options.map(\.id), ["accept", "acceptForSession", "decline"])
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("response.json").path))
-        XCTAssertThrowsError(try agent.approve(permission.id, option: "execpolicy"))
-        try agent.approve(permission.id, option: "acceptForSession")
-        XCTAssertThrowsError(try agent.approve(permission.id, option: "acceptForSession"))
+        XCTAssertThrowsError(try agent.approve(permission.id, option: "execpolicy", session: session.id))
+        try agent.approve(permission.id, option: "acceptForSession", session: session.id)
+        XCTAssertThrowsError(try agent.approve(permission.id, option: "acceptForSession", session: session.id))
         try await wait { self.events.contains { $0.kind == .completed } }
         XCTAssertEqual(try response()["decision"] as? String, "acceptForSession")
         XCTAssertTrue(events.contains { $0.kind == .permissionResolved && $0.detail == permission.id })
@@ -74,7 +76,7 @@ final class ChatStatusApprovalTests: XCTestCase {
             try await wait { self.events.contains { $0.permission != nil } }
             let permission = try XCTUnwrap(events.compactMap(\.permission).first)
             XCTAssertFalse(permission.options.contains { $0.id == "cancel" })
-            try agent.approve(permission.id, option: choice)
+            try agent.approve(permission.id, option: choice, session: session.id)
             try await wait { self.events.contains { $0.kind == .completed } }
             let result = try response()
             XCTAssertEqual(result["scope"] as? String, choice == "acceptForSession" ? "session" : "turn")
@@ -87,7 +89,7 @@ final class ChatStatusApprovalTests: XCTestCase {
         try await agent.prompt(session.id, text: "persistent")
         try await wait { self.events.contains { $0.permission != nil } }
         let permission = try XCTUnwrap(events.compactMap(\.permission).first)
-        try agent.approve(permission.id, option: "execpolicy")
+        try agent.approve(permission.id, option: "execpolicy", session: session.id)
         try await wait { self.events.contains { $0.kind == .completed } }
         let decision = try XCTUnwrap(try response()["decision"] as? [String: Any])
         let amendment = try XCTUnwrap(decision["acceptWithExecpolicyAmendment"] as? [String: Any])
@@ -98,7 +100,7 @@ final class ChatStatusApprovalTests: XCTestCase {
         try await agent.prompt(session.id, text: "resolved")
         try await wait { self.events.contains { $0.kind == .permissionResolved } }
         let permission = try XCTUnwrap(events.compactMap(\.permission).first)
-        XCTAssertThrowsError(try agent.approve(permission.id, option: "accept"))
+        XCTAssertThrowsError(try agent.approve(permission.id, option: "accept", session: session.id))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("response.json").path))
         try await agent.cancel(session.id)
     }
@@ -155,7 +157,7 @@ final class ChatStatusApprovalTests: XCTestCase {
         XCTAssertEqual(permission.options.map(\.id), ["once", "remember", "reject"])
         XCTAssertTrue(permission.options[1].scope?.contains("Provider remembers") == true)
         XCTAssertTrue(events.contains { $0.activity?.phase == .tool })
-        try agent.approve(permission.id, option: "remember")
+        try agent.approve(permission.id, option: "remember", session: session.id)
         try await task.value
         XCTAssertEqual((try response()["outcome"] as? [String: Any])?["optionId"] as? String, "remember")
     }

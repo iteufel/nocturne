@@ -269,6 +269,22 @@ public final class ChatWorkspaceModel: ObservableObject {
             _ = try await connection.request(packet, timeout: 30)
         } catch { if generation == epoch { self.error = error.localizedDescription } }
     }
+    /// Called only by an authenticated, explicit system action. Never reconnect or change host here.
+    public func decideAttention(_ attention: AgentAttention, permission: ChatPermission, option: ChatPermissionOption) async throws {
+        guard available, let session = selected, let invitation = connection.connectedInvitation,
+              attention.isCurrent(hostID: WorkspaceIdentity.fingerprint(invitation.secret), providerID: providerID,
+                sessionID: session.id, now: Date()), attention.kind == .approval,
+              attention.id == permission.id, attention.expiresAt == permission.expiresAt,
+              permissions.contains(permission), permission.options.contains(option), option.action != nil else {
+            throw NocturneError.invalidFrame
+        }
+        let epoch = generation
+        var packet = Packet(.chatPermission), request = ChatRequest(providerID: providerID, sessionID: session.id)
+        request.permissionID = permission.id; request.optionID = option.id; packet.chatRequest = request
+        _ = try await (voiceConnection ?? connection).request(packet, timeout: 30)
+        guard epoch == generation else { throw NocturneError.disconnected }
+        permissions.removeAll { $0.id == permission.id }
+    }
     public func decide(_ permission: ChatPermission, option: ChatPermissionOption) async {
         guard let session = selected, permissions.contains(where: { $0.id == permission.id }) else { return }
         let epoch = generation

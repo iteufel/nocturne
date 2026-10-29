@@ -9,14 +9,12 @@ from pathlib import Path
 import shutil, sys
 fixture = Path(sys.argv[1])
 for target, source, names in [
-    ('kit', 'Shared', ['ChatProtocol', 'DeveloperProtocol', 'ChatVoice', 'ChatSupervisor']),
-    ('host', 'HostKit', ['ChatAgentSession', 'ChatAgentConfiguration', 'AgentRPC', 'ChatSupervisorService', 'RepositoryService', 'DeveloperCommand', 'ForgeService'])
+    ('kit', 'Shared', ['ChatProtocol', 'ChatPermission', 'AgentAttention', 'NocturneError', 'DeveloperProtocol', 'ChatVoice', 'ChatSupervisor']),
+    ('host', 'HostKit', ['ChatAgentSession', 'ChatAgentConfiguration', 'AgentRPC', 'ChatSupervisorService', 'CodexAttentionQuestions', 'RepositoryService', 'DeveloperCommand', 'ForgeService'])
 ]:
     for name in names:
         shutil.copy(Path('Sources') / source / (name + '.swift'), fixture / target)
-protocol = Path('Sources/Shared/Protocol.swift').read_text()
-error = protocol[protocol.index('public enum NocturneError:'):protocol.index('public enum FrameCodec')]
-(fixture / 'kit/NocturneError.swift').write_text('import Foundation\n' + error)
+
 PY
 platform="$(xcode-select -p)/Platforms/MacOSX.platform/Developer"
 common=(-swift-version 5 -module-cache-path "$fixture/cache" -I "$fixture" -L "$fixture")

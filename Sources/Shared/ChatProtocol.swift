@@ -74,26 +74,6 @@ public struct ChatHistoryPage: Codable, Equatable {
     }
 }
 
-public struct ChatPermissionOption: Codable, Identifiable, Equatable {
-    public let id: String
-    public let title: String
-    public let destructive: Bool
-    public let scope: String?
-    public init(id: String, title: String, destructive: Bool = false, scope: String? = nil) {
-        self.id = id; self.title = title; self.destructive = destructive; self.scope = scope
-    }
-}
-
-public struct ChatPermission: Codable, Identifiable, Equatable {
-    public let id: String
-    public let title: String
-    public let detail: String
-    public let options: [ChatPermissionOption]
-    public init(id: String, title: String, detail: String, options: [ChatPermissionOption]) {
-        self.id = id; self.title = title; self.detail = detail; self.options = options
-    }
-}
-
 public struct ChatEvent: Codable, Equatable {
     public enum Kind: String, Codable { case message, delta, completed, permission, permissionResolved, failed, configured, diffUpdated }
     public let providerID: String

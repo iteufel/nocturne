@@ -53,18 +53,30 @@ final class ChatAgentSession {
     private var lastActivities: [String: ChatActivity] = [:]
     private var approvalPolicies: [String: String] = [:]
     private var sessionOptions: [String: [ChatConfigOption]] = [:]
+    private final class InputAnswers {
+        let expected: Int
+        var answers: [String: [String: [String]]] = [:]
+        var responded = false
+        init(expected: Int) { self.expected = expected }
+    }
     private struct Approval {
         let rpcID: Any
         let method: String
         let sessionID: String
         let options: Set<String>
         let permissions: [String: Any]
-        let decisions: [String: Any]
+        var decisions: [String: Any] = [:]
+        let expiresAt: Date
+        var inputAnswers: InputAnswers? = nil
+        var questionID: String? = nil
+        var answerLabels: [String: String] = [:]
     }
     private var approvals: [String: Approval] = [:]
+    private let approvalLifetime: TimeInterval
 
-    init(configuration: ChatAgentConfiguration, directory: URL, chatGPTOnly: Bool = false) throws {
+    init(configuration: ChatAgentConfiguration, directory: URL, chatGPTOnly: Bool = false, approvalLifetime: TimeInterval = 300) throws {
         self.configuration = configuration; self.directory = directory
+        self.approvalLifetime = min(300, max(0, approvalLifetime))
         self.chatGPTOnly = chatGPTOnly
         rpc = try AgentRPC(configuration: configuration, directory: directory, chatGPTOnly: chatGPTOnly)
         rpc.onNotification = { [weak self] in self?.notification($0, $1) }
@@ -379,20 +391,43 @@ final class ChatAgentSession {
         }
         return options
     }
-    func approve(_ id: String, option: String) throws {
-        guard let approval = approvals[id], approval.options.contains(option) else { throw NocturneError.invalidFrame }
+    func approve(_ id: String, option: String, session: String) throws {
+        guard let approval = approvals[id], approval.sessionID == session,
+              approval.expiresAt > Date(), approval.options.contains(option) else { throw NocturneError.invalidFrame }
         approvals.removeValue(forKey: id)
-        if configuration.transport == .acp { rpc.respond(approval.rpcID, result: ["outcome": ["outcome": "selected", "optionId": option]]) }
+        if let input = approval.inputAnswers, let questionID = approval.questionID, let label = approval.answerLabels[option] {
+            guard !input.responded else { throw NocturneError.invalidFrame }
+            input.answers[questionID] = ["answers": [label]]
+            if input.answers.count == input.expected {
+                input.responded = true
+                rpc.respond(approval.rpcID, result: ["answers": input.answers])
+            }
+        }
+        else if configuration.transport == .acp { rpc.respond(approval.rpcID, result: ["outcome": ["outcome": "selected", "optionId": option]]) }
         else if approval.method == "item/permissions/requestApproval" {
             rpc.respond(approval.rpcID, result: ["permissions": ["accept", "acceptForSession"].contains(option) ? approval.permissions : [:], "scope": option == "acceptForSession" ? "session" : "turn"])
         } else { rpc.respond(approval.rpcID, result: ["decision": approval.decisions[option] ?? option]) }
         emit?(ChatEvent(providerID: configuration.id, sessionID: approval.sessionID, kind: .permissionResolved, detail: id))
     }
+    private func expireApproval(_ id: String) {
+        // The scheduled timeout is monotonic; a backwards wall-clock change must not extend a grant.
+        guard let approval = approvals.removeValue(forKey: id) else { return }
+        cancelApprovalResponse(approval)
+        emit?(ChatEvent(providerID: configuration.id, sessionID: approval.sessionID, kind: .permissionResolved, detail: id))
+    }
+    private func cancelApprovalResponse(_ approval: Approval) {
+        if let input = approval.inputAnswers {
+            guard !input.responded else { return }; input.responded = true
+            // An incomplete question group never chooses an answer automatically.
+            rpc.respond(approval.rpcID, result: ["answers": [String: String]()])
+        }
+        else if configuration.transport == .acp { rpc.respond(approval.rpcID, result: ["outcome": ["outcome": "cancelled"]]) }
+        else if approval.method == "item/permissions/requestApproval" { rpc.respond(approval.rpcID, result: ["permissions": [:], "scope": "turn"]) }
+        else { rpc.respond(approval.rpcID, result: ["decision": "cancel"]) }
+    }
     private func cancelApprovals() {
         for (id, approval) in approvals {
-            if configuration.transport == .acp { rpc.respond(approval.rpcID, result: ["outcome": ["outcome": "cancelled"]]) }
-            else if approval.method == "item/permissions/requestApproval" { rpc.respond(approval.rpcID, result: ["permissions": [:], "scope": "turn"]) }
-            else { rpc.respond(approval.rpcID, result: ["decision": "cancel"]) }
+            cancelApprovalResponse(approval)
             emit?(ChatEvent(providerID: configuration.id, sessionID: approval.sessionID, kind: .permissionResolved, detail: id))
         }
         approvals.removeAll()
@@ -410,6 +445,12 @@ final class ChatAgentSession {
         cancelApprovals(); activeSession = nil; activeTurn = nil; lastActivities.removeValue(forKey: id)
         emit?(ChatEvent(providerID: configuration.id, sessionID: id, kind: error == nil ? .completed : .failed, detail: error ?? detail))
     }
+    private static func sameRequestID(_ lhs: Any, _ rhs: Any) -> Bool {
+        if let left = lhs as? String, let right = rhs as? String { return left == right }
+        if lhs is String || rhs is String { return false }
+        if let left = lhs as? NSNumber, let right = rhs as? NSNumber { return left == right }
+        return false
+    }
     private func notification(_ method: String, _ params: [String: Any]) {
         if method.hasPrefix("thread/realtime/") { voiceNotification(method, params); return }
         if configuration.transport == .acp {
@@ -419,6 +460,13 @@ final class ChatAgentSession {
         }
         guard let session = params["threadId"] as? String, session == (activeSession ?? voiceSession) else { return }
         switch method {
+        case "serverRequest/resolved":
+            guard let requestID = params["requestId"] else { return }
+            // Provider cleanup wins even if an old notification still offers an action.
+            for (id, approval) in approvals where approval.sessionID == session && Self.sameRequestID(approval.rpcID, requestID) {
+                approvals.removeValue(forKey: id)
+                emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .permissionResolved, detail: id))
+            }
         case "turn/diff/updated":
             guard let diff = params["diff"] as? String else { return }
             let text = RepositoryService.text("Latest agent turn", DeveloperCommandResult(data: Data(diff.utf8), error: "", code: 0, truncated: false))
@@ -428,13 +476,6 @@ final class ChatAgentSession {
             activity(session, .working, "Working")
             activeTurn = (params["turn"] as? [String: Any])?["id"] as? String
             emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .diffUpdated))
-        case "serverRequest/resolved":
-            if let requestID = params["requestId"] {
-                for (id, approval) in approvals where String(describing: approval.rpcID) == String(describing: requestID) {
-                    approvals.removeValue(forKey: id)
-                    emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .permissionResolved, detail: id))
-                }
-            }
         case "item/started":
             if let item = params["item"] as? [String: Any] {
                 let type = item["type"] as? String ?? ""
@@ -530,6 +571,31 @@ final class ChatAgentSession {
             }
             return
         }
+        if configuration.transport == .codex, ["item/tool/requestUserInput", "tool/requestUserInput"].contains(method) {
+            do {
+                let questions = try CodexAttentionQuestions.parse(params)
+                guard approvals.count + questions.count <= 8 else { throw NocturneError.invalidFrame }
+                let group = InputAnswers(expected: questions.count)
+                let timeout = min(approvalLifetime, max(0, (params["autoResolutionMs"] as? Double ?? 300_000) / 1000))
+                let expires = Date().addingTimeInterval(timeout)
+                for question in questions {
+                    let id = UUID().uuidString
+                    approvals[id] = Approval(rpcID: rpcID, method: method, sessionID: session,
+                        options: Set(question.options.map(\.id)), permissions: [:], expiresAt: expires,
+                        inputAnswers: group, questionID: question.id, answerLabels: question.labels)
+                    emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .permission,
+                        permission: ChatPermission(id: id, title: question.title, detail: question.detail,
+                            options: question.options, expiresAt: expires, attentionKind: .question)))
+                    Task { [weak self] in
+                        try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                        self?.expireApproval(id)
+                    }
+                }
+            } catch {
+                rpc.reject(rpcID, message: "This input form requires the provider's Mac client. No answer was selected.")
+            }
+            return
+        }
         let options: [ChatPermissionOption]
         var decisions: [String: Any] = [:]
         let title: String, detail: String
@@ -538,6 +604,7 @@ final class ChatAgentSession {
                 guard let id = $0["optionId"] as? String, let name = $0["name"] as? String else { return nil }
                 let kind = $0["kind"] as? String
                 return ChatPermissionOption(id: id, title: name, destructive: kind?.hasPrefix("reject") == true,
+                    action: kind == "allow_once" ? .allowOnce : kind == "reject_once" ? .denyOnce : nil,
                     scope: kind == "allow_always" || kind == "reject_always" ? "Provider remembers this choice. Scope and revocation are managed by the provider on your Mac." : "This request only.")
             }
             let tool = params["toolCall"] as? [String: Any] ?? [:]
@@ -559,10 +626,15 @@ final class ChatAgentSession {
             return
         }
         guard !options.isEmpty else { rpc.reject(rpcID, message: "The provider supplied no permission options."); return }
-        let id = UUID().uuidString
-        approvals[id] = Approval(rpcID: rpcID, method: method, sessionID: session, options: Set(options.map(\.id)), permissions: params["permissions"] as? [String: Any] ?? [:], decisions: decisions)
+        let lifetime = approvalLifetime
+        let id = UUID().uuidString, expiresAt = Date().addingTimeInterval(lifetime)
+        approvals[id] = Approval(rpcID: rpcID, method: method, sessionID: session, options: Set(options.map(\.id)), permissions: params["permissions"] as? [String: Any] ?? [:], decisions: decisions, expiresAt: expiresAt)
         emit?(ChatEvent(providerID: configuration.id, sessionID: session, kind: .permission,
-            permission: ChatPermission(id: id, title: title, detail: String(detail.prefix(16_384)), options: options)))
+            permission: ChatPermission(id: id, title: title, detail: String(detail.prefix(16_384)), options: options, expiresAt: expiresAt)))
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(lifetime * 1_000_000_000))
+            self?.expireApproval(id)
+        }
     }
 
     static func approvalPolicyOption(value: String, allowed: Set<String>? = nil) -> ChatConfigOption {
@@ -590,7 +662,8 @@ final class ChatAgentSession {
                 guard decisions[value] == nil else { continue }
                 let title = value == "accept" ? (permissions ? "Allow for this turn" : "Allow once") : value == "acceptForSession" ? "Allow for session" : value == "cancel" ? "Stop turn" : "Deny"
                 let scope = value == "acceptForSession" ? "Provider session cache for this request’s command, files or access. Ends with the provider session; not a global setting." : "This request only."
-                options.append(.init(id: value, title: title, destructive: value == "decline" || value == "cancel", scope: scope)); decisions[value] = value
+                options.append(.init(id: value, title: title, destructive: value == "decline" || value == "cancel",
+                    action: value == "accept" ? .allowOnce : value == "decline" ? .denyOnce : nil, scope: scope)); decisions[value] = value
             } else if command, let object = row as? [String: Any], object.count == 1,
                       let amendment = object["acceptWithExecpolicyAmendment"] as? [String: Any], amendment.count == 1,
                       let prefix = amendment["execpolicy_amendment"] as? [String], !prefix.isEmpty,
