@@ -11,6 +11,7 @@ public enum WorkspaceProtocol {
 }
 
 public enum Operation: String, Codable {
+    case browserCommand
     case hello, authenticate, ping, pairStream, list, read, uploadBegin, uploadChunk, uploadCommit, uploadCancel
     case terminalList, terminalAttach, terminalOpen, terminalInput, terminalResize, terminalClose, terminalOutput, terminalExit, terminalClosed
     case displayPrepare, displayHeartbeat, displayRelease
@@ -49,6 +50,8 @@ public struct RemoteFile: Codable, Identifiable, Equatable {
 public struct Packet: Codable {
     public var id = UUID().uuidString
     public var operation: Operation
+    public var browserCommand: BrowserCommand? = nil
+    public var browserFrame: BrowserFrame? = nil
     public var version: Int? = nil
     public var error: String? = nil
     public var name: String? = nil

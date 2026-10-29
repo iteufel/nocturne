@@ -6,9 +6,10 @@ public struct HostPermissions {
     public var terminal: Bool
     public var files: Bool
     public var microphone: Bool
+    public var browser: Bool
     public var chats: Bool
-    public init(terminal: Bool = false, files: Bool = false, microphone: Bool = false, chats: Bool = false) {
-        self.terminal = terminal; self.files = files; self.microphone = microphone; self.chats = chats
+    public init(terminal: Bool = false, files: Bool = false, microphone: Bool = false, chats: Bool = false, browser: Bool = false) {
+        self.terminal = terminal; self.files = files; self.microphone = microphone; self.chats = chats; self.browser = browser
     }
 }
 
@@ -147,6 +148,8 @@ private final class HostSession {
     private var closed = false
     private var pairing = false
     private let appConnection = AppWindowConnectionState()
+    private let browser = RemoteBrowserHost()
+    private let browserAuthorization = BrowserAuthorization()
     private let pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?
     private let displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?
     private let displayDisconnected: ((UUID) -> Void)?
@@ -157,18 +160,27 @@ private final class HostSession {
         self.desktop = desktop
         chats = ChatHostSession(configurations: chatAgents, directory: folder.url, enabled: permissions.chats, supervisor: supervisor)
         self.displayCommand = displayCommand; self.displayDisconnected = displayDisconnected
+        browserAuthorization.update(enabled: permissions.browser)
         self.channel = channel; self.devices = devices; self.folder = folder; self.name = name; self.permissions = permissions
         channel.onPacket = { [weak self] packet in self?.handle(packet) }
         channel.onClose = { [weak self] _ in self?.closed = true; self?.device = nil; self?.cleanup(); self?.onClose?() }
     }
     func updatePermissions(_ new: HostPermissions) {
         permissions = new
+        browserAuthorization.update(enabled: new.browser)
+        if !new.browser {
+            let browser = browser, authorization = browserAuthorization
+            Task { @MainActor in browser.refreshAuthorization(authorization) }
+        }
         chats.setEnabled(new.chats)
         if !new.files { transfers.removeAll() }
     }
     func configureChats(_ agents: [ChatAgentConfiguration]) { chats.configure(agents) }
     func close() { closed = true; device = nil; cleanup(); channel.cancel() }
     private func cleanup() {
+        browserAuthorization.close()
+        let browser = browser, authorization = browserAuthorization
+        Task { @MainActor in browser.refreshAuthorization(authorization) }
         chats.close()
         appConnection.close()
         transfers.removeAll(); terminals.detach(connectionID)
@@ -210,6 +222,7 @@ private final class HostSession {
                 result.capabilities = [permissions.files ? "files" : nil, permissions.terminal ? "terminal" : nil, pairStream != nil ? "streaming" : nil, displayCommand != nil ? "display" : nil, permissions.microphone ? MicrophoneFormat.capability : nil].compactMap { $0 }
                 if appWindows != nil { result.capabilities?.append(AppStreaming.capability) }
                 if desktop != nil { result.capabilities?.append(DesktopStreaming.capability) }
+                if permissions.browser { result.capabilities?.append(BrowserProtocol.capability) }
                 if permissions.chats {
                     result.capabilities?.append(ChatProtocol.capability)
                     result.capabilities?.append(ChatVoice.capability)
@@ -218,6 +231,16 @@ private final class HostSession {
                     result.capabilities?.append(DeveloperProtocol.capability)
                     result.capabilities?.append(DeveloperProtocol.actionsCapability)
                 }
+            case .browserCommand:
+                guard permissions.browser, device != nil else { throw NocturneError.permissionDenied }
+                let browser = browser, authorization = browserAuthorization, channel = channel
+                Task { @MainActor in
+                    let reply: Packet
+                    do { reply = try await browser.handle(packet, authorization: authorization) }
+                    catch { reply = packet.reply(error: error.localizedDescription) }
+                    channel.send(reply)
+                }
+                return
             case .ping: break
             case .chatSupervisor, .chatProviders, .chatList, .chatLoad, .chatNew, .chatPrompt, .chatCancel, .chatPermission, .chatOptions, .chatConfigure, .chatRepository,
                  .chatVoicePrepare, .chatVoiceOpen, .chatVoiceStart, .chatVoiceHeartbeat, .chatVoiceStop:
