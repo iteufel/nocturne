@@ -33,6 +33,7 @@ The Mac desktop matches its viewer window by default, including Retina resolutio
 - [Remote access](docs/REMOTE_ACCESS.md) — connecting across networks and hosting a broker.
 - [Development](docs/DEVELOPMENT.md) — prerequisites, local builds, signing, and tests.
 - [Releases and TestFlight](docs/RELEASING.md) — automated builds and distribution.
+- [iOS agent calls](docs/CALLKIT.md) — system call controls, audio lifecycle, vehicle limits and incoming-call prerequisites.
 - [Implementation](docs/IMPLEMENTATION.md) — architecture, authentication, and protocols.
 - [Verification](docs/VERIFICATION.md) — test evidence, limitations, and remaining device checks.
 

@@ -50,8 +50,10 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: remote
-      - name: Test build orchestration
-        run: python3 scripts/tests/test-build-orchestration.py
+      - name: Test build orchestration and dependency downloads
+        run: |
+          python3 scripts/tests/test-build-orchestration.py
+          python3 scripts/tests/test-sunshine-fetch.py
       - name: Check and test Rust services
         run: |
           cargo fmt --manifest-path remote/Cargo.toml --all --check
@@ -114,7 +116,9 @@ jobs:
   verify:
     name: Test the iPhone and iPad client
     runs-on: xcode-27
-    timeout-minutes: 45
+    # A cold Xcode 27 test build can take 35 minutes before either device runs.
+    # Keep time for both device suites; expiry must never replace their results.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -237,6 +241,14 @@ jobs:
         uses: Apple-Actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
         with:
           bundle-id: app.nocturne.client.files
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+      - name: Download the Attention widget provisioning profile
+        uses: Apple-Actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
+        with:
+          bundle-id: app.nocturne.client.attention
           profile-type: IOS_APP_STORE
           issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
           api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}

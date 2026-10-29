@@ -75,6 +75,15 @@ profile.
 
 Apple Files adds the extension bundle ID `app.nocturne.client.files`. Before a signed device build or TestFlight release, register that explicit App ID and the App Group `group.app.nocturne.client`, assign the group to both the app and extension, and regenerate the containing app’s **Nocturne App Store** profile with that entitlement. Create an `IOS_APP_STORE` profile named **Nocturne Files App Store** for the extension. Its Keychain entitlement shares the containing app’s existing `$(AppIdentifierPrefix)app.nocturne.client` access group. The archive script selects a separate provisioning profile for each target, the export options include both bundle IDs, and CI downloads both profiles. Simulator builds do not validate these Apple Developer portal assignments.
 
+The Live Activity widget additionally uses `app.nocturne.client.attention` and
+an existing `IOS_APP_STORE` profile named **Nocturne Attention App Store** under
+the same team. CI downloads that profile and the archive/export maps all three
+bundle IDs separately. This code does not register an App ID, create a profile,
+or enable APNs. If the widget App ID/profile is absent, TestFlight is blocked
+until the operator supplies it; simulator checks do not prove signing readiness.
+Remote APNs delivery and incoming agent ringing are not implemented; see
+[PUSH_ACTIVITIES.md](PUSH_ACTIVITIES.md) and [CALLKIT.md](CALLKIT.md).
+
 The initial distribution certificate and provisioning profile expire on
 **18 October 2027**. Before expiry, create a new distribution identity and an
 `IOS_APP_STORE` profile named **Nocturne App Store** for `app.nocturne.client`,

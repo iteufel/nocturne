@@ -276,3 +276,24 @@ This Mac has no Virtual HID Broker driver, so macOS gamepad emulation is unavail
 - `swift test`: 83 tests, eight opt-in checks skipped, zero failures on the final run. The 22 display tests include four opt-in skips and cover locked leases, rejection of inactive/logged-out sessions, deferral of physical-layout changes, and a lock during mode publication. Earlier full runs hit intermittent listener startup failures in unchanged pairing/files tests (`Address already in use` in one run); focused reruns and the final complete suite passed without networking changes.
 - The streaming engine and unified macOS app built successfully. Logs: `.build/lock-capture-tests.log`, `.build/swift-tests-verified.log`, and `.build/mac-build-verified.log`. The app is a local ad-hoc development build, not a new signed/notarized release.
 - Physical monitor-off transactions retain their unlocked-session guard. Connecting while locked defers that preference until the next display preparation after unlock. The earlier physical-output recovery incident above is not resolved or re-verified by these checks. Logout, reboot login and FileVault startup unlock remain outside this feature.
+
+### Sunshine CI dependency recovery (2026-10-28)
+
+The previous official prerelease `v2026.1018.5342` was removed upstream and its
+DMG URL returned HTTP 404. The replacement is the official LizardByte release
+[`v2026.1028.122642`](https://github.com/LizardByte/Sunshine/releases/tag/v2026.1028.122642),
+source commit `d7e5fe00701539a5be4a0304239730e1dfec4cf9`. Its
+`Sunshine-macOS-arm64.dmg` SHA-256 is
+`886da51fcd65b5179d03f0596e6cddca45f57bccf7bed92b5af905a7bce7fbfd`;
+the downloaded file matches the digest published in the official release API.
+The source tag resolves to the pinned commit. The 19-commit upstream comparison
+retains the pairing fix and leaves the overlaid video/macOS capture files
+unchanged. Source and runtime pins share `scripts/sunshine-version.sh`.
+Downloads use HTTPS, are verified before becoming cache entries, and cached
+files are verified again before extraction. No fallback URL, checksum bypass or
+latest-version lookup is used. Existing source/build caches from the old pin
+must be moved aside; an unexpected source revision still fails closed.
+
+The infrastructure commit is included in PR #27. Other open PRs (#28, #29 and
+#7) use the same main-branch bootstrap and need the fix in their tested merge
+base; their feature branches and working trees were not modified here.

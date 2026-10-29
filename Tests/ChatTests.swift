@@ -148,8 +148,11 @@ final class ChatTests: XCTestCase {
         await fulfillment(of: [permission], timeout: 5)
         let approval = try XCTUnwrap(pending)
         XCTAssertTrue(approval.detail.contains("pwd"))
-        do { try agent.approve(approval.id, option: "invented"); XCTFail("Invalid permission option accepted") } catch {}
-        try agent.approve(approval.id, option: "accept")
+        do { try agent.approve(approval.id, option: "invented", session: "legacy"); XCTFail("Invalid permission option accepted") } catch {}
+        XCTAssertThrowsError(try agent.approve(approval.id, option: "accept", session: "wrong-session"))
+        XCTAssertNotNil(approval.expiresAt)
+        try agent.approve(approval.id, option: "accept", session: "legacy")
+        XCTAssertThrowsError(try agent.approve(approval.id, option: "accept", session: "legacy"))
         await fulfillment(of: [completed], timeout: 5)
         XCTAssertTrue(diff?.text.contains("+agent edit") == true)
         XCTAssertEqual(text, "Hello world")
@@ -168,7 +171,7 @@ final class ChatTests: XCTestCase {
         }
         let reply = Task { try await agent.prompt(id, text: "run") }
         await fulfillment(of: [approval], timeout: 5)
-        try agent.approve(XCTUnwrap(permission).id, option: "allow")
+        try agent.approve(XCTUnwrap(permission).id, option: "allow", session: id)
         try await reply.value
         XCTAssertEqual(text, "Reply done")
         let started = expectation(description: "Started"), stopped = expectation(description: "Stopped")
@@ -263,7 +266,7 @@ final class ChatTests: XCTestCase {
     func testACPTemporaryConversationsKeepTheirOwnTranscripts() async throws {
         let agent = try await agent("acp-minimal")
         agent.emit = { event in
-            if let permission = event.permission { try? agent.approve(permission.id, option: "allow") }
+            if let permission = event.permission { try? agent.approve(permission.id, option: "allow", session: event.sessionID) }
         }
         let first = try await agent.create(); try await agent.prompt(first.id, text: "first chat")
         let second = try await agent.create(); try await agent.prompt(second.id, text: "second chat")
@@ -309,7 +312,7 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(events.first?.kind, .started)
         XCTAssertEqual(events.first { $0.kind == .answer }?.sdp, Self.offerSDP)
         await fulfillment(of: [approval], timeout: 5)
-        try agent.approve(XCTUnwrap(pending).id, option: "accept")
+        try agent.approve(XCTUnwrap(pending).id, option: "accept", session: "legacy")
         await fulfillment(of: [completed], timeout: 5)
         XCTAssertEqual(texts["voice:spoken-user"], "Run tests")
         XCTAssertEqual(texts.values.filter { $0 == "Run tests" }.count, 1)
