@@ -109,8 +109,13 @@ final class AgentAttentionCenter: NSObject, ObservableObject, UNUserNotification
         let center = UNUserNotificationCenter.current()
         let visible = notificationsEnabled ? Set(snapshot.keys) : []
         let removed = announced.subtracting(visible)
-        center.removeDeliveredNotifications(withIdentifiers: removed.map(\.id))
-        center.removePendingNotificationRequests(withIdentifiers: removed.map(\.id))
+        // A fresh launch has nothing to withdraw. Even an empty removal can wait
+        // synchronously on the notification service and stall the main actor.
+        if !removed.isEmpty {
+            let identifiers = removed.map(\.id)
+            center.removeDeliveredNotifications(withIdentifiers: identifiers)
+            center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        }
         announced.subtract(removed)
         for (request, permission) in snapshot where notificationsEnabled && !announced.contains(request) {
             guard !Task.isCancelled else { return }
