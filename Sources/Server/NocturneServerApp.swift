@@ -1,3 +1,4 @@
+import NocturneKit
 import SwiftUI
 import NocturneHostKit
 import NocturneMacClient
@@ -21,11 +22,11 @@ struct NocturneServerApp: App {
             ServerView(model: delegate.model, client: delegate.client).tint(MoonStyle.accent).preferredColorScheme(appearance.colorScheme)
                 .frame(minWidth: 780, minHeight: 620)
         }.defaultSize(width: 1_040, height: 760).windowToolbarStyle(.unified)
-        Window("Remote desktop", id: "remote-desktop") {
+        Window(L("Remote desktop"), id: "remote-desktop") {
             MacDesktopWindow(client: delegate.client)
                 .frame(minWidth: 640, minHeight: 400)
         }.defaultSize(width: 1_280, height: 800).windowToolbarStyle(.unified)
-        Window("Mac apps", id: "remote-apps") {
+        Window(L("Mac apps"), id: "remote-apps") {
             MacAppsWindow(client: delegate.client).frame(minWidth: 640, minHeight: 460)
         }.defaultSize(width: 880, height: 660).windowToolbarStyle(.unified)
         Settings {
@@ -50,7 +51,7 @@ private struct MacDesktopWindow: View {
     @ObservedObject var client: MacClientModel
     var body: some View {
         if let stream = client.session { MacDesktopWorkspace(stream: stream, client: client) }
-        else { ContentUnavailableView("No Mac connected", systemImage: "desktopcomputer", description: Text("Choose a host in Computers to open its desktop.")) }
+        else { ContentUnavailableView(L("No Mac connected"), systemImage: "desktopcomputer", description: Text(L("Choose a host in Computers to open its desktop."))) }
     }
 }
 
@@ -59,34 +60,34 @@ struct ServerMenu: View {
     @ObservedObject var client: MacClientModel
     @Environment(\.openWindow) private var openWindow
     var body: some View {
-        Text(model.running ? "\(model.connections) connected devices" : "Sharing off")
-        Button("Open Nocturne") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
-        Button("Connect to a Mac…") {
+        Text(model.running ? LCount("%d connected devices", model.connections) : L("Sharing off"))
+        Button(L("Open Nocturne")) { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
+        Button(L("Connect to a Mac…")) {
             client.showAddHost = true
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
         }.disabled(client.session != nil)
         if client.session != nil {
-            Button("Show remote desktop") { openWindow(id: "remote-desktop"); NSApp.activate(ignoringOtherApps: true) }
-            Button("Disconnect remote desktop") { client.disconnect() }
+            Button(L("Show remote desktop")) { openWindow(id: "remote-desktop"); NSApp.activate(ignoringOtherApps: true) }
+            Button(L("Disconnect remote desktop")) { client.disconnect() }
         }
         if client.apps != nil {
-            Button("Show Mac apps") { openWindow(id: "remote-apps"); NSApp.activate(ignoringOtherApps: true) }
+            Button(L("Show Mac apps")) { openWindow(id: "remote-apps"); NSApp.activate(ignoringOtherApps: true) }
         }
         ForEach(client.appSessions.keys.sorted(), id: \.self) { id in
             if let stream = client.appSessions[id] {
-                Button("Show \(stream.title)") { client.showAppWindow(id); NSApp.activate(ignoringOtherApps: true) }
+                Button(L("Show %@", "\(stream.title)")) { client.showAppWindow(id); NSApp.activate(ignoringOtherApps: true) }
             }
         }
-        Button("Welcome to Nocturne…") {
+        Button(L("Welcome to Nocturne…")) {
             model.showOnboarding = true
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
         }
-        Button("Pair a device") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true); model.pair() }
-        Button("Restore Mac displays") { model.displays.restore() }.disabled(!model.displayActive && model.displays.lastError == nil)
+        Button(L("Pair a device")) { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true); model.pair() }
+        Button(L("Restore Mac displays")) { model.displays.restore() }.disabled(!model.displayActive && model.displays.lastError == nil)
         Divider()
-        SettingsLink { Text("Settings…") }
+        SettingsLink { Text(L("Settings…")) }
         Divider()
-        Button("Quit Nocturne") { model.stop(); NSApp.terminate(nil) }
+        Button(L("Quit Nocturne")) { model.stop(); NSApp.terminate(nil) }
     }
 }
 
@@ -98,34 +99,34 @@ struct ServerSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Open Nocturne at login", isOn: $model.settings.launchAtLogin)
+                Toggle(L("Open Nocturne at login"), isOn: $model.settings.launchAtLogin)
                 if model.loginApprovalRequired {
-                    Text("Allow Nocturne in Login Items to finish enabling automatic startup.").foregroundStyle(.secondary)
-                    Button("Open Login Items…") { model.openLoginItems() }
+                    Text(L("Allow Nocturne in Login Items to finish enabling automatic startup.")).foregroundStyle(.secondary)
+                    Button(L("Open Login Items…")) { model.openLoginItems() }
                 }
             } header: {
-                Label("Startup", systemImage: "power")
+                Label(L("Startup"), systemImage: "power")
             } footer: {
-                Text("Open Nocturne when you sign in. The toggles in Sharing control which services run. Closing the window keeps enabled services running in the menu bar.")
+                Text(L("Open Nocturne when you sign in. The toggles in Sharing control which services run. Closing the window keeps enabled services running in the menu bar."))
             }
             Section {
-                Toggle("Connect over the internet", isOn: $model.settings.remoteAccess)
+                Toggle(L("Connect over the internet"), isOn: $model.settings.remoteAccess)
                 if model.settings.remoteAccess {
-                    TextField("Broker URL", text: $model.settings.brokerURL, prompt: Text("https://nocturne.alkal.de"))
+                    TextField(L("Broker URL"), text: $model.settings.brokerURL, prompt: Text("https://nocturne.alkal.de"))
                 }
             } header: {
-                Label("Remote access", systemImage: "network")
+                Label(L("Remote access"), systemImage: "network")
             } footer: {
-                Text("Use the default Nocturne broker or enter your own to connect from other networks. Devices try peer to peer and use an encrypted relay when needed. After enabling this, scan a new pairing QR code on your device.")
+                Text(L("Use the default Nocturne broker or enter your own to connect from other networks. Devices try peer to peer and use an encrypted relay when needed. After enabling this, scan a new pairing QR code on your device."))
             }
             Section {
-                Toggle("Headless virtual monitor", isOn: $model.settings.headlessDisplay)
+                Toggle(L("Headless virtual monitor"), isOn: $model.settings.headlessDisplay)
                     .disabled(!model.settings.screenSharing || (!model.settings.headlessDisplay && !DisplaySessionManager.isSupported))
                 if model.settings.headlessDisplay {
-                    LabeledContent("Resolution", value: "Matches the streaming device")
+                    LabeledContent(L("Resolution"), value: L("Matches the streaming device"))
                 } else {
-                    Picker("Stream display", selection: $model.settings.display) {
-                        Text("Main display").tag("")
+                    Picker(L("Stream display"), selection: $model.settings.display) {
+                        Text(L("Main display")).tag("")
                         ForEach(NSScreen.screens.filter { $0.localizedName != "Nocturne Display" }, id: \.self) { screen in
                             if let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
                                 Text(screen.localizedName).tag(number.stringValue)
@@ -133,28 +134,28 @@ struct ServerSettingsView: View {
                         }
                     }.disabled(!model.settings.screenSharing)
                 }
-                Toggle("Turn off connected Mac displays", isOn: $model.settings.disablePhysicalDisplays)
+                Toggle(L("Turn off connected Mac displays"), isOn: $model.settings.disablePhysicalDisplays)
                     .disabled(!model.settings.screenSharing || !model.settings.headlessDisplay || !DisplaySessionManager.canDisableDisplays)
                 if model.displayActive {
-                    LabeledContent("Streaming", value: model.displayStatus)
-                    Button("Restore Mac displays") { model.displays.restore() }
+                    LabeledContent(L("Streaming"), value: model.displayStatus)
+                    Button(L("Restore Mac displays")) { model.displays.restore() }
                 }
             } header: {
-                Label("Displays", systemImage: "display.2")
+                Label(L("Displays"), systemImage: "display.2")
             } footer: {
-                Text("The virtual monitor works with or without a physical screen and adapts to your device. Connected displays keep their layout unless you separately enable turning them off. Apply changes to restart a running server.")
+                Text(L("The virtual monitor works with or without a physical screen and adapts to your device. Connected displays keep their layout unless you separately enable turning them off. Apply changes to restart a running server."))
             }
             Section {
-                Picker("Appearance", selection: $appearance) {
+                Picker(L("Appearance"), selection: $appearance) {
                     ForEach(NocturneAppearance.allCases) { style in Text(style.title).tag(style) }
                 }.pickerStyle(.segmented)
             } header: {
-                Label("Appearance", systemImage: "circle.lefthalf.filled")
+                Label(L("Appearance"), systemImage: "circle.lefthalf.filled")
             } footer: {
-                Text("System follows your Mac’s Light or Dark appearance.")
+                Text(L("System follows your Mac’s Light or Dark appearance."))
             }
-            Section("Getting started") {
-                Button("Welcome to Nocturne…") {
+            Section(L("Getting started")) {
+                Button(L("Welcome to Nocturne…")) {
                     model.showOnboarding = true
                     openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
                 }
@@ -165,31 +166,31 @@ struct ServerSettingsView: View {
             .onAppear { model.refreshLoginItem() }
             .onChange(of: scenePhase) { _, phase in if phase == .active { model.refreshLoginItem() } }
             .alert("Nocturne", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-                Button("OK") { model.error = nil }
-            } message: { Text(model.error ?? "") }
+                Button(L("OK")) { model.error = nil }
+            } message: { Text(NocturneLocalization.message(model.error ?? "")) }
     }
 }
 
 struct ServerApplySettingsView: View {
     @ObservedObject var model: ServerModel
     private var actionTitle: String {
-        if model.settings.hasEnabledServices { return model.active ? "Apply & restart" : "Apply & start" }
-        return model.active ? "Apply & stop" : "Apply"
+        if model.settings.hasEnabledServices { return model.active ? L("Apply & restart") : L("Apply & start") }
+        return model.active ? L("Apply & stop") : L("Apply")
     }
     private var changesMessage: String {
-        guard model.hasSettingsChanges else { return "All changes applied." }
+        guard model.hasSettingsChanges else { return L("All changes applied.") }
         if model.active {
             return model.settings.hasEnabledServices
-                ? "Applying restarts the server and disconnects current sessions."
-                : "Applying stops sharing and disconnects current sessions."
+                ? L("Applying restarts the server and disconnects current sessions.")
+                : L("Applying stops sharing and disconnects current sessions.")
         }
-        return model.settings.hasEnabledServices ? "Applying starts the enabled sharing services." : "You have unapplied changes."
+        return model.settings.hasEnabledServices ? L("Applying starts the enabled sharing services.") : L("You have unapplied changes.")
     }
     var body: some View {
         HStack(spacing: 12) {
             Text(changesMessage)
                 .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-            Button("Discard") { model.discardSettings() }.disabled(!model.hasSettingsChanges)
+            Button(L("Discard")) { model.discardSettings() }.disabled(!model.hasSettingsChanges)
             Button(actionTitle) { model.applySettings() }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.hasSettingsChanges || model.changingDevices)

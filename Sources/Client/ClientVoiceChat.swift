@@ -42,7 +42,7 @@ final class ClientVoiceChat: ObservableObject {
             self.audio.systemAudioActivation(activated)
             self.systemAudioActive = activated
             if activated { self.activateIfReady() }
-            else if self.starting || self.active { self.fail("Voice chat was interrupted by the system audio session. Start it again when you are ready.", epoch: self.generation) }
+            else if self.starting || self.active { self.fail(L("Voice chat was interrupted by the system audio session. Start it again when you are ready."), epoch: self.generation) }
         }
         self.calls.onFailure = { [weak self] message in
             guard let self, self.engaged else { return }
@@ -63,31 +63,31 @@ final class ClientVoiceChat: ObservableObject {
     func start() {
         guard !engaged, chat.supportsVoice, !chat.loading, !chat.responding,
               let session = chat.selected, let invitation = chat.connection.connectedInvitation else { return }
-        guard calls.available else { error = "Finish the current system call before starting voice chat."; return }
+        guard calls.available else { error = L("Finish the current system call before starting voice chat."); return }
         stop(); error = nil
         let epoch = generation, connection = chat.connection.mediaConnection()
         self.connection = connection; sessionID = session.id; providerID = chat.providerID
-        do { try chat.attachVoice(connection) } catch { self.error = error.localizedDescription; self.connection = nil; return }
+        do { try chat.attachVoice(connection) } catch { self.error = NocturneLocalization.message(error.localizedDescription); self.connection = nil; return }
         starting = true
         startTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let allowed = await self.requestPermission()
                 guard self.generation == epoch, !Task.isCancelled else { return }
-                guard allowed else { throw NocturneError.remote("Allow microphone access in iOS Settings → Nocturne to start voice chat.") }
+                guard allowed else { throw NocturneError.remote(L("Allow microphone access in iOS Settings → Nocturne to start voice chat.")) }
                 await self.beforeStart?()
                 guard self.generation == epoch, !Task.isCancelled else { return }
                 try await self.chat.prepareVoice()
                 guard self.generation == epoch, !Task.isCancelled else { return }
                 try await connection.connect(invitation, restoreTerminalSessions: false)
                 guard self.generation == epoch, !Task.isCancelled else { return }
-                guard connection.capabilities.contains(ChatVoice.capability) else { throw NocturneError.remote("Update Nocturne Server on your Mac and enable Agent chats, then reconnect.") }
+                guard connection.capabilities.contains(ChatVoice.capability) else { throw NocturneError.remote(L("Update Nocturne Server on your Mac and enable Agent chats, then reconnect.")) }
                 let voiceSession = try await self.chat.openVoice(on: connection, from: session.id)
                 guard self.generation == epoch, !Task.isCancelled else { return }
                 self.sessionID = voiceSession.id
                 connection.chatVoiceEvents.sink { [weak self] event in self?.receive(event, epoch: epoch) }.store(in: &self.observers)
                 connection.$state.dropFirst().sink { [weak self] state in
-                    if state == .disconnected { self?.fail("Voice chat disconnected. Start it again to reconnect.", epoch: epoch) }
+                    if state == .disconnected { self?.fail(L("Voice chat disconnected. Start it again to reconnect."), epoch: epoch) }
                 }.store(in: &self.observers)
                 chat.connection.$state.dropFirst().sink { [weak self] state in
                     if state != .connected { self?.stop() }
@@ -118,7 +118,7 @@ final class ClientVoiceChat: ObservableObject {
                 self.connectionDeadline = Task { [weak self] in
                     do { try await Task.sleep(nanoseconds: 20_000_000_000) } catch { return }
                     guard let self, self.generation == epoch, !self.active else { return }
-                    self.fail("WebRTC could not establish audio. Check your network and start voice chat again.", epoch: epoch)
+                    self.fail(L("WebRTC could not establish audio. Check your network and start voice chat again."), epoch: epoch)
                 }
                 self.heartbeat = Task { [weak self] in
                     while !Task.isCancelled {
@@ -126,18 +126,18 @@ final class ClientVoiceChat: ObservableObject {
                         guard let self, self.generation == epoch, let lease = self.voiceID else { return }
                         var pulse = Packet(.chatVoiceHeartbeat); pulse.chatRequest = self.request(lease)
                         do { _ = try await connection.request(pulse, timeout: 3) }
-                        catch { self.fail(error.localizedDescription, epoch: epoch); return }
+                        catch { self.fail(NocturneLocalization.message(error.localizedDescription), epoch: epoch); return }
                     }
                 }
             } catch {
-                if !self.ending { self.fail(error.localizedDescription, epoch: epoch) }
+                if !self.ending { self.fail(NocturneLocalization.message(error.localizedDescription), epoch: epoch) }
             }
         }
     }
     func toggleMuted() { guard active, !ending else { return }; calls.requestMute(!muted) }
     func resumeAudioAfterStream() {
         guard active else { return }
-        do { try audio.reactivate() } catch { fail(error.localizedDescription, epoch: generation) }
+        do { try audio.reactivate() } catch { fail(NocturneLocalization.message(error.localizedDescription), epoch: generation) }
     }
     func end() { guard engaged else { return }; calls.requestEnd() }
     private func endSession() {
@@ -180,20 +180,20 @@ final class ClientVoiceChat: ObservableObject {
         switch event.kind {
         case .started: break
         case .answer:
-            guard starting, !answering, let sdp = event.sdp else { fail("Codex sent an unexpected WebRTC answer.", epoch: epoch); return }
+            guard starting, !answering, let sdp = event.sdp else { fail(L("Codex sent an unexpected WebRTC answer."), epoch: epoch); return }
             answering = true
             answerTask = Task { [weak self] in
                 do { try await self?.audio.answer(sdp) }
-                catch { self?.fail(error.localizedDescription, epoch: epoch) }
+                catch { self?.fail(NocturneLocalization.message(error.localizedDescription), epoch: epoch) }
             }
         case .speechStarted: speaking = false
         case .closed:
             if ending { stop() }
-            else { stop(); error = event.detail ?? "Codex ended voice chat. Start it again to reconnect." }
-        case .failed: fail(event.detail ?? "Codex voice ended unexpectedly.", epoch: epoch)
+            else { stop(); error = NocturneLocalization.message(event.detail ?? L("Codex ended voice chat. Start it again to reconnect.")) }
+        case .failed: fail(event.detail ?? L("Codex voice ended unexpectedly."), epoch: epoch)
         }
     }
     private func fail(_ message: String, epoch: UUID) {
-        guard generation == epoch else { return }; stop(failed: true); error = message
+        guard generation == epoch else { return }; stop(failed: true); error = NocturneLocalization.message(message)
     }
 }

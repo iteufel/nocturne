@@ -1,3 +1,4 @@
+import NocturneKit
 import SwiftUI
 import Combine
 
@@ -52,7 +53,7 @@ final class StreamHostingController: UIHostingController<StreamWorkspace> {
     }
     override var prefersStatusBarHidden: Bool { true }
     override var keyCommands: [UIKeyCommand]? {
-        let command = UIKeyCommand(title: "Release pointer and open stream controls", action: #selector(openControls),
+        let command = UIKeyCommand(title: L("Release pointer and open stream controls"), action: #selector(openControls),
             input: "m", modifierFlags: [.command, .shift])
         command.wantsPriorityOverSystemBehavior = true
         return [command]

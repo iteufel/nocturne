@@ -50,8 +50,8 @@ public final class RemoteTunnel: @unchecked Sendable {
     public var route: String? {
         lock.lock(); defer { lock.unlock() }
         switch handle.map({ nocturne_remote_route($0) }) {
-        case 1: return "Peer to peer"
-        case 2: return "Encrypted relay"
+        case 1: return L("Peer to peer")
+        case 2: return L("Encrypted relay")
         default: return nil
         }
     }

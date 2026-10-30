@@ -173,12 +173,12 @@ public struct PairingInvitation: Codable, Equatable {
 public enum StreamInputMode: String, CaseIterable, Identifiable {
     case touch, trackpad
     public var id: String { rawValue }
-    public var title: String { self == .touch ? "Touch" : "Trackpad" }
+    public var title: String { self == .touch ? L("Touch") : L("Trackpad") }
     public var symbol: String { self == .touch ? "hand.point.up.left" : "rectangle.and.hand.point.up.left" }
     public var explanation: String {
         self == .touch
-            ? "Tap where you want to click. Move your finger to drag; hold still for a right-click. Pinch with two fingers to zoom."
-            : "Slide one finger to move the pointer. Tap to click, tap with two fingers to right-click, or slide two fingers to scroll. Hold one finger, then move it to drag."
+            ? L("Tap where you want to click. Move your finger to drag; hold still for a right-click. Pinch with two fingers to zoom.")
+            : L("Slide one finger to move the pointer. Tap to click, tap with two fingers to right-click, or slide two fingers to scroll. Hold one finger, then move it to drag.")
     }
 }
 

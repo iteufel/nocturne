@@ -25,7 +25,7 @@ final class ServerModel: ObservableObject {
     private let desktop = DesktopSessionManager(host: NativeDesktopHost())
     @Published private(set) var running = false
     @Published private(set) var starting = false
-    @Published private(set) var status = "Stopped"
+    @Published private(set) var status = L("Stopped")
     @Published private(set) var connections = 0
     @Published private(set) var devices: [ServerDevice] = []
     @Published private(set) var devicesError: String?
@@ -54,7 +54,7 @@ final class ServerModel: ObservableObject {
     }
     var hasSettingsChanges: Bool { settings != appliedSettings }
     @Published private(set) var loginApprovalRequired = false
-    @Published private(set) var screenSharingStatus = "Stopped"
+    @Published private(set) var screenSharingStatus = L("Stopped")
     @Published private(set) var screenSharingError: String?
     @Published private(set) var microphoneInstalled = VirtualMicrophone.isInstalled
     @Published private(set) var installingMicrophone = false
@@ -100,12 +100,12 @@ final class ServerModel: ObservableObject {
         do {
             deviceStore = try WorkspaceDeviceStore(url: support.appendingPathComponent("Nocturne/devices.json"))
             streamDevices = try engine.savedDevices(); publishDevices()
-        } catch { devicesError = error.localizedDescription }
+        } catch { devicesError = NocturneLocalization.message(error.localizedDescription) }
         engine.onUnexpectedExit = { [weak self] message in
             guard let self else { return }
             self.engine.stop()
             self.displays.stop()
-            self.screenSharingStatus = "Retrying…"
+            self.screenSharingStatus = L("Retrying…")
             self.screenSharingError = message
             self.maintainScreenSharing()
         }
@@ -119,22 +119,22 @@ final class ServerModel: ObservableObject {
     }
     private func updateDisplayStatus() {
         if let size = displays.size {
-            displayStatus = "\(size.width) × \(size.height) · \(displays.deviceName ?? "Connected device")"
+            displayStatus = "\(size.width) × \(size.height) · \(displays.deviceName ?? L("Connected device"))"
         } else {
-            displayStatus = appliedSettings.headlessDisplay ? "Virtual monitor · Matches your device" : "Physical monitor · Fixed desktop size"
+            displayStatus = appliedSettings.headlessDisplay ? L("Virtual monitor · Matches your device") : L("Physical monitor · Fixed desktop size")
         }
     }
     func start() {
         guard !active, appliedSettings.hasEnabledServices else { return }
-        guard DisplaySessionManager.isSessionAvailable else { error = "Sign in to this Mac before starting the server."; return }
-        starting = true; status = "Starting"; error = nil
+        guard DisplaySessionManager.isSessionAvailable else { error = L("Sign in to this Mac before starting the server."); return }
+        starting = true; status = L("Starting"); error = nil
         let epoch = UUID(); generation = epoch
         let configuration = appliedSettings
         startTask = Task { [self] in
             do {
                 try Task.checkCancellation()
                 guard generation == epoch else { return }
-                guard let deviceStore else { throw NocturneError.remote("The saved device list could not be loaded. Restart Nocturne and try again.") }
+                guard let deviceStore else { throw NocturneError.remote(L("The saved device list could not be loaded. Restart Nocturne and try again.")) }
                 let key = try keyProvider("server-key")
                 guard key.count == 32 else { throw NocturneError.invalidInvitation }
                 secret = key
@@ -191,7 +191,7 @@ final class ServerModel: ObservableObject {
                     guard let self, self.generation == epoch else { return }
                     self.connections = count
                     if status == "Ready" || status == "Connected" {
-                        self.running = true; self.starting = false; self.status = "Ready"
+                        self.running = true; self.starting = false; self.status = L("Ready")
                         self.maintainScreenSharing()
                         if self.pairWhenReady { self.pairWhenReady = false; self.pair() }
                     } else if status != "Stopped" {
@@ -210,7 +210,7 @@ final class ServerModel: ObservableObject {
                 }
             } catch {
                 guard generation == epoch else { return }
-                stop(); if !(error is CancellationError) { self.error = error.localizedDescription }
+                stop(); if !(error is CancellationError) { self.error = NocturneLocalization.message(error.localizedDescription) }
             }
         }
     }
@@ -218,7 +218,7 @@ final class ServerModel: ObservableObject {
         appWindows.stop()
         desktop.stop()
         generation = UUID(); startTask?.cancel(); startTask = nil; pollTask?.cancel(); pollTask = nil
-        screenSharingTask?.cancel(); screenSharingTask = nil; screenSharingStatus = "Stopped"
+        screenSharingTask?.cancel(); screenSharingTask = nil; screenSharingStatus = L("Stopped")
         screenSharingError = nil
         deviceRevision = UUID()
         pairingTasks.values.forEach { $0.cancel() }; pairingTasks.removeAll()
@@ -226,12 +226,12 @@ final class ServerModel: ObservableObject {
         server?.onStatus = nil; server?.onDevices = nil; server?.stop(); server = nil; engine.stop()
         displays.stop()
         deviceStore?.cancelInvitation(); workspaceConnections = []; publishDevices()
-        running = false; starting = false; status = "Stopped"; connections = 0
+        running = false; starting = false; status = L("Stopped"); connections = 0
         invitation = nil; showPairing = false; pairWhenReady = false
     }
     func pair() {
         guard appliedSettings.hasEnabledServices else {
-            error = "Enable a feature in Sharing and apply your changes before pairing a device."
+            error = L("Enable a feature in Sharing and apply your changes before pairing a device.")
             return
         }
         guard running else { pairWhenReady = true; start(); return }
@@ -241,13 +241,13 @@ final class ServerModel: ObservableObject {
             // Resolve on the client's network instead of asking users to choose an
             // interface or embedding an IP that becomes stale when networks change.
             guard let hostname = SCDynamicStoreCopyLocalHostName(nil) as String?, !hostname.isEmpty else {
-                throw NocturneError.remote("Your Mac’s network name is unavailable. Check your network connection and try again.")
+                throw NocturneError.remote(L("Your Mac’s network name is unavailable. Check your network connection and try again."))
             }
             invitation = try PairingInvitation(host: hostname + ".local", port: port, name: name, secret: secret, enrollmentToken: deviceStore.createInvitation(), remoteAccess: remote); showPairing = true
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = NocturneLocalization.message(error.localizedDescription) }
     }
     func resetPairing() {
-        guard running, !changingDevices else { error = "Start the server and wait for device changes to finish before resetting pairing."; return }
+        guard running, !changingDevices else { error = L("Start the server and wait for device changes to finish before resetting pairing."); return }
         resettingPairing = true
         Task {
             defer { resettingPairing = false }
@@ -262,7 +262,7 @@ final class ServerModel: ObservableObject {
                 let key = try SecureStore.randomKey(); try SecureStore.write(key, account: "server-key")
                 try SecureStore.write(SecureStore.randomKey(), account: "server-remote-key")
                 secret = key; start()
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = NocturneLocalization.message(error.localizedDescription) }
         }
     }
     func refreshDevices() async {
@@ -277,7 +277,7 @@ final class ServerModel: ObservableObject {
             streamDevices = result; devicesError = nil; publishDevices()
         } catch {
             guard generation == epoch, deviceRevision == revision else { return }
-            devicesError = "Couldn’t refresh devices. Showing the last saved list. " + error.localizedDescription
+            devicesError = L("Couldn’t refresh devices. Showing the last saved list. ") + NocturneLocalization.message(error.localizedDescription)
         }
     }
     func removeDevice(_ device: ServerDevice) {
@@ -310,8 +310,8 @@ final class ServerModel: ObservableObject {
                 devicesError = nil; publishDevices()
             } catch {
                 // Keep the row available for retry and never report a failed removal as successful.
-                self.error = "Couldn’t fully remove \(device.name). " + error.localizedDescription
-                devicesError = "Removal is incomplete. Try removing this device again."
+                self.error = L("Couldn’t fully remove %@. ", "\(device.name)") + NocturneLocalization.message(error.localizedDescription)
+                devicesError = L("Removal is incomplete. Try removing this device again.")
                 publishDevices()
             }
         }
@@ -321,17 +321,17 @@ final class ServerModel: ObservableObject {
         for (id, name) in deviceStore?.pendingRemovals ?? [:] where !devices.contains(where: { $0.id == id }) {
             devices.append(.pendingRemoval(id: id, name: name))
         }
-        if removingDevice == nil, deviceStore?.pendingRemovals.isEmpty == false { devicesError = "A device removal is incomplete. Select Remove to finish it." }
+        if removingDevice == nil, deviceStore?.pendingRemovals.isEmpty == false { devicesError = L("A device removal is incomplete. Select Remove to finish it.") }
     }
     func chooseFolder() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
-        panel.message = "Only this folder will be available for file transfers."
+        panel.message = L("Only this folder will be available for file transfers.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         settings.sharedFolder = url
     }
     func revealFolder() {
         do { try FileManager.default.createDirectory(at: settings.sharedFolder, withIntermediateDirectories: true); NSWorkspace.shared.open(settings.sharedFolder) }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = NocturneLocalization.message(error.localizedDescription) }
     }
     func revealLog() { NSWorkspace.shared.activateFileViewerSelecting([engine.logURL]) }
     func openPrivacy(_ pane: String) {
@@ -341,12 +341,12 @@ final class ServerModel: ObservableObject {
         try agent.validate()
         var agents = chatAgents
         if let index = agents.firstIndex(where: { $0.id == agent.id }) { agents[index] = agent } else { agents.append(agent) }
-        guard agents.count <= 24 else { throw NocturneError.remote("Configure up to 24 chat providers.") }
+        guard agents.count <= 24 else { throw NocturneError.remote(L("Configure up to 24 chat providers.")) }
         try persistChatAgents(agents)
     }
     func removeChatAgent(_ id: String) {
         guard !["codex", "claude"].contains(id) else { return }
-        do { try persistChatAgents(chatAgents.filter { $0.id != id }) } catch { self.error = error.localizedDescription }
+        do { try persistChatAgents(chatAgents.filter { $0.id != id }) } catch { self.error = NocturneLocalization.message(error.localizedDescription) }
     }
     private func persistChatAgents(_ agents: [ChatAgentConfiguration]) throws {
         let data = try JSONEncoder().encode(agents)
@@ -377,7 +377,7 @@ final class ServerModel: ObservableObject {
             if restart { stop() }
             updateDisplayStatus()
             startEnabledServices()
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = NocturneLocalization.message(error.localizedDescription) }
     }
     private func maintainScreenSharing() {
         guard running, appliedSettings.screenSharing, screenSharingTask == nil, !engine.isRunning else { return }
@@ -387,7 +387,7 @@ final class ServerModel: ObservableObject {
             defer { if self.generation == epoch { self.screenSharingTask = nil } }
             while self.generation == epoch, !Task.isCancelled {
                 do {
-                    self.screenSharingStatus = "Starting…"
+                    self.screenSharingStatus = L("Starting…")
                     var captureDisplay = configuration.display.isEmpty ? String(CGMainDisplayID()) : configuration.display
                     if configuration.headlessDisplay {
                         self.displays.disablePhysicalDisplays = configuration.disablePhysicalDisplays
@@ -402,15 +402,15 @@ final class ServerModel: ObservableObject {
                         self.displays.restore()
                         if let failure = self.displays.lastError { throw NocturneError.remote(failure) }
                     }
-                    self.screenSharingStatus = CGPreflightScreenCaptureAccess() ? "Ready" : "Allow screen capture"
+                    self.screenSharingStatus = CGPreflightScreenCaptureAccess() ? L("Ready") : L("Allow screen capture")
                     self.screenSharingError = nil
                     await self.refreshDevices()
                     return
                 } catch {
                     guard self.generation == epoch, !Task.isCancelled else { return }
                     self.engine.stop(); self.displays.stop()
-                    self.screenSharingStatus = "Retrying…"
-                    self.screenSharingError = error.localizedDescription
+                    self.screenSharingStatus = L("Retrying…")
+                    self.screenSharingError = NocturneLocalization.message(error.localizedDescription)
                 }
                 do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
             }
@@ -424,8 +424,8 @@ final class ServerModel: ObservableObject {
             do {
                 try await MicrophoneInstallation.install()
                 microphoneInstalled = VirtualMicrophone.isInstalled
-                microphoneInstallationMessage = "Installed. Restart your Mac before using Nocturne Microphone."
-            } catch { self.error = error.localizedDescription }
+                microphoneInstallationMessage = L("Installed. Restart your Mac before using Nocturne Microphone.")
+            } catch { self.error = NocturneLocalization.message(error.localizedDescription) }
         }
     }
 }

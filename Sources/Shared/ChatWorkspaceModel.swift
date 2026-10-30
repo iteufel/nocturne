@@ -87,7 +87,7 @@ public final class ChatWorkspaceModel: ObservableObject {
             self.selected = session
             sessions.removeAll { $0.id == session.id }; sessions.insert(session, at: 0)
             historyCursor = nil; historyNeedsReload = true; latestTurnDiff = nil
-            voiceContinuationNotice = "Voice continued in a new conversation because the original is open in another client. Its saved history is included."
+            voiceContinuationNotice = L("Voice continued in a new conversation because the original is open in another client. Its saved history is included.")
         }
         return session
     }
@@ -109,7 +109,7 @@ public final class ChatWorkspaceModel: ObservableObject {
             if !choices.contains(where: { $0.id == providerID }) { providerID = choices.first?.id ?? "codex"; clearConversation() }
             sessionCursor = nil; sessions = []; hasMoreSessions = false
             if provider?.available == true { try await fetchSessions(epoch: epoch) }
-        } catch { if generation == epoch { self.error = error.localizedDescription } }
+        } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
     public func chooseProvider(_ id: String) async {
         guard id != providerID, providers.contains(where: { $0.id == id }), !responding, !loading, !loadingOlder, !voiceEngaged, !configuring else { return }
@@ -126,7 +126,7 @@ public final class ChatWorkspaceModel: ObservableObject {
         guard available, provider?.available == true, !loading, !loadingOlder, !responding, !voiceEngaged, !configuring else { return }
         loading = true; error = nil; let epoch = generation
         defer { if generation == epoch { loading = false } }
-        do { try await fetchSessions(epoch: epoch) } catch { if generation == epoch { self.error = error.localizedDescription } }
+        do { try await fetchSessions(epoch: epoch) } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
     private func fetchSessions(epoch: UUID) async throws {
         var packet = Packet(.chatList), request = ChatRequest(providerID: providerID)
@@ -159,7 +159,7 @@ public final class ChatWorkspaceModel: ObservableObject {
             historyCursor = page.nextCursor; hasOlderMessages = page.nextCursor != nil; canPrompt = page.canPrompt
             historyNeedsReload = false
             if !older { await refreshOptions() }
-        } catch { if generation == epoch { self.error = error.localizedDescription } }
+        } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
     public var supportsSupervisor: Bool {
         connection.capabilities.contains(ChatSupervisor.capability) && provider?.supportsVoice == true
@@ -177,7 +177,7 @@ public final class ChatWorkspaceModel: ObservableObject {
             historyCursor = page.nextCursor; hasOlderMessages = page.nextCursor != nil; archived = false
             sessions.removeAll { $0.id == page.session.id }; sessions.insert(page.session, at: 0)
             await refreshOptions()
-        } catch { if generation == epoch { self.error = error.localizedDescription } }
+        } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
     public func newConversation(worktree: String? = nil, inheritProject: Bool = false) async {
         guard available, provider?.available == true, !loading, !loadingOlder, !responding, !voiceEngaged, !configuring else { return }
@@ -192,7 +192,7 @@ public final class ChatWorkspaceModel: ObservableObject {
             clearConversation(); selected = session; canPrompt = true; archived = false
             sessions.insert(session, at: 0)
             await refreshOptions()
-        } catch { if generation == epoch { self.error = error.localizedDescription } }
+        } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
     public func refreshOptions() async {
         guard connection.capabilities.contains(DeveloperProtocol.capability), let selected, !configuring else { return }
@@ -202,7 +202,7 @@ public final class ChatWorkspaceModel: ObservableObject {
             let response = try await connection.request(packet, timeout: 60)
             guard generation == epoch else { return }
             options = response.chatOptions ?? []; optionsError = nil
-        } catch { if generation == epoch { optionsError = error.localizedDescription } }
+        } catch { if generation == epoch { optionsError = NocturneLocalization.message(error.localizedDescription) } }
     }
     public func configure(_ option: ChatConfigOption, value: String) async {
         guard let selected, !loading, !loadingOlder, !responding, !voiceEngaged, !configuring,
@@ -214,7 +214,7 @@ public final class ChatWorkspaceModel: ObservableObject {
             packet.chatRequest?.configID = option.id; packet.chatRequest?.configValue = value
             let response = try await connection.request(packet, timeout: 60)
             guard generation == epoch, let options = response.chatOptions else { return }; self.options = options
-        } catch { if generation == epoch { optionsError = error.localizedDescription } }
+        } catch { if generation == epoch { optionsError = NocturneLocalization.message(error.localizedDescription) } }
     }
     public func projectRequest(_ request: RepositoryRequest, session: ChatSessionInfo? = nil) async throws -> RepositoryResponse {
         let target = session ?? selected
@@ -232,7 +232,7 @@ public final class ChatWorkspaceModel: ObservableObject {
         guard available, let session = selected, canPrompt, !responding, !loading, !loadingOlder, !voiceEngaged, !configuring else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        guard text.utf8.count <= ChatProtocol.maximumPromptBytes else { error = "This message is too long. Send less than 64 KB of text."; return }
+        guard text.utf8.count <= ChatProtocol.maximumPromptBytes else { error = L("This message is too long. Send less than 64 KB of text."); return }
         let epoch = generation; responding = true; respondingSince = Date(); error = nil; permissions = []; draft = ""; latestTurnDiff = nil
         let id = UUID().uuidString; pendingUserID = id
         messages.append(ChatMessage(id: id, role: .user, text: text))
@@ -242,7 +242,7 @@ public final class ChatWorkspaceModel: ObservableObject {
             _ = try await connection.request(packet, timeout: 100)
         } catch {
             guard generation == epoch else { return }
-            responding = false; respondingSince = nil; permissions = []; self.error = error.localizedDescription
+            responding = false; respondingSince = nil; permissions = []; self.error = NocturneLocalization.message(error.localizedDescription)
             // Preserve the unsent text for retry when the request itself was rejected.
             draft = text; messages.removeAll { $0.id == id }; pendingUserID = nil
         }
@@ -259,7 +259,7 @@ public final class ChatWorkspaceModel: ObservableObject {
         do {
             var packet = Packet(.chatCancel); packet.chatRequest = ChatRequest(providerID: providerID, sessionID: session.id)
             _ = try await connection.request(packet, timeout: 30)
-        } catch { if generation == epoch { self.error = error.localizedDescription } }
+        } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
     /// Called only by an authenticated, explicit system action. Never reconnect or change host here.
     public func decideAttention(_ attention: AgentAttention, permission: ChatPermission, option: ChatPermissionOption) async throws {
@@ -285,7 +285,7 @@ public final class ChatWorkspaceModel: ObservableObject {
             request.permissionID = permission.id; request.optionID = option.id; packet.chatRequest = request
             _ = try await (voiceConnection ?? connection).request(packet, timeout: 30)
             guard generation == epoch else { return }; permissions.removeAll { $0.id == permission.id }
-        } catch { if generation == epoch { self.error = error.localizedDescription } }
+        } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
     private func receive(_ event: ChatEvent) {
         guard available, event.providerID == providerID, event.sessionID == selected?.id else { return }
@@ -303,8 +303,8 @@ public final class ChatWorkspaceModel: ObservableObject {
         case .permission:
             if let permission = event.permission, !permissions.contains(where: { $0.id == permission.id }) { permissions.append(permission) }
         case .permissionResolved: permissions.removeAll { $0.id == event.detail }
-        case .completed: responding = false; respondingSince = nil; permissions = []; notice = event.detail; pendingUserID = nil
-        case .failed: responding = false; respondingSince = nil; permissions = []; error = event.detail; pendingUserID = nil
+        case .completed: responding = false; respondingSince = nil; permissions = []; notice = event.detail.map(NocturneLocalization.message); pendingUserID = nil
+        case .failed: responding = false; respondingSince = nil; permissions = []; error = event.detail.map(NocturneLocalization.message); pendingUserID = nil
         }
     }
 }

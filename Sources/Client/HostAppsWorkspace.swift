@@ -33,7 +33,7 @@ final class HostAppsModel: ObservableObject {
             }
             guard Set(apps.map(\.id)).count == apps.count else { throw NocturneError.invalidFrame }
             applications = apps
-        } catch { if generation == epoch { self.error = error.localizedDescription } }
+        } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
     func icon(_ app: RemoteApplication) async {
         guard icons[app.id] == nil, connection.state == .connected else { return }
@@ -55,7 +55,7 @@ final class HostAppsModel: ObservableObject {
                   available.allSatisfy({ $0.applicationID == app.id }) else { throw NocturneError.invalidFrame }
             windows.removeAll { $0.applicationID == app.id }; windows.append(contentsOf: available)
             return available
-        } catch { if generation == epoch { self.error = error.localizedDescription }; return [] }
+        } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) }; return [] }
     }
 }
 
@@ -73,33 +73,33 @@ struct HostAppsWorkspace: View {
         Group {
             if connection.state != .connected {
                 ContentUnavailableView {
-                    Label("Your Mac apps", systemImage: "square.grid.2x2")
-                } description: { Text("Connect to Nocturne to browse and open your Mac’s apps.") }
+                    Label(L("Your Mac apps"), systemImage: "square.grid.2x2")
+                } description: { Text(L("Connect to Nocturne to browse and open your Mac’s apps.")) }
                 actions: {
-                    Button(client.savedServerName == nil ? "Pair your Mac" : "Reconnect to Mac") {
+                    Button(client.savedServerName == nil ? L("Pair your Mac") : L("Reconnect to Mac")) {
                         if client.savedServerName == nil { client.showAdd = true }
                         else { Task { await client.reconnectServer() } }
                     }.buttonStyle(PrimaryButtonStyle()).disabled(connection.state == .connecting)
                 }
             } else if !connection.capabilities.contains(AppStreaming.capability) {
-                ContentUnavailableView("Update your Mac server", systemImage: "macwindow", description: Text("Install the latest Nocturne, then reconnect to open individual app windows."))
+                ContentUnavailableView(L("Update your Mac server"), systemImage: "macwindow", description: Text(L("Install the latest Nocturne, then reconnect to open individual app windows.")))
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         VStack(alignment: .leading, spacing: 10) {
                             Label(connection.name, systemImage: "desktopcomputer").font(.subheadline.weight(.medium)).foregroundStyle(MoonStyle.secondary)
-                            Text("Your apps. Their own space.").font(.system(size: 30, weight: .semibold, design: .rounded)).tracking(-0.8)
+                            Text(L("Your apps. Their own space.")).font(.system(size: 30, weight: .semibold, design: .rounded)).tracking(-0.8)
                             Text(UIApplication.shared.supportsMultipleScenes
-                                 ? "Open a Mac app in its own iPad window. Resize it here and the window on your Mac follows."
-                                 : "Open and control just an app’s window from your Mac.")
+                                 ? L("Open a Mac app in its own iPad window. Resize it here and the window on your Mac follows.")
+                                 : L("Open and control just an app’s window from your Mac."))
                                 .font(.callout).foregroundStyle(MoonStyle.secondary).frame(maxWidth: 530, alignment: .leading)
                         }
-                        if model.loading { ProgressView("Loading apps…").frame(maxWidth: .infinity).padding() }
+                        if model.loading { ProgressView(L("Loading apps…")).frame(maxWidth: .infinity).padding() }
                         if let error = model.error {
                             Label(error, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(MoonStyle.secondary)
                         }
                         if !model.loading, filtered.isEmpty {
-                            ContentUnavailableView(search.isEmpty ? "No apps found" : "No matching apps", systemImage: "square.grid.2x2", description: Text(search.isEmpty ? "Install an app on your Mac, then refresh this list." : "Try another app name."))
+                            ContentUnavailableView(search.isEmpty ? L("No apps found") : L("No matching apps"), systemImage: "square.grid.2x2", description: Text(search.isEmpty ? L("Install an app on your Mac, then refresh this list.") : L("Try another app name.")))
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 155, maximum: 220), spacing: 16)], alignment: .leading, spacing: 16) {
                             ForEach(filtered) { app in
@@ -114,29 +114,29 @@ struct HostAppsWorkspace: View {
                                         }
                                         Text(app.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2).frame(height: 38, alignment: .topLeading)
                                         let count = model.windows.filter { $0.applicationID == app.id }.count
-                                        Text(count == 0 ? "Open app" : count == 1 ? "1 open window" : "\(count) open windows")
+                                        Text(count == 0 ? L("Open app") : LCount("%d open windows", count))
                                             .font(.caption).foregroundStyle(MoonStyle.secondary)
                                     }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
                                         .background(MoonStyle.surface, in: RoundedRectangle(cornerRadius: 22))
                                 }.buttonStyle(.plain).disabled(model.opening != nil)
-                                    .accessibilityLabel("Open \(app.name)")
+                                    .accessibilityLabel(L("Open %@", "\(app.name)"))
                                     .task(id: app.id) { await model.icon(app) }
                                     .contextMenu {
                                         ForEach(model.windows.filter { $0.applicationID == app.id }) { window in
                                             Button(window.title, systemImage: "macwindow") { open(window) }
                                         }
-                                        Button("Open app", systemImage: "arrow.up.forward.app") { Task { await launch(app) } }
+                                        Button(L("Open app"), systemImage: "arrow.up.forward.app") { Task { await launch(app) } }
                                     }
                             }
                         }
                     }.padding(24).frame(maxWidth: 1150, alignment: .leading).frame(maxWidth: .infinity)
                 }.refreshable { await model.load() }
-                    .searchable(text: $search, prompt: "Find an app")
+                    .searchable(text: $search, prompt: L("Find an app"))
             }
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Refresh apps", systemImage: "arrow.clockwise") { Task { await model.load() } }
+                Button(L("Refresh apps"), systemImage: "arrow.clockwise") { Task { await model.load() } }
                     .disabled(model.loading || connection.state != .connected).accessibilityIdentifier("refreshApps")
             }
         }
@@ -147,12 +147,12 @@ struct HostAppsWorkspace: View {
                     Button { choosing = nil; open(window) } label: {
                         Label { VStack(alignment: .leading, spacing: 4) {
                             Text(window.title).foregroundStyle(.primary)
-                            Text("Open window · \(window.width) × \(window.height)").font(.caption).foregroundStyle(.secondary)
+                            Text(L("Open window · %@ × %@", window.width.formatted(), window.height.formatted())).font(.caption).foregroundStyle(.secondary)
                         } } icon: { Image(systemName: "macwindow") }
                     }
                 }.navigationTitle(app.name).navigationBarTitleDisplayMode(.inline)
-                    .safeAreaInset(edge: .top) { Text("Choose a window to stream").font(.subheadline).foregroundStyle(.secondary).padding() }
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { choosing = nil } } }
+                    .safeAreaInset(edge: .top) { Text(L("Choose a window to stream")).font(.subheadline).foregroundStyle(.secondary).padding() }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Cancel")) { choosing = nil } } }
             }.presentationDetents([.medium, .large])
         }
         .fullScreenCover(item: $phoneWindow) { route in
@@ -171,7 +171,7 @@ struct HostAppsWorkspace: View {
                                        windowID: window.id, title: window.title)
             if UIApplication.shared.supportsMultipleScenes { AppWindowScenes.open(route) { model.error = $0.localizedDescription } }
             else { phoneWindow = route }
-        } catch { model.error = error.localizedDescription }
+        } catch { model.error = NocturneLocalization.message(error.localizedDescription) }
     }
 }
 

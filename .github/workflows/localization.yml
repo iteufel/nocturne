@@ -1,0 +1,30 @@
+name: Localization
+
+on:
+  pull_request:
+    paths:
+      - 'Sources/**'
+      - 'Resources/**'
+      - 'Package.swift'
+      - 'scripts/check-localization.py'
+      - 'scripts/generate-project.rb'
+      - '.github/workflows/localization.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Sources/**'
+      - 'Resources/**'
+      - 'scripts/check-localization.py'
+      - '.github/workflows/localization.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  localization:
+    name: Native localization and English fallback
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check keys, placeholders, permissions and native language resolution
+        run: python3 scripts/check-localization.py --runtime

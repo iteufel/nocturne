@@ -19,26 +19,26 @@ struct ChatTranscript: View {
             VStack(alignment: .leading, spacing: 24) {
                 ForEach(groups, id: \.first!.id) { group in
                     if group.first?.role == .tool { ChatToolGroup(messages: group) }
-                    else if let message = group.first { ChatTranscriptMessage(message: message, provider: model.provider?.name ?? "Agent") }
+                    else if let message = group.first { ChatTranscriptMessage(message: message, provider: model.provider?.name ?? L("Agent")) }
                 }
                 if model.responding {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.mini)
-                        Text(model.permissions.isEmpty ? "Working" : "Waiting for your decision")
+                        Text(model.permissions.isEmpty ? L("Working") : L("Waiting for your decision"))
                         if let start = model.respondingSince { Text(start, style: .relative).monospacedDigit() }
                     }.font(.caption).foregroundStyle(ChatStyle.secondary)
                 }
             }.padding(24).frame(maxWidth: 860, alignment: .leading).frame(maxWidth: .infinity)
         }
         .overlay(alignment: .top) {
-            if model.loadingOlder { ProgressView().controlSize(.small).padding(10).modifier(ChatGlass()).padding(8).accessibilityLabel("Loading earlier messages") }
+            if model.loadingOlder { ProgressView().controlSize(.small).padding(10).modifier(ChatGlass()).padding(8).accessibilityLabel(L("Loading earlier messages")) }
         }
         .overlay(alignment: .bottomTrailing) {
             if !following {
                 Button { jump += 1 } label: {
                     Image(systemName: "arrow.down").font(.system(size: 17, weight: .semibold))
                         .frame(width: 44, height: 44).modifier(ChatGlass())
-                }.buttonStyle(.plain).accessibilityLabel("Jump to latest message").accessibilityIdentifier("chatJumpToLatest").padding(16)
+                }.buttonStyle(.plain).accessibilityLabel(L("Jump to latest message")).accessibilityIdentifier("chatJumpToLatest").padding(16)
             }
         }
     }
@@ -53,13 +53,13 @@ private struct ChatToolGroup: View {
                     DisclosureGroup {
                         Text(message.text).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding(.top, 8)
                     } label: {
-                        Label(String(message.text.split(separator: "\n").first ?? "Tool activity"), systemImage: "terminal")
+                        Label(message.text.split(separator: "\n").first.map(String.init) ?? L("Tool activity"), systemImage: "terminal")
                             .lineLimit(1).font(.caption)
                     }
                 }
             }.padding(.top, 12)
         } label: {
-            Label(messages.count == 1 ? "Used a tool" : "Ran \(messages.count) tool actions", systemImage: "hammer")
+            Label(LCount("Ran %d tool actions", messages.count), systemImage: "hammer")
                 .font(.subheadline)
         }.foregroundStyle(ChatStyle.secondary).tint(ChatStyle.secondary)
     }
@@ -87,8 +87,8 @@ private struct ChatTranscriptMessage: View {
             } else {
                 ChatMarkdown(text: message.text)
                 HStack(spacing: 16) {
-                    Text(message.role == .assistant ? provider : "Activity").font(.caption2)
-                    Button { UIPasteboard.general.string = message.text } label: { Image(systemName: "doc.on.doc") }.accessibilityLabel("Copy response")
+                    Text(message.role == .assistant ? provider : L("Activity")).font(.caption2)
+                    Button { UIPasteboard.general.string = message.text } label: { Image(systemName: "doc.on.doc") }.accessibilityLabel(L("Copy response"))
                 }.font(.caption).foregroundStyle(ChatStyle.secondary).buttonStyle(.plain)
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -106,9 +106,9 @@ struct ChatMarkdown: View {
                     let code = lines.count > 1 ? lines.dropFirst().joined(separator: "\n") : block
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text(lines.first ?? "Code").font(.caption2).foregroundStyle(ChatStyle.secondary)
+                            Text(lines.first ?? L("Code")).font(.caption2).foregroundStyle(ChatStyle.secondary)
                             Spacer()
-                            Button { UIPasteboard.general.string = code } label: { Image(systemName: "doc.on.doc") }.accessibilityLabel("Copy code")
+                            Button { UIPasteboard.general.string = code } label: { Image(systemName: "doc.on.doc") }.accessibilityLabel(L("Copy code"))
                         }.font(.caption).buttonStyle(.plain)
                         ScrollView(.horizontal) { Text(code).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
                     }.padding(16).background(ChatStyle.surface, in: RoundedRectangle(cornerRadius: 14))

@@ -34,7 +34,7 @@ public final class MacAppsModel: ObservableObject {
                 try await connection.connect(invitation, restoreTerminalSessions: false, rediscover: true)
                 guard epoch == generation else { return }
                 guard connection.capabilities.contains(AppStreaming.capability) else {
-                    throw NocturneError.remote("Enable Screen sharing and update Nocturne on the host Mac to open its app windows.")
+                    throw NocturneError.remote(L("Enable Screen sharing and update Nocturne on the host Mac to open its app windows."))
                 }
                 guard let refreshed = connection.connectedInvitation else { throw NocturneError.disconnected }
                 do { try onAuthenticated?(refreshed) }
@@ -57,7 +57,7 @@ public final class MacAppsModel: ObservableObject {
             self.applications = apps; self.windows = windows
         } catch {
             guard epoch == generation else { return }
-            self.error = error.localizedDescription
+            self.error = NocturneLocalization.message(error.localizedDescription)
             // Do not retain an unusable initial catalog connection.
             if applications.isEmpty { connection.disconnect() }
         }
@@ -82,6 +82,6 @@ public final class MacAppsModel: ObservableObject {
                   windows.allSatisfy({ $0.applicationID == app.id }) else { throw NocturneError.invalidFrame }
             self.windows.removeAll { $0.applicationID == app.id }; self.windows.append(contentsOf: windows)
             return windows
-        } catch { if generation == epoch { self.error = error.localizedDescription }; return [] }
+        } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) }; return [] }
     }
 }

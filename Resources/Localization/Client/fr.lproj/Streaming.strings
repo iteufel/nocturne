@@ -1,0 +1,10 @@
+"%u ms (variance: %u ms)" = "%u ms (variation : %u ms)";
+"N/A" = "Indisponible";
+"\nHost processing latency min/max/avg: %.1f/%.1f/%.1f ms" = "\nLatence de traitement de l’hôte min/max/moy. : %.1f/%.1f/%.1f ms";
+"Video stream: %dx%d %.2f FPS (Codec: %@)\nFrames dropped by your network connection: %.2f%%\nAverage network latency: %@%@" = "Diffusion vidéo : %dx%d %.2f i/s (codec : %@)\nImages perdues sur le réseau : %.2f%%\nLatence réseau moyenne : %@%@";
+"Starting %@..." = "Démarrage de %@…";
+"Tip: Tap the Play/Pause button on the Apple TV Remote to disconnect from your PC" = "Astuce : appuie sur Lecture/Pause de l’Apple TV Remote pour te déconnecter.";
+"Tip: Swipe from the left edge to disconnect from your PC" = "Astuce : balaie depuis le bord gauche pour ouvrir les commandes.";
+"%s in progress..." = "%s en cours…";
+"Slow connection to PC\nReduce your bitrate" = "Connexion lente à l’ordinateur\nRéduis le débit";
+"Poor connection to PC" = "Mauvaise connexion à l’ordinateur";

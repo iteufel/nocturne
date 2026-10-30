@@ -1,0 +1,4 @@
+"NSLocalNetworkUsageDescription" = "Connect directly to your paired Macs, iPhones, and iPads for streaming.";
+"NSMicrophoneUsageDescription" = "Capture audio when a microphone or loopback audio source is selected.";
+"NSScreenCaptureUsageDescription" = "Stream this Mac’s display to your paired devices.";
+"NSAudioCaptureUsageDescription" = "Include your Mac’s audio in the stream.";

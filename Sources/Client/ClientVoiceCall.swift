@@ -1,5 +1,6 @@
 import AVFoundation
 import CallKit
+import NocturneKit
 
 /// CallKit owns activation; the voice session owns media and server signaling.
 @MainActor
@@ -87,7 +88,7 @@ final class ClientVoiceCall: NSObject, VoiceSystemCall, @preconcurrency CXProvid
     func providerDidReset(_ provider: CXProvider) {
         finish(failed: true)
         if audioActive { audioActive = false; onAudioActivation?(false) }
-        onFailure?("The system call service reset. Start voice chat again.")
+        onFailure?(L("The system call service reset. Start voice chat again."))
     }
     func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
         guard callID == action.callUUID, let pendingStart else { action.fail(); return }
@@ -114,7 +115,7 @@ final class ClientVoiceCall: NSObject, VoiceSystemCall, @preconcurrency CXProvid
     }
     func provider(_ provider: CXProvider, timedOutPerforming action: CXAction) {
         guard let action = action as? CXCallAction, action.callUUID == callID else { return }
-        onFailure?("The system call action timed out. Start voice chat again.")
+        onFailure?(L("The system call action timed out. Start voice chat again."))
     }
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
         audioActive = true

@@ -1,3 +1,4 @@
+import NocturneKit
 import SwiftUI
 #if os(macOS)
 import AppKit
@@ -8,7 +9,13 @@ import UIKit
 enum NocturneAppearance: String, CaseIterable, Identifiable {
     case system, light, dark
     var id: Self { self }
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .system: L("System")
+        case .light: L("Light")
+        case .dark: L("Dark")
+        }
+    }
     var colorScheme: ColorScheme? {
         switch self {
         case .system: nil

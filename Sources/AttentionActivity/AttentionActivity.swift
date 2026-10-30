@@ -14,16 +14,16 @@ struct AttentionAttributes: ActivityAttributes {
 }
 
 struct AttentionDecisionIntent: LiveActivityIntent {
-    static var title: LocalizedStringResource = "Decide pending Nocturne request"
+    static var title = LocalizedStringResource("Decide pending Nocturne request", table: "AppIntents")
     static var isDiscoverable: Bool = false
     // Bring authentication UI into the app; perform still executes the exact button decision.
     static var openAppWhenRun: Bool = true
     static var authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
-    @Parameter(title: "Request") var requestID: String
-    @Parameter(title: "Host") var hostID: String
-    @Parameter(title: "Provider") var providerID: String
-    @Parameter(title: "Session") var sessionID: String
-    @Parameter(title: "Allow once") var allow: Bool
+    @Parameter(title: LocalizedStringResource("Request", table: "AppIntents")) var requestID: String
+    @Parameter(title: LocalizedStringResource("Host", table: "AppIntents")) var hostID: String
+    @Parameter(title: LocalizedStringResource("Provider", table: "AppIntents")) var providerID: String
+    @Parameter(title: LocalizedStringResource("Session", table: "AppIntents")) var sessionID: String
+    @Parameter(title: LocalizedStringResource("Allow once", table: "AppIntents")) var allow: Bool
     init() {}
     init(_ request: AgentAttention, allow: Bool) {
         requestID = request.id; hostID = request.hostID; providerID = request.providerID

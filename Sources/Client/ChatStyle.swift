@@ -1,3 +1,4 @@
+import NocturneKit
 import SwiftUI
 
 enum ChatStyle {
@@ -9,13 +10,11 @@ enum ChatStyle {
     static let blue = Color(red: 0, green: 0.56, blue: 1)
     static let green = Color(red: 0, green: 0.78, blue: 0.6)
     static let purple = Color(red: 0.65, green: 0.45, blue: 1)
-    static func projectName(_ directory: String) -> String { directory.isEmpty ? "your project" : URL(fileURLWithPath: directory).lastPathComponent }
+    static func projectName(_ directory: String) -> String { directory.isEmpty ? L("your project") : URL(fileURLWithPath: directory).lastPathComponent }
     static func age(_ date: Date, now: Date = Date()) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(date)))
-        if seconds < 60 { return "<1m" }
-        if seconds < 3600 { return "\(seconds / 60)m" }
-        if seconds < 86400 { return "\(seconds / 3600)h" }
-        return "\(seconds / 86400)d"
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: now)
     }
     static func date(_ text: String?) -> Date? {
         guard let text else { return nil }

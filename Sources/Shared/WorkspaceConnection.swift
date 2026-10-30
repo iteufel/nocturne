@@ -7,7 +7,7 @@ import CryptoKit
 public final class WorkspaceConnection: ObservableObject {
     public enum State: Equatable { case disconnected, connecting, connected }
     @Published public private(set) var state: State = .disconnected
-    @Published public private(set) var name = "Your Mac"
+    @Published public private(set) var name = L("Your Mac")
     @Published public private(set) var capabilities: [String] = []
     @Published public private(set) var lastError: String?
     public var onAppPacket: ((Packet) -> Void)?
@@ -20,8 +20,8 @@ public final class WorkspaceConnection: ObservableObject {
     public private(set) var connectedInvitation: PairingInvitation?
     public var streamingAddress: String? { remoteTunnel == nil ? connectedInvitation?.host : "127.0.0.1" }
     public var connectionRoute: String? {
-        if let remoteTunnel { return remoteTunnel.route ?? "Reconnecting" }
-        return state == .connected ? "Local network" : nil
+        if let remoteTunnel { return remoteTunnel.route ?? L("Reconnecting") }
+        return state == .connected ? L("Local network") : nil
     }
     private var remoteTunnel: RemoteTunnel?
     /// The hashed pairing key of the Mac at the far end of `remoteTunnel`.
@@ -84,7 +84,7 @@ public final class WorkspaceConnection: ObservableObject {
                     try await establish(invitation, endpoint: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: tunnel.workspacePort)!), restoreTerminalSessions: restoreTerminalSessions, epoch: epoch)
                 }
             } catch {
-                if generation == epoch { lastError = error.localizedDescription; disconnect() }
+                if generation == epoch { lastError = NocturneLocalization.message(error.localizedDescription); disconnect() }
                 throw error
             }
         } onCancel: {
@@ -114,7 +114,7 @@ public final class WorkspaceConnection: ObservableObject {
         } }
         channel.onClose = { [weak self, weak channel] error in Task { @MainActor in
             guard let self, let channel, self.channel === channel, self.generation == epoch else { return }
-            self.lastError = error.localizedDescription; self.closeTransport()
+            self.lastError = NocturneLocalization.message(error.localizedDescription); self.closeTransport()
         } }
         try await withCheckedThrowingContinuation { continuation in
             ready = continuation
@@ -274,7 +274,7 @@ public final class WorkspaceConnection: ObservableObject {
             pending.removeValue(forKey: packet.id)?.resume(returning: packet)
         } catch {
             failRequest(packet.id, error: error)
-            if event { lastError = error.localizedDescription; disconnect() }
+            if event { lastError = NocturneLocalization.message(error.localizedDescription); disconnect() }
         }
     }
     private func failRequest(_ id: String, error: Error) {
@@ -286,14 +286,14 @@ public final class WorkspaceConnection: ObservableObject {
 public final class FileTransferModel: ObservableObject {
     @Published public private(set) var progress: Double = 0
     @Published public private(set) var activeName: String?
-    @Published public private(set) var status = "Ready to transfer"
+    @Published public private(set) var status = L("Ready to transfer")
     @Published public private(set) var bytesTransferred: Int64 = 0
     private var task: Task<URL?, Error>?
     public init() {}
     public func cancel() { task?.cancel() }
     public func upload(_ url: URL, to folder: String, using connection: WorkspaceConnection) async throws {
         guard activeName == nil else { throw NocturneError.remote("Wait for the current transfer to finish.") }
-        activeName = url.lastPathComponent; progress = 0; bytesTransferred = 0; status = "Sending"
+        activeName = url.lastPathComponent; progress = 0; bytesTransferred = 0; status = L("Sending")
         defer { activeName = nil; task = nil }
         let work = Task<URL?, Error> {
             let scoped = url.startAccessingSecurityScopedResource(); defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -314,7 +314,7 @@ public final class FileTransferModel: ObservableObject {
                 }
                 try Task.checkCancellation()
                 var commit = Packet(.uploadCommit); commit.transferID = id; _ = try await connection.request(commit)
-                progress = 1; status = "Sent \(url.lastPathComponent)"; return nil
+                progress = 1; status = L("Sent %@", "\(url.lastPathComponent)"); return nil
             } catch {
                 var cancel = Packet(.uploadCancel); cancel.transferID = id
                 // A fresh task can send cleanup even when this transfer was cancelled.
@@ -323,11 +323,11 @@ public final class FileTransferModel: ObservableObject {
         }
         task = work
         do { _ = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() } }
-        catch { status = error is CancellationError ? "Transfer cancelled" : error.localizedDescription; throw error }
+        catch { status = error is CancellationError ? L("Transfer cancelled") : NocturneLocalization.message(error.localizedDescription); throw error }
     }
     public func download(_ file: RemoteFile, using connection: WorkspaceConnection, temporaryDirectory: URL? = nil) async throws -> URL {
         guard activeName == nil, !file.isDirectory else { throw NocturneError.invalidTransfer }
-        activeName = file.name; progress = 0; bytesTransferred = 0; status = "Receiving"
+        activeName = file.name; progress = 0; bytesTransferred = 0; status = L("Receiving")
         defer { activeName = nil; task = nil }
         let work = Task<URL?, Error> {
             let directory = (temporaryDirectory ?? FileManager.default.temporaryDirectory).appendingPathComponent("Nocturne-" + UUID().uuidString)
@@ -349,11 +349,11 @@ public final class FileTransferModel: ObservableObject {
                     bytesTransferred = offset; progress = file.size == 0 ? 1 : Double(offset) / Double(file.size)
                     if response.eof == true { guard offset == file.size else { throw NocturneError.invalidTransfer }; break }
                 }
-                try handle.synchronize(); status = "Received \(file.name)"; return url
+                try handle.synchronize(); status = L("Received %@", "\(file.name)"); return url
             } catch { try? FileManager.default.removeItem(at: directory); throw error }
         }
         task = work
         do { return try await withTaskCancellationHandler { try await work.value! } onCancel: { work.cancel() } }
-        catch { status = error is CancellationError ? "Transfer cancelled" : error.localizedDescription; throw error }
+        catch { status = error is CancellationError ? L("Transfer cancelled") : NocturneLocalization.message(error.localizedDescription); throw error }
     }
 }

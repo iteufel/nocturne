@@ -16,7 +16,7 @@ final class FilesIntegration: ObservableObject {
         if !domains.contains(domain) { domains.append(domain) }
         do {
             if enabled {
-                guard let privateKey else { throw NocturneError.remote("The device identity could not be shared with Files. Reopen Nocturne and try again.") }
+                guard let privateKey else { throw NocturneError.remote(L("The device identity could not be shared with Files. Reopen Nocturne and try again.")) }
                 let account = try FilesProviderAccount(invitation: invitation, certificate: certificate, privateKey: privateKey, deviceName: deviceName)
                 try SecureStore.write(JSONEncoder().encode(account), account: account.keychainAccount)
             } else {
@@ -24,9 +24,9 @@ final class FilesIntegration: ObservableObject {
             }
             reconcile(try storedAccounts())
         } catch {
-            let message = error.localizedDescription
+            let message = NocturneLocalization.message(error.localizedDescription)
             do { try forget(invitation) }
-            catch { self.error = message + " " + error.localizedDescription; return }
+            catch { self.error = message + " " + NocturneLocalization.message(error.localizedDescription); return }
             self.error = message
         }
     }
@@ -35,7 +35,7 @@ final class FilesIntegration: ObservableObject {
         do {
             try migrateLegacyAccount()
             reconcile(try storedAccounts())
-        } catch { self.error = error.localizedDescription }
+        } catch { self.error = NocturneLocalization.message(error.localizedDescription) }
     }
     func forget(_ invitation: PairingInvitation) throws {
         let domain = FilesProviderAccount.domainIdentifier(secret: invitation.secret)
@@ -92,7 +92,7 @@ final class FilesIntegration: ObservableObject {
                     guard generation == epoch else { return }
                 }
                 locationNames = accounts.map(\.invitation.name)
-            } catch { if generation == epoch { self.error = error.localizedDescription } }
+            } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) } }
         }
     }
 }
@@ -103,14 +103,14 @@ struct FilesIntegrationSettings: View {
     let refresh: () -> Void
     var body: some View {
         Section {
-            ForEach(Array(integration.locationNames.enumerated()), id: \.offset) { _, name in LabeledContent("Location", value: name) }
-            Text("In Apple Files, open Browse → Locations → Nocturne. Each paired Mac is its own location. Enable a location when asked. If it is hidden, choose More (…) → Edit and enable Nocturne.")
+            ForEach(Array(integration.locationNames.enumerated()), id: \.offset) { _, name in LabeledContent(L("Location"), value: name) }
+            Text(L("In Apple Files, open Browse → Locations → Nocturne. Each paired Mac is its own location. Enable a location when asked. If it is hidden, choose More (…) → Edit and enable Nocturne."))
                 .font(.caption).foregroundStyle(MoonStyle.secondary)
-            Text("Browse folders, preview files, and copy them to your device or another app. To send files to your Mac, use Nocturne’s Files tab. Your Mac must be reachable with Nocturne running and File sharing enabled.")
+            Text(L("Browse folders, preview files, and copy them to your device or another app. To send files to your Mac, use Nocturne’s Files tab. Your Mac must be reachable with Nocturne running and File sharing enabled."))
                 .font(.caption).foregroundStyle(MoonStyle.secondary)
-            if paired { Button("Refresh Files location", action: refresh) }
+            if paired { Button(L("Refresh Files location"), action: refresh) }
             if let error = integration.error { Text(error).font(.caption).foregroundStyle(.orange) }
-        } header: { Text("Apple Files") }
+        } header: { Text(L("Apple Files")) }
             .listRowBackground(MoonStyle.surface)
     }
 }

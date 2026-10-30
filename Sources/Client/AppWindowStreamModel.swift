@@ -9,7 +9,7 @@ final class AppWindowStreamModel: ObservableObject {
     let surface = AppWindowVideoView()
     @Published private(set) var ready = false
     @Published private(set) var display: StreamDisplaySize?
-    @Published private(set) var status = "Opening your Mac window…"
+    @Published private(set) var status = L("Opening your Mac window…")
     @Published private(set) var error: String?
     @Published var keyboardVisible = false
     private var active = false
@@ -38,7 +38,7 @@ final class AppWindowStreamModel: ObservableObject {
     }
     func activate() {
         guard !active else { return }
-        active = true; error = nil; status = "Opening your Mac window…"
+        active = true; error = nil; status = L("Opening your Mac window…")
         connection.onAppPacket = { [weak self] packet in self?.receive(packet) }
         configure()
     }
@@ -73,7 +73,7 @@ final class AppWindowStreamModel: ObservableObject {
                     if self.connection.state != .connected {
                         try await self.connection.connect(self.invitation(), restoreTerminalSessions: false, rediscover: true)
                         guard self.connection.capabilities.contains(AppStreaming.capability) else {
-                            throw NocturneError.remote("Update Nocturne on your Mac to stream app windows.")
+                            throw NocturneError.remote(L("Update Nocturne on your Mac to stream app windows."))
                         }
                     }
                     try Task.checkCancellation()
@@ -88,13 +88,13 @@ final class AppWindowStreamModel: ObservableObject {
                     guard reply.sessionID == self.sessionID, let window = reply.window, window.id == self.route.windowID,
                           let display = reply.display, display.isValidAppWindow else { throw NocturneError.invalidFrame }
                     self.display = display; self.appliedViewport = desired
-                    self.status = "Waiting for \(self.route.title)…"
+                    self.status = L("Waiting for %@…", "\(self.route.title)")
                     if self.heartbeat == nil { self.startHeartbeat(generation) }
                     if !self.ready, self.firstFrameDeadline == nil {
                         self.firstFrameDeadline = Task { [weak self] in
                             do { try await Task.sleep(nanoseconds: 12_000_000_000) } catch { return }
                             guard let self, self.epoch == generation, !self.ready else { return }
-                            self.fail(NocturneError.remote("No video arrived from this Mac window. Check Screen Recording permission on your Mac, then reconnect."))
+                            self.fail(NocturneError.remote(L("No video arrived from this Mac window. Check Screen Recording permission on your Mac, then reconnect.")))
                         }
                     }
                     if desired == self.desiredViewport { return }
@@ -122,7 +122,7 @@ final class AppWindowStreamModel: ObservableObject {
     }
     private func receive(_ packet: Packet) {
         guard active, let id = sessionID, packet.sessionID == id else { return }
-        if packet.operation == .appEnded { fail(NocturneError.remote(packet.error ?? "This Mac window has closed.")); return }
+        if packet.operation == .appEnded { fail(NocturneError.remote(packet.error ?? L("This Mac window has closed."))); return }
         do {
             guard let video = try assembler.receive(packet) else { return }
             try surface.enqueue(video); ready = true; firstFrameDeadline?.cancel(); firstFrameDeadline = nil
@@ -133,7 +133,7 @@ final class AppWindowStreamModel: ObservableObject {
         guard ready, active, input.isValid else { return }
         if input.kind == .move, inputs.last?.kind == .move { inputs[inputs.count - 1] = input }
         else {
-            guard inputs.count < 128 else { fail(NocturneError.remote("The app window connection is too slow. Reconnect to continue.")); return }
+            guard inputs.count < 128 else { fail(NocturneError.remote(L("The app window connection is too slow. Reconnect to continue."))); return }
             inputs.append(input)
         }
         guard inputTask == nil else { return }
@@ -148,5 +148,5 @@ final class AppWindowStreamModel: ObservableObject {
             }
         }
     }
-    private func fail(_ error: Error) { deactivate(); self.error = error.localizedDescription }
+    private func fail(_ error: Error) { deactivate(); self.error = NocturneLocalization.message(error.localizedDescription) }
 }
