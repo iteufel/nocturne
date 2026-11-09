@@ -89,16 +89,14 @@ The standalone Localization GitHub workflow runs this check without requiring
 Rust, the streaming runtime, or simulator startup. The existing build workflow
 continues to build/test both app targets with the project's pinned dependencies.
 
-Local verification on 2026-10-28 used Xcode 27.0. Shared modules, Mac client and
-host modules were compiled against the actual repository C bridge headers, and
-all Mac SwiftUI surfaces passed source type checking. The iOS shared, voice and
-SwiftTerm modules also compiled against the simulator SDK. iOS UI type checking
-stops at the unchanged `toolbarVerticalEdge` API, absent from the local 27.0 SDK. Native resource tests and
-project generation/variant-reference checks passed. Full app builds were
-attempted: bootstrap is blocked by the absent Rust toolchain; package resolution
-cannot supply `Vendor/NocturneRemote.xcframework` without it. The documented
-product build uses Xcode 27.1 or newer. These source checks do not establish
-linked-app, simulator, screenshot/layout or physical-device acceptance.
+Local verification on 2026-11-09 used Xcode 27.1. All 1,040 strings, seven
+plural keys, ten streaming overlays and permission resources passed validation.
+Eight native language/preference/fallback cases passed. The actual App Intents
+metadata exporter accepted the main-bundle resources in the app and extension,
+including all five language tables, and rejected the former custom-bundle
+regression. The [PR checks](https://github.com/iteufel/nocturne/pull/30/checks)
+record the complete iPhone/iPad, Mac and broker build/test results. The shared
+runtime update now requires macOS 15+; see [Development](DEVELOPMENT.md).
 
 No system language, real notification, permission grant, screen capture or
 microphone recording was used for localization tests. A final layout review on
