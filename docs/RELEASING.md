@@ -105,7 +105,7 @@ Build scripts never start Nocturne or change the Mac's display layout.
 Use the ZIP attached to a [Mac release](https://github.com/iteufel/nocturne/releases).
 Quit any running copy of Nocturne, unzip the download, and move Nocturne.app to Applications.
 The ZIP includes the stapled notarization ticket; `SHA256SUMS.txt` accompanies it.
-Builds target Apple Silicon and macOS 14 or later. They remain previews, with the
+Builds target Apple Silicon and macOS 15 or later. They remain previews, with the
 display limitations described in [VERIFICATION.md](VERIFICATION.md).
 
 The `macos-release` environment also permits `main` only. It stores:

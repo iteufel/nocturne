@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "Nocturne",
     defaultLocalization: "en",
-    platforms: [.macOS(.v14), .iOS(.v17)],
+    platforms: [.macOS("15.0"), .iOS(.v17)],
     products: [
         .library(name: "NocturneKit", targets: ["NocturneKit"]),
         .library(name: "NocturneHostKit", targets: ["NocturneHostKit"]),

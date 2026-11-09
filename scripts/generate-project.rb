@@ -336,7 +336,7 @@ scheme.add_test_target(client.targets.find { |entry| entry.name == 'NocturneClie
 scheme.save_as('Vendor/moonlight-ios/Nocturne.xcodeproj', 'Nocturne', true)
 
 mac = Xcodeproj::Project.new('Nocturne.xcodeproj')
-host = mac.new_target(:application, 'Nocturne Mac', :osx, '14.0')
+host = mac.new_target(:application, 'Nocturne Mac', :osx, '15.0')
 host.product_name = 'Nocturne'
 host.product_reference.path = 'Nocturne.app'
 group = mac.main_group.new_group('Server')
