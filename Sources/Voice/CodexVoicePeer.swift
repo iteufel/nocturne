@@ -27,11 +27,16 @@ public final class CodexVoicePeer: NSObject {
 #if os(iOS)
     private var previousAudio: (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions, Bool, Bool)?
     private var activatedAudio = false
+    private var systemManagedAudio = false
+    private var systemAudioActive = false
+    private var answered = false
+    private var previousRTCConfiguration: RTCAudioSessionConfiguration?
 #endif
 
-    public func offer() async throws -> (sdp: String, events: AsyncStream<VoicePeerEvent>) {
+    public func offer(systemManagedAudio: Bool = false) async throws -> (sdp: String, events: AsyncStream<VoicePeerEvent>) {
         stop()
 #if os(iOS)
+        self.systemManagedAudio = systemManagedAudio
         try configureAudio()
 #endif
         let epoch = generation
@@ -95,7 +100,8 @@ public final class CodexVoicePeer: NSObject {
         }
         try check(epoch)
 #if os(iOS)
-        RTCAudioSession.sharedInstance().isAudioEnabled = true
+        answered = true
+        RTCAudioSession.sharedInstance().isAudioEnabled = !systemManagedAudio || systemAudioActive
 #endif
         // WebRTC's audio device plays the received audio track through its duplex audio session.
         peer.receivers.compactMap { $0.track as? RTCAudioTrack }.forEach { $0.isEnabled = true }
@@ -130,18 +136,29 @@ public final class CodexVoicePeer: NSObject {
     private func configureAudio() throws {
         let rtc = RTCAudioSession.sharedInstance(), session = AVAudioSession.sharedInstance()
         previousAudio = (session.category, session.mode, session.categoryOptions, rtc.useManualAudio, rtc.isAudioEnabled)
+        if systemManagedAudio {
+            previousRTCConfiguration = RTCAudioSessionConfiguration.webRTC()
+            let configuration = RTCAudioSessionConfiguration()
+            configuration.category = AVAudioSession.Category.playAndRecord.rawValue
+            configuration.mode = AVAudioSession.Mode.voiceChat.rawValue
+            configuration.categoryOptions = [.allowBluetoothHFP]
+            RTCAudioSessionConfiguration.setWebRTC(configuration)
+        }
         rtc.lockForConfiguration()
         do {
             rtc.useManualAudio = true; rtc.isAudioEnabled = false
-            try rtc.setCategory(.playAndRecord, with: [.allowBluetoothHFP, .defaultToSpeaker])
+            try rtc.setCategory(.playAndRecord, with: systemManagedAudio ? [.allowBluetoothHFP] : [.allowBluetoothHFP, .defaultToSpeaker])
             try rtc.setMode(.voiceChat)
-            try rtc.setActive(true); activatedAudio = true
+            if !systemManagedAudio { try rtc.setActive(true); activatedAudio = true }
             rtc.unlockForConfiguration()
         } catch { rtc.unlockForConfiguration(); restoreAudio(); throw error }
     }
     /// SDL may deactivate the shared session when a desktop stream closes in the background.
     public func reactivateAudio() throws {
-        guard peer != nil, activatedAudio else { return }
+        guard peer != nil else { return }
+        // CallKit alone may activate/deactivate a managed session. SDL must not steal ownership.
+        if systemManagedAudio { return }
+        guard activatedAudio else { return }
         let rtc = RTCAudioSession.sharedInstance()
         rtc.lockForConfiguration(); defer { rtc.unlockForConfiguration() }
         try rtc.setCategory(.playAndRecord, with: [.allowBluetoothHFP, .defaultToSpeaker])
@@ -150,14 +167,39 @@ public final class CodexVoicePeer: NSObject {
         try rtc.setActive(false); activatedAudio = false
         try rtc.setActive(true); activatedAudio = true
     }
+    /// Forward CallKit activation to WebRTC's external audio-session ownership API.
+    public func systemAudioActivation(_ active: Bool) {
+        let rtc = RTCAudioSession.sharedInstance()
+        systemAudioActive = active
+        if active {
+            rtc.audioSessionDidActivate(AVAudioSession.sharedInstance())
+            rtc.isAudioEnabled = systemManagedAudio && answered && peer != nil
+        } else {
+            rtc.isAudioEnabled = false
+            rtc.audioSessionDidDeactivate(AVAudioSession.sharedInstance())
+            if peer == nil { restoreAudio() }
+        }
+    }
     private func restoreAudio() {
+        answered = false
+        // Do not restore categories or manual-audio state while CallKit still owns active I/O.
+        if systemManagedAudio && systemAudioActive {
+            RTCAudioSession.sharedInstance().isAudioEnabled = false
+            return
+        }
         guard let previousAudio else { return }; self.previousAudio = nil
         let rtc = RTCAudioSession.sharedInstance()
         rtc.lockForConfiguration(); defer { rtc.unlockForConfiguration() }
         rtc.isAudioEnabled = false
         if activatedAudio { try? rtc.setActive(false); activatedAudio = false }
-        try? rtc.setCategory(previousAudio.0, with: previousAudio.2)
-        try? rtc.setMode(previousAudio.1)
+        if !systemManagedAudio {
+            try? rtc.setCategory(previousAudio.0, with: previousAudio.2)
+            try? rtc.setMode(previousAudio.1)
+        }
+        if let previousRTCConfiguration {
+            RTCAudioSessionConfiguration.setWebRTC(previousRTCConfiguration)
+            self.previousRTCConfiguration = nil
+        }
         rtc.useManualAudio = previousAudio.3; rtc.isAudioEnabled = previousAudio.4
     }
 #endif

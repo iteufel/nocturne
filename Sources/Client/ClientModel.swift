@@ -101,16 +101,23 @@ final class ClientModel: ObservableObject {
     private var workspaceObserver: AnyCancellable?
     private var voiceLifecycleObserver: AnyCancellable?
     private var workspaceSuspended = false
-    init(engine: NocturneStreamingService = NocturneStreamingService(), voiceAudio: VoiceAudioDevice? = nil, voicePermission: (() async -> Bool)? = nil) {
+    init(engine: NocturneStreamingService = NocturneStreamingService(), voiceAudio: VoiceAudioDevice? = nil, voiceCalls: VoiceSystemCall? = nil, voicePermission: (() async -> Bool)? = nil) {
         self.engine = engine
         let streamingEngine = engine
         server = WorkspaceConnection(identity: WorkspaceIdentity(certificate: streamingEngine.workspaceCertificate(),
             name: UIDevice.current.name) { streamingEngine.signWorkspaceChallenge($0) }, requiresIPv4: true)
         hostApps = HostAppsModel(connection: server)
         chats = ChatWorkspaceModel(connection: server)
-        voice = ClientVoiceChat(chat: chats, audio: voiceAudio, requestPermission: voicePermission ?? { await AVAudioApplication.requestRecordPermission() })
+        voice = ClientVoiceChat(chat: chats, audio: voiceAudio, calls: voiceCalls, requestPermission: voicePermission ?? { await AVAudioApplication.requestRecordPermission() })
         preferences = UserDefaults.standard.data(forKey: "streamPreferences").flatMap { try? JSONDecoder().decode(StreamPreferences.self, from: $0) } ?? .init()
-        voice.beforeStart = { [weak self] in self?.microphone.stop() }
+        voice.beforeStart = { [weak self] in
+            guard let self else { return }
+            // SDL owns its own AVAudioSession activation. Finish its teardown before
+            // configuring CallKit so closing/locking a desktop cannot deactivate a call.
+            self.microphone.stop()
+            self.endStream()
+            await self.closingStream?.value
+        }
         loadPairedServers()
         engine.hostsChanged = { [weak self] hosts in self?.hosts = hosts.map(StreamingHost.init) }
         engine.appsChanged = { [weak self] hostID, apps in
@@ -374,6 +381,7 @@ final class ClientModel: ObservableObject {
         engine.cancelPairing(); finishHostSetup()
     }
     func stream(_ app: StreamingApp) {
+        guard !voice.engaged else { error = "End voice chat before starting desktop streaming."; return }
         guard session == nil, pendingStream == nil, let host = selectedHost else { return }
         let p = preferences
         showLibrary = false
@@ -382,7 +390,7 @@ final class ClientModel: ObservableObject {
         pendingStream = Task { @MainActor in
             do { try await Task.sleep(nanoseconds: 350_000_000) } catch { return }
             defer { self.pendingStream = nil }
-            guard self.selectedHost?.id == host.id else { return }
+            guard !self.voice.engaged, self.selectedHost?.id == host.id else { return }
             let current = StreamSession(host: host, app: app, preferences: p)
             self.session = current
             self.startStreamDeadline(current)
@@ -506,6 +514,7 @@ final class ClientModel: ObservableObject {
             && server.capabilities.contains(MicrophoneFormat.capability)
     }
     func toggleMicrophone() {
+        guard !voice.engaged else { error = "End voice chat before using the desktop microphone."; return }
         voice.stop()
         if microphone.active || microphone.starting { microphone.stop(); return }
         guard canUseMicrophone else { return }

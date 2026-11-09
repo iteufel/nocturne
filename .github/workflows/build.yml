@@ -116,7 +116,9 @@ jobs:
   verify:
     name: Test the iPhone and iPad client
     runs-on: xcode-27
-    timeout-minutes: 45
+    # A cold Xcode 27 test build can take 35 minutes before either device runs.
+    # Keep time for both device suites; expiry must never replace their results.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -172,7 +174,7 @@ jobs:
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
-          brew install cmake pkgconf miniupnpc openssl@3
+          brew install cmake pkgconf miniupnpc openssl@4
           gem install --user-install xcodeproj -v 1.27.0 --no-document
           scripts/bootstrap.sh mac
       - name: Test the broker and remote transport
@@ -243,6 +245,14 @@ jobs:
           issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
           api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}
           api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+      - name: Download the Attention widget provisioning profile
+        uses: Apple-Actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7
+        with:
+          bundle-id: app.nocturne.client.attention
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ vars.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ vars.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
       - name: Archive and export iOS
         env:
           NOCTURNE_DEVELOPMENT_TEAM: ${{ vars.APPLE_TEAM_ID }}
@@ -300,7 +310,7 @@ jobs:
       - name: Prepare pinned dependencies
         run: |
           xcodebuild -version
-          brew install cmake pkgconf miniupnpc openssl@3
+          brew install cmake pkgconf miniupnpc openssl@4
           gem install --user-install xcodeproj -v 1.27.0 --no-document
           scripts/bootstrap.sh mac
       - name: Import the Developer ID identity
@@ -338,7 +348,7 @@ jobs:
           version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' '.build/MacRelease/Nocturne.app/Contents/Info.plist')
           build="$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
           cat > "$RUNNER_TEMP/mac-release-notes.md" <<EOF
-          Nocturne for Apple Silicon Macs running macOS 14 or later.
+          Nocturne for Apple Silicon Macs running macOS 15 or later.
 
           Signed with Developer ID, notarized by Apple, and verified by Gatekeeper.
           Download the ZIP, unzip it, quit any running copy of Nocturne,
