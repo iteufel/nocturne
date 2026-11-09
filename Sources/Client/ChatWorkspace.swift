@@ -321,7 +321,7 @@ private struct ChatWorkspaceCanvas: View {
                         Image(systemName: chat.responding ? "stop.fill" : "arrow.up").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).frame(width: 44, height: 44).background(chat.responding ? Color.red.opacity(0.8) : ChatStyle.blue.opacity(chat.draft.isEmpty ? 0.28 : 0.9), in: Circle())
                     }.disabled(!chat.responding && (locked || chat.selected == nil || chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)).keyboardShortcut(.return, modifiers: .command).accessibilityLabel(chat.responding ? "Stop reply" : "Send message").accessibilityIdentifier(chat.responding ? "stopChat" : "sendChat")
                 }
-                if !chat.options.isEmpty || chat.optionsError != nil {
+                if chat.selected != nil {
                     Divider().overlay(Color.primary.opacity(0.06))
                     ChatConfigurationBar(model: chat, inline: true).padding(.horizontal, 12).padding(.vertical, 6)
                 }
@@ -402,7 +402,10 @@ private struct ChatWorkspaceCanvas: View {
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(ChatStyle.surface, in: RoundedRectangle(cornerRadius: 18)).padding(12)
     }
     private func permissionButton(_ permission: ChatPermission, _ option: ChatPermissionOption) -> some View {
-        Button(option.title, role: option.destructive ? .destructive : nil) { Task { await chat.decide(permission, option: option) } }.buttonStyle(.bordered).font(.subheadline)
+        VStack(alignment: .leading, spacing: 4) {
+            Button(option.title, role: option.destructive ? .destructive : nil) { Task { await chat.decide(permission, option: option) } }.buttonStyle(.bordered).font(.subheadline)
+            if let scope = option.scope { Text(scope).font(.caption2).foregroundStyle(ChatStyle.secondary).fixedSize(horizontal: false, vertical: true) }
+        }
     }
     private var voiceControls: some View {
         HStack(spacing: 12) {

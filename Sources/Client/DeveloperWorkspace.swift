@@ -23,21 +23,29 @@ struct DeveloperContextBar: View {
 struct ChatConfigurationBar: View {
     @ObservedObject var model: ChatWorkspaceModel
     var inline = false
+    @State private var policy: ChatConfigOption?
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(model.options) { option in
-                        Menu {
-                            Picker(option.name, selection: Binding(get: { option.value }, set: { value in Task { await model.configure(option, value: value) } })) {
-                                ForEach(option.choices) { choice in Text(choice.name).tag(choice.value) }
-                            }
-                        } label: {
-                            Label(option.choices.first(where: { $0.value == option.value })?.name ?? option.name,
-                                systemImage: option.category == "thought_level" ? "brain" : "cpu")
-                                .font(.caption).lineLimit(1)
-                                .foregroundStyle(option.category == "thought_level" ? ChatStyle.secondary : Color.primary)
-                        }.accessibilityLabel(option.name).accessibilityIdentifier("chatOption-" + option.id)
+                        if option.category == "mode" {
+                            Button { policy = option } label: {
+                                Label("Approvals: " + (option.choices.first { $0.value == option.value }?.name ?? option.name), systemImage: "hand.raised")
+                                    .font(.caption).lineLimit(1)
+                            }.accessibilityIdentifier("chatApprovalPolicy")
+                        } else {
+                            Menu {
+                                Picker(option.name, selection: Binding(get: { option.value }, set: { value in Task { await model.configure(option, value: value) } })) {
+                                    ForEach(option.choices) { choice in Text(choice.name).tag(choice.value) }
+                                }
+                            } label: {
+                                Label(option.choices.first(where: { $0.value == option.value })?.name ?? option.name,
+                                    systemImage: option.category == "thought_level" ? "brain" : "cpu")
+                                    .font(.caption).lineLimit(1)
+                                    .foregroundStyle(option.category == "thought_level" ? ChatStyle.secondary : Color.primary)
+                            }.accessibilityLabel(option.name).accessibilityIdentifier("chatOption-" + option.id)
+                        }
                     }
                     if model.configuring { ProgressView().controlSize(.mini) }
                 }.disabled(model.loading || model.responding || model.voiceEngaged || model.configuring)
@@ -48,7 +56,37 @@ struct ChatConfigurationBar: View {
                     Button("Retry settings") { Task { await model.refreshOptions() } }.font(.caption2).disabled(model.loading || model.responding)
                 }
             }
+            if !model.options.contains(where: { $0.category == "mode" }), model.selected != nil, !model.loading {
+                Text("Approval policy is managed by this provider. Requests still require your selection.").font(.caption2).foregroundStyle(ChatStyle.secondary)
+            }
         }.padding(.horizontal, inline ? 0 : 16).padding(.top, inline || (model.options.isEmpty && model.optionsError == nil) ? 0 : 10)
+            .sheet(item: $policy) { option in
+                NavigationStack {
+                    List {
+                        Section {
+                            if let detail = option.detail { Text(detail) }
+                            if option.id != "nocturne.approvalPolicy" {
+                                Text("Applies to this provider session in this chat. Provider restrictions and required interactive approvals still apply. Select a different mode here to change it back. Provider-saved rules must be revoked on your Mac.")
+                            }
+                            Text("Current: " + (option.choices.first { $0.value == option.value }?.name ?? option.value))
+                        }
+                        Section("Choose a policy") {
+                            ForEach(option.choices) { choice in
+                                Button {
+                                    policy = nil
+                                    Task { await model.configure(option, value: choice.value) }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text(choice.name)
+                                        if let detail = choice.detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                                    }.padding(.vertical, 4)
+                                }
+                            }
+                        }
+                    }.navigationTitle("Chat approval policy")
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { policy = nil } } }
+                }
+            }
     }
 }
 
