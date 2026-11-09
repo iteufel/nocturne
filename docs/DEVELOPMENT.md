@@ -4,11 +4,11 @@ Build and test Nocturne locally. For signed releases and TestFlight automation, 
 
 ## Build
 
-Targets iOS 17+ and macOS 14+ on an Apple Silicon Mac. Build with Rust 1.91+ (rustup), Xcode 27.1 or newer and Ruby's `xcodeproj` gem. The Duo bar integration uses public iOS 27.1 SDK APIs behind runtime availability checks.
+Targets iOS 17+ and macOS 15+ on an Apple Silicon Mac. Build with Rust 1.91+ (rustup), Xcode 27.1 or newer and Ruby's `xcodeproj` gem. The Duo bar integration uses public iOS 27.1 SDK APIs behind runtime availability checks.
 
 ```sh
 gem install xcodeproj -v 1.27.0
-brew install cmake pkgconf miniupnpc openssl@3
+brew install cmake pkgconf miniupnpc openssl@4
 ./scripts/bootstrap.sh
 open Nocturne.xcworkspace
 ```
@@ -34,7 +34,7 @@ For stable macOS permissions across local rebuilds, use your Apple Development i
 NOCTURNE_SIGNING_IDENTITY='Apple Development' NOCTURNE_DEVELOPMENT_TEAM='<your team ID>' ./scripts/build.sh mac
 ```
 
-Without these variables the build is ad-hoc signed; macOS may require renewed capture approval after it changes. No team identifier is committed to the projects.
+Without these variables the build is ad-hoc signed and is suitable for compile checks. Running the embedded engine requires a development or distribution identity shared by its libraries because hardened library validation remains enabled. macOS may require renewed capture approval after the signing identity changes. No team identifier is committed to the projects.
 
 The Mac product is `.build/XcodeMac/Build/Products/Debug/Nocturne.app`; the simulator client is `.build/Xcode/Build/Products/Debug-iphonesimulator/Nocturne.app`.
 
