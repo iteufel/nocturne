@@ -216,7 +216,10 @@ private final class HostSession {
                 result.capabilities = [permissions.files ? "files" : nil, permissions.terminal ? "terminal" : nil, pairStream != nil ? "streaming" : nil, displayCommand != nil ? "display" : nil, permissions.microphone ? MicrophoneFormat.capability : nil].compactMap { $0 }
                 if appWindows != nil { result.capabilities?.append(AppStreaming.capability) }
                 if desktop != nil { result.capabilities?.append(DesktopStreaming.capability) }
-                if simulators != nil { result.capabilities?.append(SimulatorStreaming.capability) }
+                if let simulators {
+                    result.capabilities?.append(SimulatorStreaming.capability)
+                    if simulators.supportsInput { result.capabilities?.append(SimulatorStreaming.inputCapability) }
+                }
                 if permissions.chats {
                     result.capabilities?.append(ChatProtocol.capability)
                     result.capabilities?.append(ChatVoice.capability)

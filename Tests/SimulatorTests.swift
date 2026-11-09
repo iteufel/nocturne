@@ -161,7 +161,10 @@ final class SimulatorTests: XCTestCase {
     func testInputFailsExplicitlyAndDoesNotAdvertiseTouchSupport() async throws {
         XCTAssertEqual(SimulatorStreaming.capability, "simulator-preview-v1")
         let manager = SimulatorSessionManager(backend: FixtureSimulator(devices: [booted()]))
-        do { _ = try await manager.handle(Packet(.simulatorInput), connection: UUID()); XCTFail("Invented input support") }
+        let owner = UUID()
+        let opened = try await manager.handle(opening(device), connection: owner)
+        XCTAssertFalse(manager.supportsInput)
+        do { _ = try await manager.handle(request(.simulatorInput, opened.sessionID), connection: owner); XCTFail("Invented input support") }
         catch { XCTAssertTrue(error.localizedDescription.contains("unavailable")) }
     }
     func testRetinaAndLetterboxGeometryAndAllOrientations() throws {
@@ -207,7 +210,7 @@ private actor FixtureSimulator: SimulatorBackend {
         }
         return list
     }
-    func frame(device: String) async throws -> SimulatorFrame {
+    func frame(device: String, session: String) async throws -> SimulatorFrame {
         captures += 1
         if delayed {
             do { try await Task.sleep(nanoseconds: 60_000_000_000) }

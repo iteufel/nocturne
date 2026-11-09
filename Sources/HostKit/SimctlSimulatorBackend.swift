@@ -27,7 +27,7 @@ public struct SimctlSimulatorBackend: SimulatorBackend {
         guard devices.count <= SimulatorStreaming.maximumDevices else { throw NocturneError.invalidFrame }
         return devices
     }
-    public func frame(device: String) async throws -> SimulatorFrame {
+    public func frame(device: String, session: String = "") async throws -> SimulatorFrame {
         guard UUID(uuidString: device) != nil else { throw NocturneError.invalidFrame }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("nocturne-simulator-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])

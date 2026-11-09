@@ -96,6 +96,7 @@ public struct Packet: Codable {
     public var simulators: [RemoteSimulator]? = nil
     public var simulatorID: String? = nil
     public var simulatorFrame: SimulatorFrame? = nil
+    public var simulatorTouch: SimulatorTouch? = nil
     public var audio: DesktopAudioFrame? = nil
     public init(_ operation: Operation, id: String = UUID().uuidString) { self.operation = operation; self.id = id }
     public func reply(error: String? = nil) -> Packet {

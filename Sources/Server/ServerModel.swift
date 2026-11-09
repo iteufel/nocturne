@@ -22,7 +22,7 @@ final class ServerModel: ObservableObject {
     private let engineExecutable: URL
     private let port: UInt16
     private let appWindows = AppWindowSessionManager(host: NativeAppWindowHost())
-    private let simulators = SimulatorSessionManager(backend: SimctlSimulatorBackend())
+    private let simulators = SimulatorSessionManager(backend: NativeSimulatorBackend())
     private let desktop = DesktopSessionManager(host: NativeDesktopHost())
     @Published private(set) var running = false
     @Published private(set) var starting = false
