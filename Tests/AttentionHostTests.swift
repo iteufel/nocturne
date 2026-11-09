@@ -50,7 +50,8 @@ final class AttentionHostTests: XCTestCase {
     func testProviderRestrictedDecisionsCannotBeExpandedByClient() async throws {
         try await start("restricted")
         let permission = try XCTUnwrap(events.compactMap(\.permission).first)
-        XCTAssertEqual(permission.options.map(\.id), ["decline"])
+        XCTAssertEqual(permission.options.map(\.id), ["decline", "cancel"])
+        XCTAssertEqual(permission.options.filter { $0.action != nil }.map(\.id), ["decline"], "Stop turn is an in-app choice, not a notification grant")
         XCTAssertThrowsError(try agent.approve(permission.id, option: "accept", session: "thread"))
         try agent.approve(permission.id, option: "decline", session: "thread")
         try await wait { FileManager.default.fileExists(atPath: self.responseFile.path) }

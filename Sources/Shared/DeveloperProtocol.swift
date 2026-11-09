@@ -10,8 +10,9 @@ public enum DeveloperProtocol {
 public struct ChatConfigChoice: Codable, Equatable, Identifiable {
     public let value: String
     public let name: String
+    public let detail: String?
     public var id: String { value }
-    public init(_ value: String, name: String) { self.value = value; self.name = name }
+    public init(_ value: String, name: String, detail: String? = nil) { self.value = value; self.name = name; self.detail = detail }
 }
 public struct ChatConfigOption: Codable, Equatable, Identifiable {
     public let id: String
@@ -19,8 +20,9 @@ public struct ChatConfigOption: Codable, Equatable, Identifiable {
     public let category: String?
     public var value: String
     public let choices: [ChatConfigChoice]
-    public init(id: String, name: String, category: String? = nil, value: String, choices: [ChatConfigChoice]) {
-        self.id = id; self.name = name; self.category = category; self.value = value; self.choices = choices
+    public let detail: String?
+    public init(id: String, name: String, category: String? = nil, value: String, choices: [ChatConfigChoice], detail: String? = nil) {
+        self.id = id; self.name = name; self.category = category; self.value = value; self.choices = choices; self.detail = detail
     }
 }
 public struct GitWorktree: Codable, Equatable, Identifiable {
