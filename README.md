@@ -41,4 +41,6 @@ The Mac desktop matches its viewer window by default, including Retina resolutio
 
 GPL-3.0. Nocturne is an independent project built using the Moonlight iOS client, Sunshine, and SwiftTerm. See [third-party notices](THIRD_PARTY_NOTICES.md) and [LICENSE](LICENSE).
 
+Paired devices can open a private browser rendered on their Mac from the chat toolbar. See [Browser on Mac](docs/host-browser.md) for setup, traffic guarantees and current interaction limits.
+
 View and control a running iOS simulator from Apps → Simulator. The Mac requires Xcode 27 or newer; see [support and verification](docs/SIMULATOR.md).

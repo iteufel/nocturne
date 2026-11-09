@@ -8,6 +8,7 @@ public struct ServerSettings: Equatable {
     public var terminal: Bool
     public var files: Bool
     public var microphone: Bool
+    public var browser: Bool
     public var chats: Bool
     public var simulators: Bool
     public var sharedFolder: URL
@@ -16,7 +17,7 @@ public struct ServerSettings: Equatable {
     public var disablePhysicalDisplays: Bool
     public var remoteAccess: Bool
     public var brokerURL: String
-    public var hasEnabledServices: Bool { screenSharing || terminal || files || microphone || chats || simulators }
+    public var hasEnabledServices: Bool { screenSharing || terminal || files || microphone || chats || browser || simulators }
 
     public init(defaults: UserDefaults = .standard) {
         screenSharing = defaults.object(forKey: "allowScreenSharing") == nil || defaults.bool(forKey: "allowScreenSharing")
@@ -24,6 +25,7 @@ public struct ServerSettings: Equatable {
         files = defaults.bool(forKey: "allowFiles")
         microphone = defaults.bool(forKey: "allowMicrophone")
         chats = defaults.bool(forKey: "allowChats")
+        browser = defaults.bool(forKey: "allowBrowser")
         simulators = defaults.bool(forKey: "allowSimulatorPreview")
         sharedFolder = defaults.string(forKey: "sharedFolder").map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Nocturne Shared", isDirectory: true)
@@ -50,6 +52,7 @@ public struct ServerSettings: Equatable {
         defaults.set(files, forKey: "allowFiles")
         defaults.set(microphone, forKey: "allowMicrophone")
         defaults.set(chats, forKey: "allowChats")
+        defaults.set(browser, forKey: "allowBrowser")
         defaults.set(simulators, forKey: "allowSimulatorPreview")
         defaults.set(sharedFolder.path, forKey: "sharedFolder")
         defaults.set(display, forKey: "streamDisplay")

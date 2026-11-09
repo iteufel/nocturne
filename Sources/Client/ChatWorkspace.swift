@@ -50,7 +50,7 @@ private struct ChatVerticalBarEnvironment<Content: View>: View {
 
 private enum ChatWorkspaceMode { case threads, pullRequests }
 private enum ChatWorkspaceSheet: String, Identifiable {
-    case worktrees, changes, terminal, files, git, prEditor
+    case browser, worktrees, changes, terminal, files, git, prEditor
     var id: String { rawValue }
 }
 
@@ -68,6 +68,8 @@ private struct ChatWorkspaceCanvas: View {
     @State private var mode = ChatWorkspaceMode.threads
     @State private var sidebar: Bool
     @State private var sheet: ChatWorkspaceSheet?
+    @State private var browserVisible = false
+    @State private var browserPanelAvailable = false
     @State private var importing = false
     @State private var selectedPRURL: String?
     @State private var prHelper: ChatPRHelper?
@@ -91,14 +93,22 @@ private struct ChatWorkspaceCanvas: View {
                 HStack(spacing: 0) {
                     if wide, sidebar { side(wide: true).frame(width: sidebarWidth) }
                     main(wide: wide).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if browserVisible {
+                        Divider()
+                        BrowserWorkspace(connection: connection) { browserVisible = false }
+                            .frame(width: min(560, geometry.size.width * 0.52))
+                    }
                 }
                 if !wide, sidebar {
                     ChatStyle.canvas.opacity(0.55).ignoresSafeArea().onTapGesture { sidebar = false }
                     side(wide: false).frame(width: min(340, geometry.size.width - 44)).transition(.move(edge: .leading)).shadow(color: .black.opacity(0.35), radius: 24)
                 }
             }.animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: sidebar)
-                .onAppear { if wide { sidebar = true } }
-                .onChange(of: wide) { _, value in sidebar = value }
+                .onAppear { browserPanelAvailable = wide; if wide { sidebar = true } }
+                .onChange(of: wide) { _, value in
+                    browserPanelAvailable = value; sidebar = value
+                    if !value, browserVisible { browserVisible = false; sheet = .browser }
+                }
         }
         .background(ChatStyle.canvas.ignoresSafeArea()).environment(\.colorScheme, darkChat ? .dark : systemScheme).preferredColorScheme(darkChat ? .dark : nil).tint(ChatStyle.blue)
         .navigationTitle(usesSystemBar ? "" : "Chats")
@@ -118,6 +128,7 @@ private struct ChatWorkspaceCanvas: View {
     }
     @ViewBuilder private func sheetContent(_ destination: ChatWorkspaceSheet) -> some View {
         switch destination {
+        case .browser: BrowserWorkspace(connection: connection) { sheet = nil }
         case .worktrees: DeveloperWorktreesView(model: project)
         case .changes: NavigationStack { DeveloperProjectPane(model: project, tab: .changes).navigationTitle("Review changes").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { sheet = nil } } } }
         case .terminal: NavigationStack { TerminalWorkspace(connection: connection, connect: {}).navigationTitle("Terminal").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { sheet = nil } } } }
@@ -244,6 +255,9 @@ private struct ChatWorkspaceCanvas: View {
             }
         }.visibilityPriority(.high)
         ToolbarItemGroup(placement: .topBarTrailing) {
+            Button("Browser on Mac", systemImage: "globe") { openBrowser(wide: browserPanelAvailable) }
+                .disabled(!connection.capabilities.contains(BrowserProtocol.capability))
+                .accessibilityIdentifier("chatBrowserOpen")
             if mode == .threads, chat.selected != nil, chat.selected?.isSupervisor != true {
                 Button("Terminal", systemImage: "terminal") { composing = false; sheet = .terminal }.disabled(!connection.capabilities.contains("terminal"))
                 Menu { gitActions } label: { Label("Git tools", systemImage: "point.topleft.down.curvedto.point.bottomright.up") }.accessibilityIdentifier("chatGitTools")
@@ -262,13 +276,20 @@ private struct ChatWorkspaceCanvas: View {
             ChatSettingsActions(chat: chat, darkChat: $darkChat, saveDraft: saveDraft, exit: exit)
         }
     }
-    private func toggleSidebar() { composing = false; sidebar.toggle() }
+    private func toggleSidebar() { composing = false; sidebar.toggle(); if sidebar { browserVisible = false } }
     private func showPullRequests() {
         composing = false; mode = .pullRequests; sidebar = true
         if inbox.items.isEmpty { Task { await inbox.refresh() } }
     }
+    private func openBrowser(wide: Bool) {
+        composing = false
+        if wide { sidebar = false; browserVisible.toggle() } else { sheet = .browser }
+    }
     private func tools(wide: Bool) -> some View {
         VStack(spacing: 14) {
+            ChatCircleButton(title: "Browser on Mac", symbol: "globe", selected: browserVisible) { openBrowser(wide: wide) }
+                .disabled(!connection.capabilities.contains(BrowserProtocol.capability)).modifier(ChatGlass())
+                .accessibilityIdentifier("chatBrowserOpen")
             if mode == .threads {
                 ChatCircleButton(title: "New thread", symbol: "square.and.pencil") { newThread(wide: wide) }.modifier(ChatGlass()).disabled(locked || chat.provider?.available != true)
             } else if project.selectedPR != nil, selectedPRURL != nil {

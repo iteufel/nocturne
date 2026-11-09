@@ -14,6 +14,11 @@ private struct ChatProviderSettingsView: View {
                     subtitle: "Let paired devices read and continue agent conversations. This switch applies immediately; agents can use files and tools on this Mac.")
             }.toggleStyle(.switch)
             Divider()
+            Toggle(isOn: $model.browserEnabled) {
+                FeatureRow(icon: "globe", title: "Browser on Mac",
+                    subtitle: "Let paired users explicitly open private web sessions using this Mac’s network, including localhost and LAN services. Disabling closes sessions immediately. Reconnect devices after enabling.")
+            }.toggleStyle(.switch)
+            Divider()
             Text("Chat providers").font(.headline)
             ForEach(model.chatAgents) { agent in
                 HStack {
