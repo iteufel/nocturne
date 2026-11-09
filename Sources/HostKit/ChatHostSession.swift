@@ -144,7 +144,7 @@ public final class ChatHostSession {
             }
             else {
                 guard let permission = request.permissionID, let option = request.optionID else { throw NocturneError.invalidFrame }
-                try agent.approve(permission, option: option)
+                try agent.approve(permission, option: option, session: id)
             }
             return reply
         }

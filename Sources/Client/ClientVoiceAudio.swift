@@ -13,6 +13,7 @@ protocol VoiceAudioDevice: AnyObject {
     func answer(_ sdp: String) async throws
     func setMuted(_ value: Bool)
     func reactivate() throws
+    func systemAudioActivation(_ active: Bool)
     func stop()
 }
 
@@ -25,7 +26,7 @@ final class ClientVoiceAudio: VoiceAudioDevice {
 
     func start() async throws -> VoiceAudioOffer {
         stop()
-        let offer = try await peer.offer()
+        let offer = try await peer.offer(systemManagedAudio: true)
         let stream = AsyncStream<VoicePeerEvent>.makeStream(bufferingPolicy: .bufferingNewest(32))
         continuation = stream.continuation
         eventTask = Task { [weak self] in
@@ -44,6 +45,7 @@ final class ClientVoiceAudio: VoiceAudioDevice {
         })
         return VoiceAudioOffer(sdp: offer.sdp, events: stream.stream)
     }
+    func systemAudioActivation(_ active: Bool) { peer.systemAudioActivation(active) }
     func answer(_ sdp: String) async throws { try await peer.answer(sdp) }
     func setMuted(_ value: Bool) { peer.setMuted(value) }
     func reactivate() throws { try peer.reactivateAudio() }

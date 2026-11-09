@@ -22,7 +22,8 @@ with tempfile.TemporaryDirectory(prefix='simulator-tests-', dir=root / '.build')
     for path in (kit, host, tests):
         path.mkdir(parents=True)
     shared = ['Protocol', 'AppStreaming', 'DesktopStreaming', 'StreamDisplaySize',
-              'ChatProtocol', 'ChatVoice', 'ChatSupervisor', 'DeveloperProtocol',
+              'ChatProtocol', 'ChatPermission', 'AgentAttention', 'NocturneError',
+              'ChatVoice', 'ChatSupervisor', 'DeveloperProtocol',
               'SimulatorStreaming']
     for name in shared:
         shutil.copy2(root / f'Sources/Shared/{name}.swift', kit)
