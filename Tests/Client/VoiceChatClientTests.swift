@@ -159,7 +159,9 @@ final class VoiceChatClientTests: XCTestCase {
         audio.emit(.connected); try await waitUntil { voice.active }
     }
     func testBackgroundKeepsWebRTCAudioAliveUntilHangup() async throws {
-        XCTAssertTrue((Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String])?.contains("audio") == true)
+        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
+        XCTAssertTrue(modes.contains("audio"))
+        XCTAssertTrue(modes.contains("voip"), "CallKit requires the voip background mode to accept outgoing calls")
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
         let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }); defer { voice.stop() }
         voice.start(); try await waitUntil { voice.active }; let stops = audio.stops

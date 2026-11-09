@@ -1,6 +1,6 @@
 # iOS agent calls
 
-Voice sessions started in Nocturne are outgoing CallKit VoIP calls to **Nocturne Agent**. The existing paired-Mac signaling and Codex WebRTC media remain the transport; these are not cellular/PSTN calls. No default-calling-app or CarPlay entitlement is added. The existing microphone permission and audio background mode are retained.
+Voice sessions started in Nocturne are outgoing CallKit VoIP calls to **Nocturne Agent**. The existing paired-Mac signaling and Codex WebRTC media remain the transport; these are not cellular/PSTN calls. No default-calling-app or CarPlay entitlement is added. Microphone permission and both `audio` and `voip` background modes are required. Without `voip` in `UIBackgroundModes`, CallKit rejects the outgoing start transaction with `com.apple.CallKit.error.requesttransaction` error 1 (`unentitled`), even when the app is in the foreground.
 
 `ClientVoiceCall` maps CallKit start/end/mute actions onto `ClientVoiceChat`. The app mute control requests the same system mute action, and the delegate changes the actual WebRTC audio track before fulfilling it. System hangup stops local media immediately, sends the existing voice-stop request and closes the dedicated voice connection. Host disconnects, provider resets, action failures/timeouts and media errors remove the system call as well. A new call is blocked while CallKit still has an active/ending call.
 
@@ -26,7 +26,7 @@ Apple supports background/locked-device incoming VoIP ringing through **PushKit 
 
 ## Verification
 
-The added `VoiceChatClientTests` fixtures cover system activation gating, real track mute delegation, system hangup/server stop, rejection before server voice start, deactivation/provider failure, busy-call guards and cancellation while awaiting desktop teardown. Existing voice fixtures inject a system-call fake, so tests do not place calls or record audio.
+The added `VoiceChatClientTests` fixtures cover system activation gating, real track mute delegation, system hangup/server stop, rejection before server voice start, deactivation/provider failure, busy-call guards and cancellation while awaiting desktop teardown. The background-audio fixture also checks that the built app bundle declares both required background modes. `python3 scripts/tests/test-build-orchestration.py` checks the source plist in CI without needing a simulator. Existing voice fixtures inject a system-call fake, so tests do not place calls or record audio.
 
 On 2026-10-28, the three iOS voice client files and `CodexVoicePeer` passed Swift type checking/module compilation against the real shared sources, the installed iOS 27.0 SDK and the pinned checksum-verified WebRTC 155 framework. The CallKit delegate compiles without concurrency warnings. A standalone simulator harness then passed **22 loopback TLS voice fixtures**, including all six added lifecycle tests. It compiled the real shared sources and voice state machine, used the test audio/system-call adapters, replaced only the streaming bridge identity helper with a disposable test identity, and supplied aborting native-WAN stubs (that path was not exercised). The app UI/screenshot portion and complete `ClientModel` suspension test were excluded from that standalone harness. This verifies state/signaling behavior, not actual CallKit service callbacks or WebRTC audio I/O.
 
@@ -34,9 +34,10 @@ The complete app build and normal Xcode test bundle execution are not verified: 
 
 Before release, run the iOS voice fixture suite under the supported toolchain, then test on an iPhone: start/lock/end and mute from both app and system UI; deny microphone permission; disconnect Mac/network during startup and active audio; interrupt with another call; reset audio services; connect/disconnect wired and Bluetooth HFP routes; close a desktop stream before starting voice; repeat rapid start/end and background transitions. Verify car display/controls only on the intended vehicle. Do not infer hardware behavior from fixture results.
 
-## Apple references (checked 2026-10-28)
+## Apple references
 
 - [Making and receiving VoIP calls](https://developer.apple.com/documentation/callkit/making-and-receiving-voip-calls) — outgoing actions and system audio activation.
+- [Unentitled transactions](https://developer.apple.com/documentation/callkit/cxerrorcoderequesttransactionerror-swift.struct/code/unentitled) — the required `voip` background mode for CallKit transactions.
 - [CXProviderDelegate](https://developer.apple.com/documentation/callkit/cxproviderdelegate) — system end/mute/reset and activation callbacks.
 - [Bluetooth HFP category option](https://developer.apple.com/documentation/avfaudio/avaudiosession/categoryoptions-swift.struct/allowbluetoothhfp) and [voiceChat](https://developer.apple.com/documentation/avfaudio/avaudiosession/mode-swift.struct/voicechat) — duplex voice routing.
 - [Supporting PushKit notifications](https://developer.apple.com/documentation/pushkit/supporting-pushkit-notifications-in-your-app) — entitlement, device tokens and server requirements.
