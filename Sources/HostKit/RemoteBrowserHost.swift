@@ -71,6 +71,10 @@ private final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate {
     private let window: NSWindow
     private var page = UUID().uuidString
     private var notice: String?
+    private var noticeIsHostMessage = false
+    private func setNotice(_ value: String?, hostMessage: Bool = true) {
+        notice = value; noticeIsHostMessage = value != nil && hostMessage
+    }
     private var lastActivity: Date
     private let now: @MainActor @Sendable () -> Date
     private var lease: Timer?
@@ -125,10 +129,10 @@ private final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate {
         case .open, .frame: break
         case .navigate:
             let url = try BrowserProtocol.destination(command.value ?? "")
-            page = UUID().uuidString; notice = nil
+            page = UUID().uuidString; setNotice(nil)
             webView.load(URLRequest(url: url))
         case .back, .forward, .reload:
-            try current(command); page = UUID().uuidString; notice = nil
+            try current(command); page = UUID().uuidString; setNotice(nil)
             if command.action == .back { webView.goBack() }
             else if command.action == .forward { webView.goForward() }
             else { webView.reload() }
@@ -168,7 +172,7 @@ private final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate {
         }
         guard !closed else { throw NocturneError.disconnected }
         if webView.url == nil {
-            return BrowserFrame(page: page, url: "", title: "Browser on Mac", canGoBack: false, canGoForward: false, loading: webView.isLoading, notice: notice)
+            return BrowserFrame(page: page, url: "", title: "Browser on Mac", canGoBack: false, canGoForward: false, loading: webView.isLoading, notice: notice, noticeIsHostMessage: noticeIsHostMessage)
         }
         // At most one snapshot per session; no unbounded image queue behind a slow client.
         let snapshotPage = page
@@ -184,7 +188,7 @@ private final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate {
             }
         }
         return BrowserFrame(page: snapshotPage, url: String((webView.url?.absoluteString ?? "").prefix(8_192)), title: String((webView.title ?? "Browser on Mac").prefix(512)),
-            canGoBack: webView.canGoBack, canGoForward: webView.canGoForward, loading: webView.isLoading, notice: notice.map { String($0.prefix(2_048)) }, jpeg: jpeg)
+            canGoBack: webView.canGoBack, canGoForward: webView.canGoForward, loading: webView.isLoading, notice: notice.map { String($0.prefix(2_048)) }, jpeg: jpeg, noticeIsHostMessage: noticeIsHostMessage)
     }
     private func current(_ command: BrowserCommand) throws {
         guard command.page == page, !webView.isLoading else { throw NocturneError.remote("The page changed. Wait for its next frame before interacting.") }
@@ -194,15 +198,15 @@ private final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate {
         let scheme = url.scheme?.lowercased() ?? ""
         let localDocument = navigationAction.targetFrame?.isMainFrame == false && ["about", "data", "blob"].contains(scheme)
         guard (try? BrowserProtocol.destination(url.absoluteString)) != nil || localDocument else {
-            notice = "Only HTTP and HTTPS navigation is allowed. External apps and downloads are blocked."
+            setNotice("Only HTTP and HTTPS navigation is allowed. External apps and downloads are blocked.")
             decisionHandler(.cancel); return
         }
-        if navigationAction.shouldPerformDownload { notice = "Downloads are disabled."; decisionHandler(.cancel); return }
+        if navigationAction.shouldPerformDownload { setNotice("Downloads are disabled."); decisionHandler(.cancel); return }
         if navigationAction.targetFrame == nil {
             // User-triggered target=_blank stays in this private session. Never NSWorkspace.open.
             decisionHandler(.cancel)
             if navigationAction.navigationType == .linkActivated { webView.load(navigationAction.request) }
-            else { notice = "Pop-up blocked." }
+            else { setNotice("Pop-up blocked.") }
             return
         }
         if navigationAction.targetFrame?.isMainFrame == true { page = UUID().uuidString }
@@ -211,23 +215,23 @@ private final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if !navigationResponse.canShowMIMEType ||
             (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition")?.lowercased().contains("attachment") == true {
-            notice = "Downloads are disabled."; decisionHandler(.cancel)
+            setNotice("Downloads are disabled."); decisionHandler(.cancel)
         } else { decisionHandler(.allow) }
     }
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { page = UUID().uuidString }
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { page = UUID().uuidString }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { notice = error.localizedDescription }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { notice = error.localizedDescription }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { setNotice(error.localizedDescription, hostMessage: false) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { setNotice(error.localizedDescription, hostMessage: false) }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { close() }
     func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         // Retain normal certificate validation; never use the Mac's saved HTTP/client-certificate credentials.
         completionHandler(challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust ? .performDefaultHandling : .cancelAuthenticationChallenge, nil)
     }
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? { nil }
-    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) { notice = "File uploads are disabled."; completionHandler(nil) }
-    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) { notice = String(message.prefix(512)); completionHandler() }
-    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) { notice = "Page confirmation blocked."; completionHandler(false) }
-    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) { notice = "Page prompt blocked."; completionHandler(nil) }
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) { setNotice("File uploads are disabled."); completionHandler(nil) }
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) { setNotice(String(message.prefix(512)), hostMessage: false); completionHandler() }
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) { setNotice("Page confirmation blocked."); completionHandler(false) }
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) { setNotice("Page prompt blocked."); completionHandler(nil) }
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) { decisionHandler(.deny) }
     @available(macOS 27.0, *)
     func webView(_ webView: WKWebView, requestGeolocationPermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping (WKPermissionDecision) -> Void) { decisionHandler(.deny) }

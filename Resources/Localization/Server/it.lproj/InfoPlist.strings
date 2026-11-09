@@ -1,0 +1,4 @@
+"NSLocalNetworkUsageDescription" = "Connettiti direttamente a Mac, iPhone e iPad abbinati per lo streaming.";
+"NSMicrophoneUsageDescription" = "Acquisisci audio quando è selezionato un microfono o una sorgente audio loopback.";
+"NSScreenCaptureUsageDescription" = "Trasmetti lo schermo di questo Mac ai dispositivi abbinati.";
+"NSAudioCaptureUsageDescription" = "Includi l’audio del Mac nello streaming.";

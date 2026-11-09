@@ -1,0 +1,5 @@
+"NSLocalNetworkUsageDescription" = "Find your computers and connect directly for streaming, terminal access, and file transfer.";
+"NSCameraUsageDescription" = "Scan the pairing QR code displayed by Nocturne on your Mac.";
+"NSBluetoothAlwaysUsageDescription" = "Connect compatible Bluetooth mice and accessories to Nocturne.";
+"NSMicrophoneUsageDescription" = "Talk with Codex in live voice chats, or send your microphone to your paired Mac for Discord and games when you unmute a stream.";
+"NSBluetoothPeripheralUsageDescription" = "Connect compatible Bluetooth mice and accessories to Nocturne.";

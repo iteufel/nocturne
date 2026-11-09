@@ -20,7 +20,7 @@ private final class MicrophoneEncoder {
         guard !failed else { return }
         do { try converter.convert(buffer) { continuation.yield(.pcm($0)) } }
         catch {
-            failed = true; continuation.yield(.failed(error.localizedDescription))
+            failed = true; continuation.yield(.failed(NocturneLocalization.message(error.localizedDescription)))
         }
     }
 }
@@ -29,7 +29,7 @@ private final class MicrophoneEncoder {
 final class ClientMicrophone: ObservableObject {
     @Published private(set) var active = false
     @Published private(set) var starting = false
-    @Published private(set) var inputName = "Microphone"
+    @Published private(set) var inputName = L("Microphone")
     @Published private(set) var error: String?
     private var generation = UUID()
     private var connection: WorkspaceConnection?
@@ -57,11 +57,11 @@ final class ClientMicrophone: ObservableObject {
             do {
                 let allowed = await AVAudioApplication.requestRecordPermission()
                 guard self.generation == epoch, !Task.isCancelled else { return }
-                guard allowed else { throw NocturneError.remote("Allow microphone access in iOS Settings → Nocturne to use voice chat.") }
+                guard allowed else { throw NocturneError.remote(L("Allow microphone access in iOS Settings → Nocturne to use voice chat.")) }
                 try await connection.connect(invitation, restoreTerminalSessions: false)
                 guard self.generation == epoch, !Task.isCancelled else { connection.disconnect(); return }
                 guard connection.capabilities.contains(MicrophoneFormat.capability) else {
-                    throw NocturneError.remote("Enable Client microphone in Nocturne → Sharing, then reconnect.")
+                    throw NocturneError.remote(L("Enable Client microphone in Nocturne → Sharing, then reconnect."))
                 }
                 let reply = try await connection.request(Packet(.microphoneStart), timeout: 5)
                 guard self.generation == epoch, !Task.isCancelled else { connection.disconnect(); return }
@@ -73,12 +73,12 @@ final class ClientMicrophone: ObservableObject {
                     guard state == .disconnected else { return }
                     Task { @MainActor in
                         guard let self, self.generation == epoch else { return }
-                        self.fail("Microphone disconnected. Unmute to reconnect.", epoch: epoch)
+                        self.fail(L("Microphone disconnected. Unmute to reconnect."), epoch: epoch)
                     }
                 }
             } catch {
                 guard self.generation == epoch else { return }
-                self.fail(error.localizedDescription, epoch: epoch)
+                self.fail(NocturneLocalization.message(error.localizedDescription), epoch: epoch)
             }
         }
     }
@@ -95,8 +95,8 @@ final class ClientMicrophone: ObservableObject {
         try engine.inputNode.setVoiceProcessingEnabled(true)
         engine.inputNode.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
         let input = engine.inputNode.outputFormat(forBus: 0)
-        guard input.sampleRate > 0, input.channelCount > 0 else { throw NocturneError.remote("Connect a microphone to this device and try again.") }
-        inputName = session.currentRoute.inputs.first?.portName ?? "Microphone"
+        guard input.sampleRate > 0, input.channelCount > 0 else { throw NocturneError.remote(L("Connect a microphone to this device and try again.")) }
+        inputName = session.currentRoute.inputs.first?.portName ?? L("Microphone")
         // Some input routes deliver a 100 ms tap despite the requested buffer size.
         let events = AsyncStream<MicrophoneCaptureEvent>.makeStream(bufferingPolicy: .bufferingNewest(MicrophoneFormat.maximumInFlight))
         continuation = events.continuation
@@ -119,26 +119,26 @@ final class ClientMicrophone: ObservableObject {
                 do { try await Task.sleep(nanoseconds: 500_000_000) } catch { return }
                 guard let self, self.generation == epoch else { return }
                 if ProcessInfo.processInfo.systemUptime - self.lastCapture >= MicrophoneFormat.timeout {
-                    self.fail("Microphone capture stopped. Unmute to try again.", epoch: epoch); return
+                    self.fail(L("Microphone capture stopped. Unmute to try again."), epoch: epoch); return
                 }
             }
         }
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: session, queue: .main) { [weak self] notification in
             guard notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt == AVAudioSession.InterruptionType.began.rawValue else { return }
-            Task { @MainActor in self?.fail("Microphone interrupted. Unmute when you’re ready.", epoch: epoch) }
+            Task { @MainActor in self?.fail(L("Microphone interrupted. Unmute when you’re ready."), epoch: epoch) }
         })
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: session, queue: .main) { [weak self] notification in
             guard let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
                   [AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue, AVAudioSession.RouteChangeReason.newDeviceAvailable.rawValue].contains(reason) else { return }
-            Task { @MainActor in self?.fail("Audio device changed. Unmute to use the new microphone.", epoch: epoch) }
+            Task { @MainActor in self?.fail(L("Audio device changed. Unmute to use the new microphone."), epoch: epoch) }
         })
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: session, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.fail("Audio restarted. Unmute to reconnect your microphone.", epoch: epoch) }
+            Task { @MainActor in self?.fail(L("Audio restarted. Unmute to reconnect your microphone."), epoch: epoch) }
         })
         observers.append(NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self, weak engine] _ in
             Task { @MainActor in
                 guard let self, let engine, self.generation == epoch, !engine.isRunning else { return }
-                self.fail("Audio configuration changed. Unmute to reconnect your microphone.", epoch: epoch)
+                self.fail(L("Audio configuration changed. Unmute to reconnect your microphone."), epoch: epoch)
             }
         })
     }
@@ -153,7 +153,7 @@ final class ClientMicrophone: ObservableObject {
         var packet = Packet(.microphoneAudio); packet.sessionID = lease; packet.offset = sequence; packet.data = pcm
         Task { [weak self] in
             do { _ = try await connection.request(packet, timeout: 1) }
-            catch { self?.fail(error.localizedDescription, epoch: epoch) }
+            catch { self?.fail(NocturneLocalization.message(error.localizedDescription), epoch: epoch) }
             guard let self, self.generation == epoch else { return }
             self.inFlight -= 1
         }
@@ -177,6 +177,6 @@ final class ClientMicrophone: ObservableObject {
     }
     private func fail(_ message: String, epoch: UUID) {
         guard generation == epoch else { return }
-        stop(); error = message
+        stop(); error = NocturneLocalization.message(message)
     }
 }

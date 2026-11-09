@@ -24,19 +24,19 @@ struct TerminalWorkspace: View {
                     }
                 }.padding(.horizontal, 8).padding(.bottom, 8)
             } else if connection.state == .connecting {
-                Spacer(); ProgressView("Restoring your terminals…"); Spacer()
+                Spacer(); ProgressView(L("Restoring your terminals…")); Spacer()
             } else if connection.state != .connected {
-                ServerEmptyView(icon: "terminal", title: "Pick up where\nyou left off.", detail: "Connect to your Mac to open a shell or return to your running terminals.", action: connect)
+                ServerEmptyView(icon: "terminal", title: L("Pick up where\nyou left off."), detail: L("Connect to your Mac to open a shell or return to your running terminals."), action: connect)
             } else if !connection.capabilities.contains("terminal") {
-                ContentUnavailableView("Allow terminal access", systemImage: "terminal", description: Text("Enable Terminal in Nocturne on your Mac, then reconnect."))
+                ContentUnavailableView(L("Allow terminal access"), systemImage: "terminal", description: Text(L("Enable Terminal in Nocturne on your Mac, then reconnect.")))
             } else {
                 Spacer()
                 Image(systemName: "terminal").font(.system(size: 40, weight: .ultraLight)).foregroundStyle(MoonStyle.accent)
-                Text("At your command").font(.system(size: 24, weight: .semibold, design: .rounded)).padding(.top, 12)
-                Text("Your shells keep running on your Mac when you leave.")
+                Text(L("At your command")).font(.system(size: 24, weight: .semibold, design: .rounded)).padding(.top, 12)
+                Text(L("Your shells keep running on your Mac when you leave."))
                     .font(.subheadline).foregroundStyle(MoonStyle.secondary).multilineTextAlignment(.center).padding(.horizontal, 28).padding(.top, 5)
                 Button(action: openTerminal) {
-                    HStack { if opening { ProgressView() }; Text(opening ? "Opening…" : "Open terminal") }
+                    HStack { if opening { ProgressView() }; Text(opening ? L("Opening…") : L("Open terminal")) }
                 }.buttonStyle(PrimaryButtonStyle()).disabled(opening).padding(.top, 22)
                 Spacer()
             }
@@ -50,8 +50,8 @@ struct TerminalWorkspace: View {
             Circle().fill(connection.state == .connected ? MoonStyle.mint : MoonStyle.secondary).frame(width: 6, height: 6)
             Text(connection.name).lineLimit(1)
             Spacer(minLength: 4)
-            if connection.state == .connecting { ProgressView().controlSize(.small); Text("Reconnecting…") }
-            else if connection.state == .disconnected { Button("Reconnect", action: connect).buttonStyle(.borderless) }
+            if connection.state == .connecting { ProgressView().controlSize(.small); Text(L("Reconnecting…")) }
+            else if connection.state == .disconnected { Button(L("Reconnect"), action: connect).buttonStyle(.borderless) }
             else { Image(systemName: "lock.fill").font(.system(size: 10)) }
         }.font(.system(size: 12, weight: .medium)).foregroundStyle(MoonStyle.secondary)
             .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 4)
@@ -76,17 +76,17 @@ struct TerminalWorkspace: View {
             Button(action: openTerminal) {
                 if opening { ProgressView().frame(width: 28, height: 28) }
                 else { Image(systemName: "plus").frame(width: 28, height: 28) }
-            }.buttonStyle(NocturneGlassButtonStyle()).accessibilityLabel("New terminal")
+            }.buttonStyle(NocturneGlassButtonStyle()).accessibilityLabel(L("New terminal"))
                 .disabled(opening || connection.state != .connected || connection.terminals.count >= WorkspaceProtocol.maximumTerminals)
         }.padding(.horizontal, 10).padding(.bottom, 4)
     }
     private func openTerminal() {
         opening = true; error = nil
-        Task { defer { opening = false }; do { try await connection.openTerminal() } catch { self.error = error.localizedDescription } }
+        Task { defer { opening = false }; do { try await connection.openTerminal() } catch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
     private func closeTerminal(_ id: String) {
         closing.insert(id); error = nil
-        Task { defer { closing.remove(id) }; do { try await connection.closeTerminal(id) } catch { self.error = error.localizedDescription } }
+        Task { defer { closing.remove(id) }; do { try await connection.closeTerminal(id) } catch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
 }
 
@@ -104,10 +104,10 @@ private struct TerminalTabButton: View {
                     Text(tab.info.name).lineLimit(1)
                 }.padding(.leading, 14).padding(.trailing, 6).frame(minHeight: 44).contentShape(Rectangle())
             }.accessibilityAddTraits(selected ? [.isSelected] : [])
-                .accessibilityLabel(tab.info.name + (tab.info.running ? "" : ", ended"))
+                .accessibilityLabel(tab.info.name + (tab.info.running ? "" : L(", ended")))
             Button(action: close) {
                 Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).frame(width: 36, height: 44).contentShape(Rectangle())
-            }.disabled(!canClose).accessibilityLabel("Close " + tab.info.name)
+            }.disabled(!canClose).accessibilityLabel(L("Close %@", tab.info.name))
         }.buttonStyle(.plain).font(.system(size: 12, weight: selected ? .semibold : .medium))
             .foregroundStyle(selected ? MoonStyle.accent : MoonStyle.secondary)
             .background(selected ? MoonStyle.accent.opacity(0.13) : .clear, in: Capsule())
@@ -126,9 +126,9 @@ private struct TerminalPane: View {
             TerminalSurface(connection: connection, tab: tab, active: selected && connection.state == .connected && tab.info.running, reportError: reportError)
                 .padding(10).frame(maxWidth: .infinity, maxHeight: .infinity)
             if !tab.info.running {
-                Text("Session ended").font(.caption).foregroundStyle(MoonStyle.terminalText.opacity(0.7)).padding(10)
+                Text(L("Session ended")).font(.caption).foregroundStyle(MoonStyle.terminalText.opacity(0.7)).padding(10)
             } else if connection.state != .connected {
-                Text("Reconnect to continue. Your shell stays on your Mac.")
+                Text(L("Reconnect to continue. Your shell stays on your Mac."))
                     .font(.caption).foregroundStyle(MoonStyle.terminalText.opacity(0.7)).padding(10)
             }
         }.background(MoonStyle.terminalInk, in: RoundedRectangle(cornerRadius: 18)).clipShape(RoundedRectangle(cornerRadius: 18))
@@ -146,9 +146,9 @@ struct ServerEmptyView: View {
             Image(systemName: icon).font(.system(size: 48, weight: .ultraLight)).foregroundStyle(MoonStyle.accent)
             Text(title).font(.system(size: 37, weight: .semibold, design: .rounded)).tracking(-1.2)
             Text(detail).font(.system(size: 15)).foregroundStyle(MoonStyle.secondary).lineSpacing(5)
-            Button(action: action) { Label("Connect your Mac", systemImage: "link") }.buttonStyle(PrimaryButtonStyle())
+            Button(action: action) { Label(L("Connect your Mac"), systemImage: "link") }.buttonStyle(PrimaryButtonStyle())
             Spacer()
-            Label("Encrypted between your devices", systemImage: "lock.shield").font(.system(size: 11)).foregroundStyle(MoonStyle.secondary)
+            Label(L("Encrypted between your devices"), systemImage: "lock.shield").font(.system(size: 11)).foregroundStyle(MoonStyle.secondary)
         }.padding(32).frame(maxWidth: 560, alignment: .leading).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }
@@ -215,12 +215,12 @@ struct TerminalSurface: UIViewRepresentable {
                     guard active else { return }
                     try await connection.resizeTerminal(columns: newCols, rows: newRows, sessionID: tab.id)
                 }
-                catch is CancellationError {} catch { reportError(error.localizedDescription) }
+                catch is CancellationError {} catch { reportError(NocturneLocalization.message(error.localizedDescription)) }
             }
         }
         func send(source: SwiftTerm.TerminalView, data: ArraySlice<UInt8>) {
             guard active, !replaying else { return }
-            Task { @MainActor in do { try await connection.terminalInput(Data(data), sessionID: tab.id) } catch { reportError(error.localizedDescription) } }
+            Task { @MainActor in do { try await connection.terminalInput(Data(data), sessionID: tab.id) } catch { reportError(NocturneLocalization.message(error.localizedDescription)) } }
         }
         func setTerminalTitle(source: SwiftTerm.TerminalView, title: String) {}
         func hostCurrentDirectoryUpdate(source: SwiftTerm.TerminalView, directory: String?) {}

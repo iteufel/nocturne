@@ -1,0 +1,7 @@
+// App Intents metadata must resolve from the app or extension main bundle.
+"Decide pending Nocturne request" = "Decide pending Nocturne request";
+"Request" = "Request";
+"Host" = "Host";
+"Provider" = "Provider";
+"Session" = "Session";
+"Allow once" = "Allow once";

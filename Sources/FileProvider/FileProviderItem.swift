@@ -63,7 +63,7 @@ func providerError(_ error: Error) -> Error {
         }
     }
     return NSError(domain: NSCocoaErrorDomain, code: NSXPCConnectionReplyInvalid,
-        userInfo: [NSLocalizedDescriptionKey: error.localizedDescription, NSUnderlyingErrorKey: error])
+        userInfo: [NSLocalizedDescriptionKey: NocturneLocalization.message(error.localizedDescription), NSUnderlyingErrorKey: error])
 }
 
 func providerFileChangedError() -> Error {

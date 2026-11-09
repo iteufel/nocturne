@@ -1,0 +1,4 @@
+"NSLocalNetworkUsageDescription" = "Connecte-toi directement à tes Mac, iPhone et iPad jumelés pour la diffusion.";
+"NSMicrophoneUsageDescription" = "Capture l’audio lorsqu’un micro ou une source audio en boucle est sélectionné.";
+"NSScreenCaptureUsageDescription" = "Diffuse l’écran de ce Mac vers tes appareils jumelés.";
+"NSAudioCaptureUsageDescription" = "Inclus l’audio de ton Mac dans la diffusion.";

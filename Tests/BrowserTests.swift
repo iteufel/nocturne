@@ -170,6 +170,25 @@ final class BrowserHostTests: XCTestCase {
         _ = try await host.handle(command(.click, id: id, page: initial.page, x: 0.08, y: 0.13), authorization: access)
         _ = try await ready(host, access: access, id: id, title: "next")
     }
+    func testPageAlertMatchingHostNoticeRemainsPageContent() async throws {
+        let fixture = try BrowserFixture(); try await fixture.start(); defer { fixture.stop() }
+        let host = RemoteBrowserHost(), access = BrowserAuthorization(); access.update(enabled: true)
+        let id = UUID().uuidString; defer { host.reset() }
+        try await open(host, access: access, id: id)
+        _ = try await host.handle(command(.navigate, id: id, value: fixture.url("/notices")), authorization: access)
+        let pageNotice = try await ready(host, access: access, id: id, title: "notices")
+        XCTAssertEqual(pageNotice.notice, "Downloads are disabled.")
+        XCTAssertEqual(pageNotice.noticeIsHostMessage, false, "Website text must not be translated just because it matches an app message")
+        _ = try await host.handle(command(.click, id: id, page: pageNotice.page, x: 0.1, y: 0.04), authorization: access)
+        var hostNotice: BrowserFrame?
+        for _ in 0..<100 {
+            hostNotice = try await host.handle(command(.frame, id: id), authorization: access).browserFrame
+            if hostNotice?.noticeIsHostMessage == true { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(hostNotice?.notice, pageNotice.notice)
+        XCTAssertEqual(hostNotice?.noticeIsHostMessage, true, "The host's blocked-download message can be translated")
+    }
     func testClosingAndLeaseExpiryTearDownDocumentWebSockets() async throws {
         let fixture = try BrowserFixture(); try await fixture.start(); defer { fixture.stop() }
         // A cold CI WebKit launch/snapshot may take longer than the short test lease.
@@ -294,6 +313,7 @@ final class BrowserFixture: @unchecked Sendable {
         case "/asset": type = "text/plain"; body = "asset"
         case "/cookie": body = "<title>cookie:\(header("Cookie"))</title>"
         case "/input": body = "<title>input</title><input style='position:absolute;top:10px;left:10px;width:250px;height:40px' oninput=\"document.title='typed:'+this.value\"><a style='position:absolute;top:80px;left:10px;width:200px;height:40px' href='/next'>Next page</a>"
+        case "/notices": body = "<a style='position:absolute;top:10px;left:10px;width:250px;height:40px' href='/asset' download='fixture.txt'>Download</a><script>alert('Downloads are disabled.');document.title='notices';</script>"
         default: body = "<title>next</title><h1>Next page</h1>"
         }
         let bytes = Data(body.utf8)

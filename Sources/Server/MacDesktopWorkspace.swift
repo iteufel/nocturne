@@ -1,3 +1,4 @@
+import NocturneKit
 import SwiftUI
 import NocturneMacClient
 
@@ -15,9 +16,9 @@ struct MacDesktopWorkspace: View {
                 MacDesktopSurface(stream: stream)
                 if let error = stream.error {
                     ContentUnavailableView {
-                        Label(stream.route == nil ? "Desktop disconnected" : "App window disconnected", systemImage: "display.trianglebadge.exclamationmark")
+                        Label(stream.route == nil ? L("Desktop disconnected") : L("App window disconnected"), systemImage: "display.trianglebadge.exclamationmark")
                     } description: { Text(error) } actions: {
-                        Button("Reconnect") { stream.reconnect() }.buttonStyle(.borderedProminent)
+                        Button(L("Reconnect")) { stream.reconnect() }.buttonStyle(.borderedProminent)
                     }.background(.black)
                 } else if !stream.ready {
                     VStack(spacing: 14) {
@@ -30,13 +31,13 @@ struct MacDesktopWorkspace: View {
             .onChange(of: scale) { _, scale in stream.viewport(geometry.size, scale: scale) }
         }
         .navigationTitle(stream.title)
-        .navigationSubtitle(stream.route == nil ? (stream.screenLocked ? "Lock screen · Enter your Mac password to unlock" : "") : stream.name)
+        .navigationSubtitle(stream.route == nil ? (stream.screenLocked ? L("Lock screen · Enter your Mac password to unlock") : "") : stream.name)
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                Button("Disconnect", systemImage: "xmark") {
+                Button(L("Disconnect"), systemImage: "xmark") {
                     if let route = stream.route { client.disconnectApp(route.id); dismiss() }
                     else { client.disconnect(); dismissWindow(id: "remote-desktop") }
-                }.help("Disconnect from this Mac")
+                }.help(L("Disconnect from this Mac"))
             }
             ToolbarItem {
                 if let display = stream.display {
@@ -45,7 +46,7 @@ struct MacDesktopWorkspace: View {
             }
             ToolbarItem {
                 if stream.route == nil {
-                    Button("Apps", systemImage: "square.grid.2x2") {
+                    Button(L("Apps"), systemImage: "square.grid.2x2") {
                         client.browseApps(stream.serverID); openWindow(id: "remote-apps")
                     }.disabled(stream.connection.state != .connected)
                 }
@@ -56,8 +57,8 @@ struct MacDesktopWorkspace: View {
                         Button {
                             stream.matchWindow(true)
                         } label: {
-                            if stream.matchesWindow { Label("Match window", systemImage: "checkmark") }
-                            else { Text("Match window") }
+                            if stream.matchesWindow { Label(L("Match window"), systemImage: "checkmark") }
+                            else { Text(L("Match window")) }
                         }
                         Divider()
                         ForEach(stream.displays) { display in
@@ -68,24 +69,24 @@ struct MacDesktopWorkspace: View {
                                 else { Text(display.name) }
                             }
                         }
-                    } label: { Label("Displays", systemImage: "display.2") }.disabled(stream.displays.isEmpty)
+                    } label: { Label(L("Displays"), systemImage: "display.2") }.disabled(stream.displays.isEmpty)
                 }
             }
             ToolbarItem {
                 if stream.route == nil {
-                    Button(stream.muted ? "Unmute audio" : "Mute audio", systemImage: stream.muted ? "speaker.slash" : "speaker.wave.2") { stream.muted.toggle() }
-                        .help(stream.audioError ?? (stream.muted ? "Unmute host audio" : "Mute host audio"))
+                    Button(stream.muted ? L("Unmute audio") : L("Mute audio"), systemImage: stream.muted ? "speaker.slash" : "speaker.wave.2") { stream.muted.toggle() }
+                        .help(stream.audioError ?? (stream.muted ? L("Unmute host audio") : L("Mute host audio")))
                 }
             }
             ToolbarItem {
                 Menu {
-                    Text(stream.connection.connectionRoute ?? "Connecting")
-                    Text("Click the desktop to control it. Press ⌃⌥Esc to release the keyboard.")
-                    if let error = stream.audioError { Text("Audio unavailable: \(error)") }
+                    Text(stream.connection.connectionRoute ?? L("Connecting"))
+                    Text(L("Click the desktop to control it. Press ⌃⌥Esc to release the keyboard."))
+                    if let error = stream.audioError { Text(L("Audio unavailable: %@", "\(error)")) }
                     Divider()
-                    Button("Toggle full screen", systemImage: "arrow.up.left.and.arrow.down.right") { stream.surface.window?.toggleFullScreen(nil) }
-                    Button("Reconnect", systemImage: "arrow.clockwise") { stream.reconnect() }
-                } label: { Label("Desktop controls", systemImage: "ellipsis.circle") }
+                    Button(L("Toggle full screen"), systemImage: "arrow.up.left.and.arrow.down.right") { stream.surface.window?.toggleFullScreen(nil) }
+                    Button(L("Reconnect"), systemImage: "arrow.clockwise") { stream.reconnect() }
+                } label: { Label(L("Desktop controls"), systemImage: "ellipsis.circle") }
             }
         }
         .preferredColorScheme(.dark)

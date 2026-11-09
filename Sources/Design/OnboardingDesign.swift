@@ -1,3 +1,4 @@
+import NocturneKit
 import SwiftUI
 #if os(macOS)
 import AppKit
@@ -35,7 +36,7 @@ struct NocturneOnboarding<Content: View>: View {
                     MoonMark(size: 30)
                     Text(product.uppercased()).font(.system(size: 11, weight: .semibold)).tracking(2)
                     Spacer()
-                    Button("Set up later", action: skip).buttonStyle(.plain)
+                    Button(L("Set up later"), action: skip).buttonStyle(.plain)
                         .font(.system(size: 13)).foregroundStyle(MoonStyle.secondary)
                         .frame(minHeight: 44).accessibilityIdentifier("onboardingSkip")
                 }.padding(.horizontal, wide ? 36 : 24).padding(.top, 16)
@@ -101,15 +102,15 @@ struct NocturneOnboarding<Content: View>: View {
                         .frame(width: index == step ? 30 : 8, height: 4)
                 }
                 Spacer()
-                Text("\(step + 1) of \(steps.count)").font(.system(size: 11, design: .monospaced))
+                Text(L("%@ of %@", "\(step + 1)", "\(steps.count)")).font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(MoonStyle.secondary)
-            }.accessibilityElement(children: .ignore).accessibilityLabel("Step \(step + 1) of \(steps.count): \(steps[step])")
+            }.accessibilityElement(children: .ignore).accessibilityLabel(L("Step %@ of %@: %@", "\(step + 1)", "\(steps.count)", "\(steps[step])"))
             HStack(spacing: 16) {
                 if step > 0 {
-                    Button("Back", action: back).buttonStyle(.plain).font(.system(size: 14))
+                    Button(L("Back"), action: back).buttonStyle(.plain).font(.system(size: 14))
                         .frame(minHeight: 44).accessibilityIdentifier("onboardingBack")
                 } else {
-                    Label("Made for your Mac", systemImage: "moon").font(.system(size: 11))
+                    Label(L("Made for your Mac"), systemImage: "moon").font(.system(size: 11))
                         .foregroundStyle(MoonStyle.secondary)
                 }
                 Spacer(minLength: 4)
@@ -165,10 +166,10 @@ struct ConnectionArtwork: View {
                     tablet(width: width * 0.53)
                         .rotationEffect(.degrees(7)).offset(x: width * 0.21, y: width * 0.17 - drift * 4)
                     if scene == .permissions {
-                        badge("lock.shield.fill", label: "You're in control")
+                        badge("lock.shield.fill", label: L("You're in control"))
                             .offset(x: -width * 0.16, y: width * 0.35)
                     } else {
-                        badge(scene == .pairing ? "qrcode.viewfinder" : "sparkle", label: scene == .pairing ? "One scan. Together." : "Your Mac, within reach")
+                        badge(scene == .pairing ? "qrcode.viewfinder" : "sparkle", label: scene == .pairing ? L("One scan. Together.") : L("Your Mac, within reach"))
                             .offset(x: -width * 0.09, y: width * 0.38)
                     }
                 }.frame(width: geometry.size.width, height: geometry.size.height)

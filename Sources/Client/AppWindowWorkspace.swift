@@ -20,13 +20,13 @@ struct AppWindowWorkspace: View {
                     .frame(width: layout.video.width, height: layout.video.height)
                     .clipped()
                     .position(x: layout.video.midX, y: layout.video.midY)
-                    .accessibilityAction(named: Text("Open stream controls")) { openControls() }
-                    .accessibilityAction(named: Text("Show keyboard")) { showKeyboard() }
+                    .accessibilityAction(named: Text(L("Open stream controls"))) { openControls() }
+                    .accessibilityAction(named: Text(L("Show keyboard"))) { showKeyboard() }
                 if let error = stream.error {
                     ContentUnavailableView {
-                        Label("App window disconnected", systemImage: "macwindow")
+                        Label(L("App window disconnected"), systemImage: "macwindow")
                     } description: { Text(error) }
-                    actions: { Button("Reconnect window") { stream.activate() }.buttonStyle(NocturneGlassButtonStyle()) }
+                    actions: { Button(L("Reconnect window")) { stream.activate() }.buttonStyle(NocturneGlassButtonStyle()) }
                     .background(.black)
                 } else if !stream.ready {
                     VStack(spacing: 14) { ProgressView(); Text(stream.status).font(.callout).foregroundStyle(.secondary) }
@@ -75,23 +75,23 @@ struct AppWindowControlsMenu: View {
         NavigationStack {
             Form {
                 Section {
-                    Button("Show keyboard", systemImage: "keyboard") { showKeyboard(); dismiss() }
+                    Button(L("Show keyboard"), systemImage: "keyboard") { showKeyboard(); dismiss() }
                         .disabled(!stream.ready).accessibilityIdentifier("appWindowKeyboard")
-                    Toggle("Fill entire screen", isOn: Binding(get: { client.preferences.fillEntireScreen }, set: client.setFillEntireScreen))
-                    Button("Reconnect window", systemImage: "arrow.clockwise") { dismiss(); stream.deactivate(); stream.activate() }
+                    Toggle(L("Fill entire screen"), isOn: Binding(get: { client.preferences.fillEntireScreen }, set: client.setFillEntireScreen))
+                    Button(L("Reconnect window"), systemImage: "arrow.clockwise") { dismiss(); stream.deactivate(); stream.activate() }
                 }
                 Section {
-                    Button("Close stream", systemImage: "xmark", role: .destructive) { dismiss(); stream.deactivate(); close() }
+                    Button(L("Close stream"), systemImage: "xmark", role: .destructive) { dismiss(); stream.deactivate(); close() }
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(stream.connection.name)
-                        if let display = stream.display { Text("\(display.width) × \(display.height) · \(display.frameRate) fps") }
-                        Text("Only this Mac window is shared")
+                        if let display = stream.display { Text(L("%@ × %@ · %@ fps", display.width.formatted(), display.height.formatted(), display.frameRate.formatted())) }
+                        Text(L("Only this Mac window is shared"))
                     }
                 }
             }
-            .navigationTitle("App window controls").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .navigationTitle(L("App window controls")).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Done")) { dismiss() } } }
         }
         .tint(MoonStyle.accent).preferredColorScheme(.dark)
     }

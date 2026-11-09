@@ -15,7 +15,7 @@ import UserNotifications
 @MainActor
 final class AgentAttentionCenter: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = AgentAttentionCenter()
-    @Published private(set) var status = "Remote push requires an operator-configured server."
+    @Published private(set) var status = L("Remote push requires an operator-configured server.")
     var notificationsEnabled: Bool { UserDefaults.standard.bool(forKey: "nocturne.attention.notifications") }
     var activitiesEnabled: Bool { UserDefaults.standard.bool(forKey: "nocturne.attention.activities") }
     private weak var model: ClientModel?
@@ -31,9 +31,9 @@ final class AgentAttentionCenter: NSObject, ObservableObject, UNUserNotification
         self.model = model
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        let review = UNNotificationAction(identifier: "review", title: "Review in Nocturne", options: [.foreground, .authenticationRequired])
-        let allow = UNNotificationAction(identifier: "allow", title: "Allow once", options: [.foreground, .authenticationRequired])
-        let deny = UNNotificationAction(identifier: "deny", title: "Deny", options: [.foreground, .authenticationRequired, .destructive])
+        let review = UNNotificationAction(identifier: "review", title: L("Review in Nocturne"), options: [.foreground, .authenticationRequired])
+        let allow = UNNotificationAction(identifier: "allow", title: L("Allow once"), options: [.foreground, .authenticationRequired])
+        let deny = UNNotificationAction(identifier: "deny", title: L("Deny"), options: [.foreground, .authenticationRequired, .destructive])
         center.setNotificationCategories([
             UNNotificationCategory(identifier: AgentAttention.category, actions: [review], intentIdentifiers: []),
             UNNotificationCategory(identifier: AgentAttention.approvalCategory, actions: [deny, allow], intentIdentifiers: [])
@@ -52,9 +52,9 @@ final class AgentAttentionCenter: NSObject, ObservableObject, UNUserNotification
         if enabled {
             do {
                 guard try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) else {
-                    status = "Notifications are disabled in iOS Settings."; return
+                    status = L("Notifications are disabled in iOS Settings."); return
                 }
-            } catch { status = "Notification permission could not be requested."; return }
+            } catch { status = L("Notification permission could not be requested."); return }
         }
         UserDefaults.standard.set(enabled, forKey: "nocturne.attention.notifications")
         if enabled, AttentionPushRegistration.receiveToken != nil { UIApplication.shared.registerForRemoteNotifications() }
@@ -67,12 +67,12 @@ final class AgentAttentionCenter: NSObject, ObservableObject, UNUserNotification
     func registered(_ token: Data) {
         guard let receive = AttentionPushRegistration.receiveToken else { return }
         Task {
-            do { try await receive(token); status = "Device registered with the configured push server." }
-            catch { status = "Push server registration failed. Try enabling notifications again." }
+            do { try await receive(token); status = L("Device registered with the configured push server.") }
+            catch { status = L("Push server registration failed. Try enabling notifications again.") }
         }
     }
     func registrationFailed() {
-        status = "APNs registration failed. Check signing and operator configuration."
+        status = L("APNs registration failed. Check signing and operator configuration.")
         AttentionPushRegistration.registrationFailed?()
     }
     private func refresh() {
@@ -109,13 +109,18 @@ final class AgentAttentionCenter: NSObject, ObservableObject, UNUserNotification
         let center = UNUserNotificationCenter.current()
         let visible = notificationsEnabled ? Set(snapshot.keys) : []
         let removed = announced.subtracting(visible)
-        center.removeDeliveredNotifications(withIdentifiers: removed.map(\.id))
-        center.removePendingNotificationRequests(withIdentifiers: removed.map(\.id))
+        // A fresh launch has nothing to withdraw. Even an empty removal can wait
+        // synchronously on the notification service and stall the main actor.
+        if !removed.isEmpty {
+            let identifiers = removed.map(\.id)
+            center.removeDeliveredNotifications(withIdentifiers: identifiers)
+            center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        }
         announced.subtract(removed)
         for (request, permission) in snapshot where notificationsEnabled && !announced.contains(request) {
             guard !Task.isCancelled else { return }
             let content = UNMutableNotificationContent()
-            content.title = AgentAttention.title; content.body = AgentAttention.body; content.sound = .default
+            content.title = L(AgentAttention.title); content.body = L(AgentAttention.body); content.sound = .default
             let actions = Set(permission.options.compactMap(\.action))
             content.categoryIdentifier = actions == [.allowOnce, .denyOnce] ? AgentAttention.approvalCategory : AgentAttention.category
             if let data = try? JSONEncoder().encode(request), let object = try? JSONSerialization.jsonObject(with: data) {
@@ -123,7 +128,7 @@ final class AgentAttentionCenter: NSObject, ObservableObject, UNUserNotification
             }
             // Only called after the person explicitly enables notifications. Never in tests.
             do { try await center.add(UNNotificationRequest(identifier: request.id, content: content, trigger: nil)); announced.insert(request) }
-            catch { status = "A local attention notification could not be displayed." }
+            catch { status = L("A local attention notification could not be displayed.") }
         }
         for activity in Activity<AttentionAttributes>.activities {
             guard !Task.isCancelled else { return }
@@ -142,14 +147,14 @@ final class AgentAttentionCenter: NSObject, ObservableObject, UNUserNotification
             do {
                 _ = try Activity.request(attributes: AttentionAttributes(request: request),
                     content: ActivityContent(state: state, staleDate: request.expiresAt), pushType: nil)
-            } catch { status = "Live Activity could not start. Review the request in Nocturne." }
+            } catch { status = L("Live Activity could not start. Review the request in Nocturne.") }
         }
     }
     func decide(id: String, host: String, provider: String, session: String, allow: Bool) async throws {
         // Explicit OS-delivered action plus local authentication; no background event calls this method.
         let auth = LAContext()
         guard try await auth.evaluatePolicy(.deviceOwnerAuthentication,
-            localizedReason: allow ? "Allow this pending Nocturne request once" : "Deny this pending Nocturne request") else {
+            localizedReason: allow ? L("Allow this pending Nocturne request once") : L("Deny this pending Nocturne request")) else {
             throw AttentionIntentError.unavailable
         }
         refresh()
@@ -175,7 +180,7 @@ final class AgentAttentionCenter: NSObject, ObservableObject, UNUserNotification
             if response.actionIdentifier == "allow" || response.actionIdentifier == "deny" {
                 do { try await self.decide(id: request.id, host: request.hostID, provider: request.providerID,
                     session: request.sessionID, allow: response.actionIdentifier == "allow") }
-                catch { self.status = "Request unavailable or authentication cancelled. Review in Nocturne." }
+                catch { self.status = L("Request unavailable or authentication cancelled. Review in Nocturne.") }
             } else if response.actionIdentifier == "review" || response.actionIdentifier == UNNotificationDefaultActionIdentifier {
                 // Opening a notification only navigates. Payload data can never grant permission.
                 self.model?.page = .chats

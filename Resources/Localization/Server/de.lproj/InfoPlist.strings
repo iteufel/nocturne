@@ -1,0 +1,4 @@
+"NSLocalNetworkUsageDescription" = "Verbinde dich zum Streamen direkt mit deinen gekoppelten Macs, iPhones und iPads.";
+"NSMicrophoneUsageDescription" = "Nimm Audio auf, wenn ein Mikrofon oder eine Loopback-Audioquelle ausgewählt ist.";
+"NSScreenCaptureUsageDescription" = "Streame den Bildschirm dieses Macs an deine gekoppelten Geräte.";
+"NSAudioCaptureUsageDescription" = "Übertrage den Ton deines Macs im Stream.";

@@ -11,7 +11,7 @@ public final class MacDesktopSession: ObservableObject {
     public let connection: WorkspaceConnection
     public let surface = MacVideoView(frame: .zero)
     @Published public private(set) var ready = false
-    @Published public private(set) var status = "Connecting to your Mac…"
+    @Published public private(set) var status = L("Connecting to your Mac…")
     @Published public private(set) var error: String?
     @Published public private(set) var audioError: String?
     @Published public private(set) var displays: [RemoteDesktopDisplay] = []
@@ -46,7 +46,7 @@ public final class MacDesktopSession: ObservableObject {
         // through a remote tunnel. It never needs Moonlight's UDP port forwarding.
         connection = WorkspaceConnection(identity: identity, remoteStreaming: false)
         surface.onInput = { [weak self] in self?.sendInput($0) }
-        surface.setAccessibilityLabel(route == nil ? "Remote Mac desktop" : "Remote Mac app window")
+        surface.setAccessibilityLabel(route == nil ? L("Remote Mac desktop") : L("Remote Mac app window"))
         observer = connection.$state.dropFirst().sink { [weak self] state in
             guard state == .disconnected else { return }
             Task { @MainActor in
@@ -57,7 +57,7 @@ public final class MacDesktopSession: ObservableObject {
     }
     public func activate() {
         guard !active else { return }
-        active = true; error = nil; audioError = nil; status = "Connecting to \(name)…"
+        active = true; error = nil; audioError = nil; status = L("Connecting to %@…", "\(name)")
         if route == nil { connection.onDesktopPacket = { [weak self] in self?.receive($0) } }
         else { connection.onAppPacket = { [weak self] in self?.receive($0) } }
         configure()
@@ -106,7 +106,7 @@ public final class MacDesktopSession: ObservableObject {
                         try Task.checkCancellation()
                         guard self.epoch == generation else { return }
                         guard self.connection.capabilities.contains(self.route == nil ? DesktopStreaming.capability : AppStreaming.capability) else {
-                            throw NocturneError.remote("Enable Screen sharing and install the latest Nocturne on the other Mac to share its desktop and app windows.")
+                            throw NocturneError.remote(L("Enable Screen sharing and install the latest Nocturne on the other Mac to share its desktop and app windows."))
                         }
                         guard let refreshed = self.connection.connectedInvitation else { throw NocturneError.disconnected }
                         try self.onAuthenticated?(refreshed)
@@ -127,7 +127,7 @@ public final class MacDesktopSession: ObservableObject {
                     if self.route == nil, self.matchesWindow {
                         guard let size = StreamDisplaySize.matching(width: Double(desired.width), height: Double(desired.height),
                             scale: desired.scale, frameRate: desired.frameRate) else {
-                            throw NocturneError.remote("Enlarge this window to match the host desktop to your screen.")
+                            throw NocturneError.remote(L("Enlarge this window to match the host desktop to your screen."))
                         }
                         // Release capture before replacing its virtual framebuffer.
                         // Each video source gets a new ID so late frames are ignored.
@@ -145,13 +145,13 @@ public final class MacDesktopSession: ObservableObject {
                             matchesDevice: true, workspaceLinked: true, capabilities: self.connection.capabilities) else {
                             throw NocturneError.invalidFrame
                         }
-                        self.status = "Matching the host desktop to this window…"
+                        self.status = L("Matching the host desktop to this window…")
                         let prepared = try await self.connection.request(preparation)
                         try Task.checkCancellation()
                         guard self.epoch == generation else { return }
                         guard prepared.sessionID == leaseID, prepared.display == size,
                               let id = prepared.displayID, id != 0 else {
-                            throw NocturneError.remote("Update Nocturne on the host Mac to match its desktop to this window.")
+                            throw NocturneError.remote(L("Update Nocturne on the host Mac to match its desktop to this window."))
                         }
                         self.displayLeaseID = leaseID; captureDisplayID = id
                         if self.heartbeat == nil { self.startHeartbeat(generation) }
@@ -161,7 +161,7 @@ public final class MacDesktopSession: ObservableObject {
                     if self.sessionID == nil { self.sessionID = UUID().uuidString }
                     request.sessionID = self.sessionID; request.displayID = captureDisplayID; request.viewport = desired
                     request.applicationID = self.route?.applicationID; request.windowID = self.route?.windowID
-                    self.status = "Opening \(self.title)…"
+                    self.status = L("Opening %@…", "\(self.title)")
                     let response = try await self.connection.request(request, timeout: 30)
                     guard self.epoch == generation else { return }
                     guard response.sessionID == self.sessionID, let display = response.display, display.isValidAppWindow else {
@@ -174,13 +174,13 @@ public final class MacDesktopSession: ObservableObject {
                         self.appWindow = response.window
                     }
                     self.display = display; self.screenLocked = response.screenLocked ?? false; self.appliedViewport = desired
-                    self.status = "Waiting for video…"
+                    self.status = L("Waiting for video…")
                     if self.heartbeat == nil { self.startHeartbeat(generation) }
                     if !self.ready, self.firstFrameDeadline == nil {
                         self.firstFrameDeadline = Task { [weak self] in
                             do { try await Task.sleep(nanoseconds: 12_000_000_000) } catch { return }
                             guard let self, self.epoch == generation, !self.ready else { return }
-                            self.fail(NocturneError.remote("No video arrived. Check Screen & System Audio Recording permission on the host Mac, then reconnect."))
+                            self.fail(NocturneError.remote(L("No video arrived. Check Screen & System Audio Recording permission on the host Mac, then reconnect.")))
                         }
                     }
                     if desired == self.desiredViewport { return }
@@ -224,11 +224,11 @@ public final class MacDesktopSession: ObservableObject {
     }
     private func receive(_ packet: Packet) {
         guard active, let id = sessionID, packet.sessionID == id else { return }
-        if packet.operation == operation(.desktopEnded, .appEnded) { fail(NocturneError.remote(packet.error ?? "Sharing ended.")); return }
+        if packet.operation == operation(.desktopEnded, .appEnded) { fail(NocturneError.remote(packet.error ?? L("Sharing ended."))); return }
         if packet.operation == .desktopAudio {
             guard let frame = packet.audio, frame.isValid else { fail(NocturneError.invalidFrame); return }
             guard audioError == nil else { return }
-            do { try audio.enqueue(frame) } catch { audio.stop(); audioError = error.localizedDescription }
+            do { try audio.enqueue(frame) } catch { audio.stop(); audioError = NocturneLocalization.message(error.localizedDescription) }
             return
         }
         do {
@@ -241,7 +241,7 @@ public final class MacDesktopSession: ObservableObject {
         guard active, ready, input.isValid else { return }
         if input.kind == .move, inputs.last?.kind == .move { inputs[inputs.count - 1] = input }
         else {
-            guard inputs.count < 128 else { fail(NocturneError.remote("The connection is too slow to receive input. Reconnect to continue.")); return }
+            guard inputs.count < 128 else { fail(NocturneError.remote(L("The connection is too slow to receive input. Reconnect to continue."))); return }
             inputs.append(input)
         }
         guard inputTask == nil else { return }
@@ -257,5 +257,5 @@ public final class MacDesktopSession: ObservableObject {
         }
     }
     private func operation(_ desktop: NocturneKit.Operation, _ app: NocturneKit.Operation) -> NocturneKit.Operation { route == nil ? desktop : app }
-    private func fail(_ error: Error) { stop(); self.error = error.localizedDescription }
+    private func fail(_ error: Error) { stop(); self.error = NocturneLocalization.message(error.localizedDescription) }
 }

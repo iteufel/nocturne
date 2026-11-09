@@ -1,0 +1,4 @@
+"NSLocalNetworkUsageDescription" = "Conecta directamente con tus Mac, iPhone y iPad enlazados para transmitir.";
+"NSMicrophoneUsageDescription" = "Captura audio al seleccionar un micrófono o una fuente de audio de bucle invertido.";
+"NSScreenCaptureUsageDescription" = "Transmite la pantalla de este Mac a tus dispositivos enlazados.";
+"NSAudioCaptureUsageDescription" = "Incluye el audio de tu Mac en la transmisión.";

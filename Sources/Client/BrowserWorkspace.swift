@@ -48,7 +48,7 @@ final class BrowserWorkspaceModel: ObservableObject {
         } catch {
             guard !stopped, !Task.isCancelled else { return }
             image = nil; frame = nil
-            self.error = error.localizedDescription
+            self.error = NocturneLocalization.message(error.localizedDescription)
         }
     }
     func stop() async {
@@ -77,23 +77,23 @@ struct BrowserWorkspace: View {
     var body: some View {
         VStack(spacing: 10) {
             HStack {
-                Label("Browser on " + connection.name, systemImage: "globe").font(.headline).lineLimit(1)
+                Label(L("Browser on %@", connection.name), systemImage: "globe").font(.headline).lineLimit(1)
                 Spacer()
-                Button("Close", systemImage: "xmark", action: close).labelStyle(.iconOnly)
+                Button(L("Close"), systemImage: "xmark", action: close).labelStyle(.iconOnly)
             }
-            Text("Runs on your Mac. localhost and LAN addresses use your Mac’s network.").font(.caption).foregroundStyle(.secondary)
+            Text(L("Runs on your Mac. localhost and LAN addresses use your Mac’s network.")).font(.caption).foregroundStyle(.secondary)
             HStack {
                 TextField("http://localhost:3000", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).textFieldStyle(.roundedBorder).onSubmit(navigate)
                     .accessibilityIdentifier("browserAddress")
-                Button("Go", action: navigate).disabled(browser.busy)
+                Button(L("Go"), action: navigate).disabled(browser.busy)
             }
             HStack {
-                Button("Back", systemImage: "chevron.left") { send(.init(.back)) }.disabled(browser.frame?.canGoBack != true)
-                Button("Forward", systemImage: "chevron.right") { send(.init(.forward)) }.disabled(browser.frame?.canGoForward != true)
-                Button("Reload", systemImage: "arrow.clockwise") { send(.init(.reload)) }
+                Button(L("Back"), systemImage: "chevron.left") { send(.init(.back)) }.disabled(browser.frame?.canGoBack != true)
+                Button(L("Forward"), systemImage: "chevron.right") { send(.init(.forward)) }.disabled(browser.frame?.canGoForward != true)
+                Button(L("Reload"), systemImage: "arrow.clockwise") { send(.init(.reload)) }
                 Spacer()
-                Button("Scroll up", systemImage: "arrow.up") { send(.init(.scroll, y: -500)) }
-                Button("Scroll down", systemImage: "arrow.down") { send(.init(.scroll, y: 500)) }
+                Button(L("Scroll up"), systemImage: "arrow.up") { send(.init(.scroll, y: -500)) }
+                Button(L("Scroll down"), systemImage: "arrow.down") { send(.init(.scroll, y: 500)) }
             }.labelStyle(.iconOnly).disabled(browser.busy || browser.frame == nil)
             if let frame = browser.frame, !frame.url.isEmpty {
                 Text(frame.url).font(.caption2).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled).accessibilityIdentifier("browserCurrentURL")
@@ -108,22 +108,22 @@ struct BrowserWorkspace: View {
                             send(.init(.click, x: location.x / width, y: location.y / height))
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .accessibilityLabel("Remote Mac web page. Tap to interact; use text and scroll controls below.")
-                } else { ContentUnavailableView("Private browser on your Mac", systemImage: "globe", description: Text("Enter an address and choose Go.")).frame(maxWidth: .infinity, maxHeight: .infinity) }
+                        .accessibilityLabel(L("Remote Mac web page. Tap to interact; use text and scroll controls below."))
+                } else { ContentUnavailableView(L("Private browser on your Mac"), systemImage: "globe", description: Text(L("Enter an address and choose Go."))).frame(maxWidth: .infinity, maxHeight: .infinity) }
             }.background(Color.black.opacity(0.05)).clipped()
             if browser.frame?.loading == true { ProgressView().controlSize(.small) }
-            if let notice = browser.frame?.notice { Text(notice).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
+            if let notice = browser.frame?.notice { Text(browser.frame?.noticeIsHostMessage == true ? NocturneLocalization.message(notice) : notice).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
             if let error = browser.error { Text(error).font(.caption).foregroundStyle(.red).lineLimit(3) }
             HStack {
-                SecureField("Text for focused field", text: $input).textFieldStyle(.roundedBorder).onSubmit(sendText)
-                Button("Type", action: sendText).disabled(input.isEmpty)
-                Button("Enter") { send(.init(.enter)) }
+                SecureField(L("Text for focused field"), text: $input).textFieldStyle(.roundedBorder).onSubmit(sendText)
+                Button(L("Type"), action: sendText).disabled(input.isEmpty)
+                Button(L("Enter")) { send(.init(.enter)) }
                 Menu {
-                    Button("Tab") { send(.init(.tab)) }
-                    Button("Backspace") { send(.init(.backspace)) }
+                    Button(L("Tab")) { send(.init(.tab)) }
+                    Button(L("Backspace")) { send(.init(.backspace)) }
                 } label: { Image(systemName: "keyboard") }
             }.disabled(browser.busy || browser.frame == nil)
-            Text("Private session · no downloads, uploads, camera or microphone · closes when hidden").font(.caption2).foregroundStyle(.secondary)
+            Text(L("Private session · no downloads, uploads, camera or microphone · closes when hidden")).font(.caption2).foregroundStyle(.secondary)
         }.padding(12).background(.background)
             .task { await browser.run() }
             .onChange(of: connection.state) { _, state in if state != .connected { close() } }
@@ -134,6 +134,6 @@ struct BrowserWorkspace: View {
     private func sendText() { let text = input; input = ""; send(.init(.text, value: text)) }
     private func navigate() {
         do { _ = try BrowserProtocol.destination(address); send(.init(.navigate, value: address)) }
-        catch { browser.error = error.localizedDescription }
+        catch { browser.error = NocturneLocalization.message(error.localizedDescription) }
     }
 }

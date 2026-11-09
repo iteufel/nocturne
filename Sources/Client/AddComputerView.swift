@@ -15,48 +15,48 @@ struct AddComputerView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
-                    Text("Add a host").font(.system(size: 34, weight: .semibold, design: .rounded)).tracking(-1)
-                    Text("Open Nocturne on your Mac, start the server, and choose “Pair a device.” The QR code sets up your workspace and screen sharing.")
+                    Text(L("Add a host")).font(.system(size: 34, weight: .semibold, design: .rounded)).tracking(-1)
+                    Text(L("Open Nocturne on your Mac, start the server, and choose “Pair a device.” The QR code sets up your workspace and screen sharing."))
                         .font(.subheadline).foregroundStyle(MoonStyle.secondary).lineSpacing(4)
                     MoonPanel {
                         HStack(spacing: 16) {
-                            Label("Stream", systemImage: "display")
-                            Label("Terminal", systemImage: "terminal")
-                            Label("Files", systemImage: "folder")
+                            Label(L("Stream"), systemImage: "display")
+                            Label(L("Terminal"), systemImage: "terminal")
+                            Label(L("Files"), systemImage: "folder")
                         }.font(.system(size: 12, weight: .medium)).foregroundStyle(MoonStyle.accent)
                     }
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Scan to pair").font(.headline)
+                        Text(L("Scan to pair")).font(.headline)
                         Button { Task { await openScanner() } } label: {
                             HStack {
                                 if connection.state == .connecting { ProgressView().tint(MoonStyle.ink) }
-                                Label(connection.state == .connecting ? "Connecting…" : "Scan QR code", systemImage: "qrcode.viewfinder")
+                                Label(connection.state == .connecting ? L("Connecting…") : L("Scan QR code"), systemImage: "qrcode.viewfinder")
                             }
                         }.buttonStyle(PrimaryButtonStyle())
                             .disabled(!DataScannerViewController.isSupported || connection.state == .connecting || model.busy)
                             .accessibilityIdentifier("scanPairingQR")
                         if !DataScannerViewController.isSupported {
-                            Text("QR pairing requires a supported iPhone or iPad camera.").font(.caption).foregroundStyle(MoonStyle.secondary)
+                            Text(L("QR pairing requires a supported iPhone or iPad camera.")).font(.caption).foregroundStyle(MoonStyle.secondary)
                         }
                         if let scannerError { Text(scannerError).font(.caption).foregroundStyle(.orange) }
                         if AVCaptureDevice.authorizationStatus(for: .video) == .denied {
-                            Button("Open camera settings") {
+                            Button(L("Open camera settings")) {
                                 if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                             }
                         }
                         if let error = model.error ?? connection.lastError { Text(error).font(.caption).foregroundStyle(.orange) }
                     }
                     if !model.pairedServers.servers.isEmpty {
-                        Text("Your other hosts stay paired. Manage them in Settings → Paired hosts.").font(.caption).foregroundStyle(MoonStyle.secondary)
+                        Text(L("Your other hosts stay paired. Manage them in Settings → Paired hosts.")).font(.caption).foregroundStyle(MoonStyle.secondary)
                     }
-                    Text("Only scan the QR code shown by your Mac. It pairs one device and expires after five minutes. Terminal and file access are controlled on your Mac.").font(.caption).foregroundStyle(MoonStyle.secondary)
+                    Text(L("Only scan the QR code shown by your Mac. It pairs one device and expires after five minutes. Terminal and file access are controlled on your Mac.")).font(.caption).foregroundStyle(MoonStyle.secondary)
                 }.padding(24)
-            }.background { NocturneBackdrop() }.navigationTitle("Add host").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+            }.background { NocturneBackdrop() }.navigationTitle(L("Add host")).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(L("Done")) { dismiss() } } }
         }.tint(MoonStyle.accent)
             .sheet(isPresented: $scanner, onDismiss: pairScannedInvitation) { QRScanner { result in
                 scanner = false
-                switch result { case .success(let text): scannedInvitation = text; case .failure(let error): scannerError = error.localizedDescription }
+                switch result { case .success(let text): scannedInvitation = text; case .failure(let error): scannerError = NocturneLocalization.message(error.localizedDescription) }
             }.ignoresSafeArea() }
     }
     private func openScanner() async {
@@ -65,7 +65,7 @@ struct AddComputerView: View {
             _ = await AVCaptureDevice.requestAccess(for: .video)
         }
         guard DataScannerViewController.isAvailable else {
-            scannerError = "The camera is unavailable. Allow camera access in Settings and try scanning again."; return
+            scannerError = L("The camera is unavailable. Allow camera access in Settings and try scanning again."); return
         }
         scanner = true
     }

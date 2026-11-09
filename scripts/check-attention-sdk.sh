@@ -6,15 +6,21 @@ cd "$(dirname "$0")/.."
 check="$PWD/.build/attention-sdk"
 mkdir -p "$check/ios"
 sdk="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+# Standalone SDK checks do not run SwiftPM's resource accessor generator.
+# This compile-only boundary is not part of the production module or executed.
+cat > "$check/BundleModule.swift" <<'SWIFT'
+import Foundation
+extension Bundle { static let module = Bundle.main }
+SWIFT
 xcrun swiftc -emit-module -module-name NocturneKit -enable-testing \
   -module-cache-path "$check/MacModuleCache" -I remote/include \
-  Sources/Shared/*.swift -emit-module-path "$check/NocturneKit.swiftmodule"
+  Sources/Shared/*.swift "$check/BundleModule.swift" -emit-module-path "$check/NocturneKit.swiftmodule"
 xcrun swiftc -typecheck -swift-version 5 -module-name NocturneHostKit \
   -I remote/include -I "$check" -module-cache-path "$check/MacModuleCache" \
   Sources/HostKit/{ChatAgentSession,AgentRPC,ChatAgentConfiguration,ChatSupervisorService,CodexAttentionQuestions,DeveloperCommand,RepositoryService,ForgeService,ChatHostSession,SharedFolder}.swift
 xcrun swiftc -emit-module -module-name NocturneKit -target arm64-apple-ios17.0-simulator \
   -sdk "$sdk" -module-cache-path "$check/iOSModuleCache" -I remote/include \
-  Sources/Shared/*.swift -emit-module-path "$check/ios/NocturneKit.swiftmodule"
+  Sources/Shared/*.swift "$check/BundleModule.swift" -emit-module-path "$check/ios/NocturneKit.swiftmodule"
 xcrun swiftc -typecheck -swift-version 5 -target arm64-apple-ios17.0-simulator -sdk "$sdk" \
   -I remote/include -I "$check/ios" -module-cache-path "$check/iOSModuleCache" \
   -D NOCTURNE_ATTENTION_WIDGET -application-extension \

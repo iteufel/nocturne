@@ -155,5 +155,5 @@ public final class DeveloperWorkspaceModel: ObservableObject {
         do { return try await request(input).content } catch { record(error); return nil }
     }
     public func closePullRequest() { selectedPR = nil; prFiles = []; content = nil; activity = [] }
-    private func record(_ error: Error) { if !(error is CancellationError) { self.error = error.localizedDescription } }
+    private func record(_ error: Error) { if !(error is CancellationError) { self.error = NocturneLocalization.message(error.localizedDescription) } }
 }

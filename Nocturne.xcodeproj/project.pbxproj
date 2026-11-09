@@ -15,6 +15,7 @@
 		59AF08C4CE7754ABDC0FED38 /* ServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74BB712FA3C668265AE12E32 /* ServerView.swift */; };
 		655B346FB01AFFCB6D9930C2 /* MacAppsWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 825FFC232AF6AEF749E691EB /* MacAppsWorkspace.swift */; };
 		6CB1570630CD0B0A9A25147E /* NocturneKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3F93AEBE7C3AFC09C5A378B7 /* NocturneKit */; };
+		6F0B60C01015E8958B9D0073 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 829A80260FFE852151E41AA5 /* InfoPlist.strings */; };
 		73ACB056C901A873B4B9A8EF /* MacDesktopWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3932087B9B6B7325C45996 /* MacDesktopWorkspace.swift */; };
 		89EC5E0F2431A9BF7982B6A0 /* MacComputersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70D71728296458C1FDB42F98 /* MacComputersView.swift */; };
 		8CA71A5BFDA3F10A599F386F /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FB3DA98667C93F71F2143D7F /* Cocoa.framework */; };
@@ -26,6 +27,7 @@
 
 /* Begin PBXFileReference section */
 		002017491E1EA293A2347E66 /* MicrophoneInstallation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MicrophoneInstallation.swift; path = Sources/Server/MicrophoneInstallation.swift; sourceTree = "<group>"; };
+		2614280CAF5CF883FD531634 /* fr */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = fr; path = Resources/Localization/Server/fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		4FECE177EFC02F8D64D35D91 /* NocturneServerApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NocturneServerApp.swift; path = Sources/Server/NocturneServerApp.swift; sourceTree = "<group>"; };
 		523C8190329015BCCEF924AA /* OnboardingDesign.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnboardingDesign.swift; path = Sources/Design/OnboardingDesign.swift; sourceTree = "<group>"; };
 		70D71728296458C1FDB42F98 /* MacComputersView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MacComputersView.swift; path = Sources/Server/MacComputersView.swift; sourceTree = "<group>"; };
@@ -33,9 +35,13 @@
 		7A3932087B9B6B7325C45996 /* MacDesktopWorkspace.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MacDesktopWorkspace.swift; path = Sources/Server/MacDesktopWorkspace.swift; sourceTree = "<group>"; };
 		825FFC232AF6AEF749E691EB /* MacAppsWorkspace.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MacAppsWorkspace.swift; path = Sources/Server/MacAppsWorkspace.swift; sourceTree = "<group>"; };
 		84F24355E5F700568944B562 /* ServerOnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ServerOnboardingView.swift; path = Sources/Server/ServerOnboardingView.swift; sourceTree = "<group>"; };
+		863988BC0D8B64CFAA0F9132 /* en */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = en; path = Resources/Localization/Server/en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		89D8CB2A8DC57528812CE513 /* ServerModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ServerModel.swift; path = Sources/Server/ServerModel.swift; sourceTree = "<group>"; };
-		AAF53E4FDEA4538B89163686 /* Nocturne.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Nocturne.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9556BCE66A52818D25D30E74 /* it */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = it; path = Resources/Localization/Server/it.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		AAF53E4FDEA4538B89163686 /* Nocturne.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nocturne.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AF5B78FEF7DC4A0987B81807 /* de */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = de; path = Resources/Localization/Server/de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		CD9A9B27FA64C45876C2D08C /* NocturneTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NocturneTheme.swift; path = Sources/Design/NocturneTheme.swift; sourceTree = "<group>"; };
+		FB040A6574DAD884612AE1AF /* es */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = es; path = Resources/Localization/Server/es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		FB3DA98667C93F71F2143D7F /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		FD5AC1E5BC629B0891C7EADB /* Server.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Server.xcassets; path = Resources/Server.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -102,6 +108,7 @@
 				70D71728296458C1FDB42F98 /* MacComputersView.swift */,
 				7A3932087B9B6B7325C45996 /* MacDesktopWorkspace.swift */,
 				825FFC232AF6AEF749E691EB /* MacAppsWorkspace.swift */,
+				829A80260FFE852151E41AA5 /* InfoPlist.strings */,
 			);
 			name = Server;
 			sourceTree = "<group>";
@@ -147,6 +154,10 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				de,
+				fr,
+				it,
+				es,
 				Base,
 			);
 			mainGroup = 198809D8A1995481A695F276;
@@ -170,6 +181,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				942BE0B4894F60EBDE9703A8 /* Server.xcassets in Resources */,
+				6F0B60C01015E8958B9D0073 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -216,6 +228,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		829A80260FFE852151E41AA5 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				863988BC0D8B64CFAA0F9132 /* en */,
+				AF5B78FEF7DC4A0987B81807 /* de */,
+				2614280CAF5CF883FD531634 /* fr */,
+				9556BCE66A52818D25D30E74 /* it */,
+				FB040A6574DAD884612AE1AF /* es */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		0F5D7AE0DA51749EFE1809CE /* Debug */ = {

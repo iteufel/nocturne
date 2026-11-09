@@ -5,7 +5,7 @@ enum MicrophoneInstallation {
     static func install() async throws {
         let source = Bundle.main.resourceURL!.appendingPathComponent("NocturneMicrophone.driver")
         guard FileManager.default.fileExists(atPath: source.appendingPathComponent("Contents/MacOS/NocturneMicrophone").path) else {
-            throw NocturneError.remote("This build does not include Nocturne Microphone. Reinstall Nocturne.")
+            throw NocturneError.remote(L("This build does not include Nocturne Microphone. Reinstall Nocturne."))
         }
         // The OS authorization dialog is shown only after the user presses Install.
         // Do not restart coreaudiod: that would interrupt every audio app on the Mac.
@@ -22,7 +22,7 @@ enum MicrophoneInstallation {
             let data = errors.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
             guard process.terminationStatus == 0 else {
                 let detail = String(data: data, encoding: .utf8) ?? ""
-                throw NocturneError.remote(detail.contains("-128") ? "Microphone installation was cancelled." : "Couldn’t install Nocturne Microphone. " + detail)
+                throw NocturneError.remote(detail.contains("-128") ? L("Microphone installation was cancelled.") : L("Couldn’t install Nocturne Microphone. ") + detail)
             }
         }.value
     }

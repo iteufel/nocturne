@@ -61,7 +61,7 @@ final class AppWindowVideoView: UIView, UIKeyInput, UIGestureRecognizerDelegate 
         let rightClick = UILongPressGestureRecognizer(target: self, action: #selector(rightClick(_:)))
         rightClick.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue), NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         rightClick.minimumPressDuration = 0.6; rightClick.allowableMovement = 8; addGestureRecognizer(rightClick)
-        accessibilityLabel = "Mac app window"; accessibilityTraits = .allowsDirectInteraction
+        accessibilityLabel = L("Mac app window"); accessibilityTraits = .allowsDirectInteraction
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     func enqueue(_ frame: AppWindowVideoFrame) throws {

@@ -1,0 +1,5 @@
+"NSLocalNetworkUsageDescription" = "Trouve tes ordinateurs et connecte-toi directement pour la diffusion, le terminal et les transferts de fichiers.";
+"NSCameraUsageDescription" = "Scanne le code QR de jumelage affiché par Nocturne sur ton Mac.";
+"NSBluetoothAlwaysUsageDescription" = "Connecte des souris et accessoires Bluetooth compatibles à Nocturne.";
+"NSMicrophoneUsageDescription" = "Parle à Codex en direct ou transmets ton micro au Mac jumelé pour Discord et les jeux en le réactivant dans une diffusion.";
+"NSBluetoothPeripheralUsageDescription" = "Connecte des souris et accessoires Bluetooth compatibles à Nocturne.";
