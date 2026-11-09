@@ -9,7 +9,7 @@ if [ "$(uname -m)" != arm64 ]; then
   exit 1
 fi
 for command in cmake pkg-config git brew; do
-  command -v "$command" >/dev/null || { echo 'Install build tools: brew install cmake pkgconf miniupnpc openssl@3' >&2; exit 1; }
+  command -v "$command" >/dev/null || { echo 'Install build tools: brew install cmake pkgconf miniupnpc openssl@4' >&2; exit 1; }
 done
 pkg-config --exists miniupnpc || { echo 'Install miniupnpc: brew install miniupnpc' >&2; exit 1; }
 
@@ -17,7 +17,14 @@ revision="$NOCTURNE_SUNSHINE_REVISION"
 source_dir="$PWD/.build/SunshinePerformanceSource"
 build_dir="$PWD/.build/SunshinePerformanceBuild"
 if [ ! -d "$source_dir/.git" ]; then
-  git clone --depth 1 --branch "v$NOCTURNE_SUNSHINE_VERSION" https://github.com/LizardByte/Sunshine.git "$source_dir"
+  # Upstream rotates prerelease tags. Resolve source by its immutable commit,
+  # while the separately checksummed runtime remains an explicit release pin.
+  git init "$source_dir"
+  git -C "$source_dir" remote add origin https://github.com/LizardByte/Sunshine.git
+fi
+if ! git -C "$source_dir" rev-parse --verify HEAD >/dev/null 2>&1; then
+  git -C "$source_dir" fetch --depth 1 origin "$revision"
+  git -C "$source_dir" checkout --detach FETCH_HEAD
 fi
 if [ "$(git -C "$source_dir" rev-parse HEAD)" != "$revision" ]; then
   echo 'Unexpected streaming engine source revision; move .build/SunshinePerformanceSource and .build/SunshinePerformanceBuild aside and rerun bootstrap/build.' >&2
@@ -31,15 +38,15 @@ git -C "$source_dir" submodule update --init --recursive --depth 1 -- \
   third-party/libdisplaydevice third-party/libvirtualhid \
   third-party/lizardbyte-common third-party/moonlight-common-c
 
-openssl_root="$(brew --prefix openssl@3)"
+openssl_root="$(brew --prefix openssl@4)"
 runtime="$PWD/Vendor/StreamingRuntime/Contents"
 cmake -E env BRANCH=nocturne/stream-timing BUILD_VERSION="$NOCTURNE_SUNSHINE_VERSION" COMMIT="$revision" \
   cmake -S "$source_dir" -B "$build_dir" \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=14.2 \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
   -DBUILD_TESTS=OFF -DBUILD_DOCS=OFF -DSUNSHINE_ENABLE_TRAY=OFF \
   -DOPENSSL_USE_STATIC_LIBS=FALSE -DOPENSSL_ROOT_DIR="$openssl_root" \
-  -DOPENSSL_SSL_LIBRARY="$runtime/Frameworks/libssl.3.dylib" \
-  -DOPENSSL_CRYPTO_LIBRARY="$runtime/Frameworks/libcrypto.3.dylib" \
+  -DOPENSSL_SSL_LIBRARY="$runtime/Frameworks/libssl.4.dylib" \
+  -DOPENSSL_CRYPTO_LIBRARY="$runtime/Frameworks/libcrypto.4.dylib" \
   -DBOOST_LOCALE_ENABLE_ICU=OFF -DSUNSHINE_PUBLISHER_NAME=Nocturne \
   -DSUNSHINE_PUBLISHER_ISSUE_URL=https://github.com/iteufel/nocturne/issues \
   -DCMAKE_PROJECT_INCLUDE="$PWD/scripts/cmake/NocturneStreamingEngine.cmake"

@@ -12,7 +12,7 @@ Stream your Mac to iPhone, iPad, or another Mac. The Mac app can host your deskt
 - Pair several Macs and switch between them.
 - Connect Mac to Mac from **Computers**, with desktop video, audio, keyboard, and mouse in a separate window.
 
-Requires iOS/iPadOS 17+ and an Apple Silicon Mac running macOS 14+. Nocturne includes its streaming engine; no separate Sunshine installation is needed.
+Requires iOS/iPadOS 17+ and an Apple Silicon Mac running macOS 15+. Nocturne includes its streaming engine; no separate Sunshine installation is needed.
 
 ## Get started
 

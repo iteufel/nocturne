@@ -9,7 +9,7 @@
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
 <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
-<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
 <!-- Auxiliary executables share this bundle. Only the main UI opts into the Dock. -->
 <key>LSUIElement</key><true/>
