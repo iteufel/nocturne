@@ -297,3 +297,10 @@ must be moved aside; an unexpected source revision still fails closed.
 The infrastructure commit is included in PR #27. Other open PRs (#28, #29 and
 #7) use the same main-branch bootstrap and need the fix in their tested merge
 base; their feature branches and working trees were not modified here.
+
+### Streaming dependency refresh (2026-11-09)
+
+- Upstream removed the pinned `v2026.1028.122642` release and its tag. The replacement is `v2026.1107.185223`, source `f787dcf32874d33224871f466d8fc9a9ece431c0`, with its official arm64 archive verified against SHA-256 `b6c5c3b7dbe9114c32322da32a6f8fd7c044293d1ffec8aeb45f7d1031da075e`.
+- The host now requires macOS 15+, including its package, generated app target, Info.plist and release instructions. The engine uses the matching OpenSSL 4 headers and bundled libraries. Source retrieval uses the pinned commit instead of relying on a retained prerelease tag; the runtime download still requires its exact release and checksum.
+- The complete Mac app builds. Four download/cache checks, nine build-orchestration checks, audio/video replay checks and locked-screen capture sanitizer checks passed. The newly packaged engine passed authenticated startup, certificate removal, persisted restart and pairing reset with the existing Apple Development identity and hardened library validation enabled.
+- Ad-hoc hardened binaries cannot load these libraries without a shared signing identity. The local Apple Development build runs, but a strict trust check reported `CSSMERR_TP_NOT_TRUSTED`; no trust or library-validation settings were changed. Distribution signing and notarization remain separate release checks.
