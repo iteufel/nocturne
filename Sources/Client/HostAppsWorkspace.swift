@@ -136,6 +136,9 @@ struct HostAppsWorkspace: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { SimulatorWorkspace(connection: connection) } label: { Label("Simulator", systemImage: "iphone") }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("Refresh apps", systemImage: "arrow.clockwise") { Task { await model.load() } }
                     .disabled(model.loading || connection.state != .connected).accessibilityIdentifier("refreshApps")
             }
