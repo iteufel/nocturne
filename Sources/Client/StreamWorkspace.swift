@@ -257,8 +257,9 @@ final class StreamControlsGestureView: UIView, UIGestureRecognizerDelegate {
         set { edgeGesture.isEnabled = newValue; keyboardGesture.isEnabled = newValue }
     }
     private weak var gestureWindow: UIWindow?
-    private lazy var edgeGesture = makeGesture(edge: .left, name: L("Nocturne stream controls"))
-    private lazy var keyboardGesture = makeGesture(edge: .right, name: L("Nocturne stream keyboard"))
+    // Internal recognizer names stay stable across the user's language preferences.
+    private lazy var edgeGesture = makeGesture(edge: .left, name: "Nocturne stream controls")
+    private lazy var keyboardGesture = makeGesture(edge: .right, name: "Nocturne stream keyboard")
     private func makeGesture(edge: UIRectEdge, name: String) -> StreamEdgeGesture {
         // A scene-relative edge region also works in an iPad window.
         // Ignore all touches outside it so ordinary stream input is unaffected.

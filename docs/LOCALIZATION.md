@@ -31,7 +31,7 @@ normal user preferences.
 
 User text, agent replies/history, PR content, repository names/branches, model
 values, terminal output, filenames, discovery names, machine/protocol keys,
-capabilities, CLI commands and diagnostic logs are not translated. Stored values
+capabilities, CLI commands, internal gesture names and diagnostic logs are not translated. Stored values
 such as `Match device`, tab IDs, appearance raw values and status comparisons stay
 unchanged. Only their UI labels are localized. Provider-generated metadata and
 external service prose remain provider-owned.
@@ -95,7 +95,7 @@ The standalone Localization GitHub workflow runs this check without requiring
 Rust, the streaming runtime, or simulator startup. The existing build workflow
 continues to build/test both app targets with the project's pinned dependencies.
 
-Local verification on 2026-11-09 used Xcode 27.1. All 1,159 strings, seven
+Local verification on 2026-11-09 used Xcode 27.1. All 1,157 strings, seven
 plural keys, ten streaming overlays and permission resources passed validation.
 Eight native language/preference/fallback cases passed. The actual App Intents
 metadata exporter accepted the main-bundle resources in the app and extension,
@@ -108,8 +108,14 @@ translation. The [PR checks](https://github.com/iteufel/nocturne/pull/30/checks)
 record the complete iPhone/iPad, Mac and broker build/test results. The shared
 runtime update now requires macOS 15+; see [Development](DEVELOPMENT.md).
 
-No system language, real notification, permission grant, screen capture or
-microphone recording was used for localization tests. A final layout review on
+The complete native client suite also passes on iPhone Duo in German (104 tests,
+five skips) and iPad Pro in English (105 tests, four skips). The existing input
+tests verify that internal gesture names stay stable under German, and host
+status assertions use localized expectations. The voice-preflight cancellation
+test passes in both suites and in 30 consecutive isolated runs.
+
+Resource checks do not change system language, deliver notifications, grant
+permissions, capture a screen or record microphone input. A final layout review on
 real iPhone/iPad/Mac screens, including accessibility text sizes, remains a device
 acceptance check; translated labels are generally longer than English.
 

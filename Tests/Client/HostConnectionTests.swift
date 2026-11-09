@@ -57,10 +57,10 @@ final class HostConnectionTests: XCTestCase {
         engine.deferResolution = true
         await model.reconnectServer()
         XCTAssertEqual(model.server.state, .connected)
-        XCTAssertEqual(model.hostStatus(try XCTUnwrap(model.pairedServers.active)), "Connecting…")
+        XCTAssertEqual(model.hostStatus(try XCTUnwrap(model.pairedServers.active)), L("Connecting…"))
         engine.finishResolution()
         try await waitUntil { engine.approved }
-        XCTAssertEqual(model.hostStatus(try XCTUnwrap(model.pairedServers.active)), "Screen sharing ready")
+        XCTAssertEqual(model.hostStatus(try XCTUnwrap(model.pairedServers.active)), L("Screen sharing ready"))
         XCTAssertFalse(model.showLibrary, "Background recovery must not interrupt the user with a sheet")
     }
     func testFailedVideoSetupCanRetryUsingTheAlreadyConnectedWorkspace() async throws {
@@ -71,7 +71,7 @@ final class HostConnectionTests: XCTestCase {
         await model.reconnectServer()
         let paired = try XCTUnwrap(model.pairedServers.active)
         XCTAssertEqual(model.server.state, .connected)
-        XCTAssertEqual(model.hostStatus(paired), "Screen sharing needs attention")
+        XCTAssertEqual(model.hostStatus(paired), L("Screen sharing needs attention"))
         XCTAssertEqual(model.hostErrors[paired.id], engine.resolutionError)
         XCTAssertFalse(model.busy)
         XCTAssertFalse(model.showAdd)
@@ -146,7 +146,7 @@ final class HostConnectionTests: XCTestCase {
         engine.streamFailed?(controller, "Failed to initialize video capture/encoding")
         XCTAssertNil(model.session)
         XCTAssertEqual(model.hostErrors[paired.id], "Failed to initialize video capture/encoding")
-        XCTAssertEqual(model.hostStatus(paired), "Screen sharing needs attention")
+        XCTAssertEqual(model.hostStatus(paired), L("Screen sharing needs attention"))
         XCTAssertFalse(model.showAdd)
     }
     func testStalledStreamTimesOutAndReportsHostError() async throws {
