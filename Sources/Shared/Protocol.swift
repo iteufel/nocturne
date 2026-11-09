@@ -11,10 +11,12 @@ public enum WorkspaceProtocol {
 }
 
 public enum Operation: String, Codable {
+    case browserCommand
     case hello, authenticate, ping, pairStream, list, read, uploadBegin, uploadChunk, uploadCommit, uploadCancel
     case terminalList, terminalAttach, terminalOpen, terminalInput, terminalResize, terminalClose, terminalOutput, terminalExit, terminalClosed
     case displayPrepare, displayHeartbeat, displayRelease
     case microphoneStart, microphoneAudio, microphoneStop
+    case simulatorList, simulatorOpen, simulatorFrame, simulatorClose, simulatorInput
     case appList, appIcon, appLaunch, appOpen, appResize, appInput, appHeartbeat, appClose, appVideo, appEnded
     case chatSupervisor, chatProviders, chatList, chatLoad, chatNew, chatPrompt, chatCancel, chatPermission, chatEvent
     case chatOptions, chatConfigure, chatRepository
@@ -49,6 +51,8 @@ public struct RemoteFile: Codable, Identifiable, Equatable {
 public struct Packet: Codable {
     public var id = UUID().uuidString
     public var operation: Operation
+    public var browserCommand: BrowserCommand? = nil
+    public var browserFrame: BrowserFrame? = nil
     public var version: Int? = nil
     public var error: String? = nil
     public var name: String? = nil
@@ -92,6 +96,10 @@ public struct Packet: Codable {
     public var chatVoiceEvent: ChatVoiceEvent? = nil
     public var displays: [RemoteDesktopDisplay]? = nil
     public var displayID: UInt32? = nil
+    public var simulators: [RemoteSimulator]? = nil
+    public var simulatorID: String? = nil
+    public var simulatorFrame: SimulatorFrame? = nil
+    public var simulatorTouch: SimulatorTouch? = nil
     public var audio: DesktopAudioFrame? = nil
     public init(_ operation: Operation, id: String = UUID().uuidString) { self.operation = operation; self.id = id }
     public func reply(error: String? = nil) -> Packet {

@@ -6,9 +6,10 @@ public struct HostPermissions {
     public var terminal: Bool
     public var files: Bool
     public var microphone: Bool
+    public var browser: Bool
     public var chats: Bool
-    public init(terminal: Bool = false, files: Bool = false, microphone: Bool = false, chats: Bool = false) {
-        self.terminal = terminal; self.files = files; self.microphone = microphone; self.chats = chats
+    public init(terminal: Bool = false, files: Bool = false, microphone: Bool = false, chats: Bool = false, browser: Bool = false) {
+        self.terminal = terminal; self.files = files; self.microphone = microphone; self.chats = chats; self.browser = browser
     }
 }
 
@@ -36,16 +37,18 @@ public final class WorkspaceServer {
     private let microphone: MicrophoneSession
     private let appWindows: AppWindowSessionManager?
     private let desktop: DesktopSessionManager?
+    private let simulators: SimulatorSessionManager?
     private var microphoneTimer: DispatchSourceTimer?
     private var permissions: HostPermissions
     private var chatAgents: [ChatAgentConfiguration]
     private let supervisor: ChatSupervisorService
     private let name: String
     private let devices: WorkspaceDeviceStore
-    public init(folder: URL, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions = .init(), microphoneOutput: MicrophoneOutput = VirtualMicrophone(), appWindows: AppWindowSessionManager? = nil, desktop: DesktopSessionManager? = nil, chatAgents: [ChatAgentConfiguration] = ChatAgentConfiguration.defaults) throws {
+    public init(folder: URL, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions = .init(), microphoneOutput: MicrophoneOutput = VirtualMicrophone(), appWindows: AppWindowSessionManager? = nil, desktop: DesktopSessionManager? = nil, simulators: SimulatorSessionManager? = nil, chatAgents: [ChatAgentConfiguration] = ChatAgentConfiguration.defaults) throws {
         self.folder = try SharedFolder(url: folder); self.name = name; self.devices = devices; self.permissions = permissions
         self.appWindows = appWindows
         self.desktop = desktop
+        self.simulators = simulators
         self.chatAgents = chatAgents
         self.supervisor = ChatSupervisorService(configurations: chatAgents, directory: folder)
         microphone = MicrophoneSession(output: microphoneOutput)
@@ -62,7 +65,7 @@ public final class WorkspaceServer {
             guard let self = self, self.listener != nil, self.sessions.count < 32 else { connection.cancel(); return }
             let id = UUID()
             let channel = SecureChannel(connection: connection, queue: self.queue)
-            let session = HostSession(channel: channel, terminals: self.terminals, microphone: self.microphone, appWindows: self.appWindows, desktop: self.desktop, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, chatAgents: self.chatAgents, supervisor: self.supervisor, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected)
+            let session = HostSession(channel: channel, terminals: self.terminals, microphone: self.microphone, appWindows: self.appWindows, desktop: self.desktop, simulators: self.simulators, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, chatAgents: self.chatAgents, supervisor: self.supervisor, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected)
             self.sessions[id] = session
             session.authorizeRemoteDevice = self.authorizeRemoteDevice
             session.onClose = { [weak self] in self?.sessions.removeValue(forKey: id); self?.publish("Ready") }
@@ -82,6 +85,7 @@ public final class WorkspaceServer {
         timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
         timer.setEventHandler { [weak self] in
             self?.microphone.expire()
+            if let simulators = self?.simulators { Task { await simulators.expire() } }
             if let apps = self?.appWindows { Task { @MainActor in apps.expire() } }
             if let desktop = self?.desktop { Task { @MainActor in desktop.expire() } }
         }
@@ -140,6 +144,7 @@ private final class HostSession {
     private let microphone: MicrophoneSession
     private let appWindows: AppWindowSessionManager?
     private let desktop: DesktopSessionManager?
+    private let simulators: SimulatorSessionManager?
     private let connectionID = UUID()
     private let chats: ChatHostSession
     private let devices: WorkspaceDeviceStore
@@ -147,29 +152,42 @@ private final class HostSession {
     private var closed = false
     private var pairing = false
     private let appConnection = AppWindowConnectionState()
+    private let browser = RemoteBrowserHost()
+    private let browserAuthorization = BrowserAuthorization()
     private let pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?
     private let displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?
     private let displayDisconnected: ((UUID) -> Void)?
-    init(channel: SecureChannel, terminals: TerminalRegistry, microphone: MicrophoneSession, appWindows: AppWindowSessionManager?, desktop: DesktopSessionManager?, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, chatAgents: [ChatAgentConfiguration], supervisor: ChatSupervisorService, pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?, displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?, displayDisconnected: ((UUID) -> Void)?) {
+    init(channel: SecureChannel, terminals: TerminalRegistry, microphone: MicrophoneSession, appWindows: AppWindowSessionManager?, desktop: DesktopSessionManager?, simulators: SimulatorSessionManager?, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, chatAgents: [ChatAgentConfiguration], supervisor: ChatSupervisorService, pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?, displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?, displayDisconnected: ((UUID) -> Void)?) {
         self.pairStream = pairStream; self.terminals = terminals
         self.microphone = microphone
         self.appWindows = appWindows
         self.desktop = desktop
+        self.simulators = simulators
         chats = ChatHostSession(configurations: chatAgents, directory: folder.url, enabled: permissions.chats, supervisor: supervisor)
         self.displayCommand = displayCommand; self.displayDisconnected = displayDisconnected
+        browserAuthorization.update(enabled: permissions.browser)
         self.channel = channel; self.devices = devices; self.folder = folder; self.name = name; self.permissions = permissions
         channel.onPacket = { [weak self] packet in self?.handle(packet) }
         channel.onClose = { [weak self] _ in self?.closed = true; self?.device = nil; self?.cleanup(); self?.onClose?() }
     }
     func updatePermissions(_ new: HostPermissions) {
         permissions = new
+        browserAuthorization.update(enabled: new.browser)
+        if !new.browser {
+            let browser = browser, authorization = browserAuthorization
+            Task { @MainActor in browser.refreshAuthorization(authorization) }
+        }
         chats.setEnabled(new.chats)
         if !new.files { transfers.removeAll() }
     }
     func configureChats(_ agents: [ChatAgentConfiguration]) { chats.configure(agents) }
     func close() { closed = true; device = nil; cleanup(); channel.cancel() }
     private func cleanup() {
+        browserAuthorization.close()
+        let browser = browser, authorization = browserAuthorization
+        Task { @MainActor in browser.refreshAuthorization(authorization) }
         chats.close()
+        if let simulators { let id = connectionID; Task { await simulators.disconnected(id) } }
         appConnection.close()
         transfers.removeAll(); terminals.detach(connectionID)
         microphone.disconnected(connectionID)
@@ -210,6 +228,11 @@ private final class HostSession {
                 result.capabilities = [permissions.files ? "files" : nil, permissions.terminal ? "terminal" : nil, pairStream != nil ? "streaming" : nil, displayCommand != nil ? "display" : nil, permissions.microphone ? MicrophoneFormat.capability : nil].compactMap { $0 }
                 if appWindows != nil { result.capabilities?.append(AppStreaming.capability) }
                 if desktop != nil { result.capabilities?.append(DesktopStreaming.capability) }
+                if permissions.browser { result.capabilities?.append(BrowserProtocol.capability) }
+                if let simulators {
+                    result.capabilities?.append(SimulatorStreaming.capability)
+                    if simulators.supportsInput { result.capabilities?.append(SimulatorStreaming.inputCapability) }
+                }
                 if permissions.chats {
                     result.capabilities?.append(ChatProtocol.capability)
                     result.capabilities?.append(ChatVoice.capability)
@@ -218,6 +241,16 @@ private final class HostSession {
                     result.capabilities?.append(DeveloperProtocol.capability)
                     result.capabilities?.append(DeveloperProtocol.actionsCapability)
                 }
+            case .browserCommand:
+                guard permissions.browser, device != nil else { throw NocturneError.permissionDenied }
+                let browser = browser, authorization = browserAuthorization, channel = channel
+                Task { @MainActor in
+                    let reply: Packet
+                    do { reply = try await browser.handle(packet, authorization: authorization) }
+                    catch { reply = packet.reply(error: error.localizedDescription) }
+                    channel.send(reply)
+                }
+                return
             case .ping: break
             case .chatSupervisor, .chatProviders, .chatList, .chatLoad, .chatNew, .chatPrompt, .chatCancel, .chatPermission, .chatOptions, .chatConfigure, .chatRepository,
                  .chatVoicePrepare, .chatVoiceOpen, .chatVoiceStart, .chatVoiceHeartbeat, .chatVoiceStop:
@@ -245,6 +278,16 @@ private final class HostSession {
                         reply = try await appWindows.handle(packet, connection: connection, device: device.id, isConnected: { state.isOpen },
                             send: { packet, completion in channel.send(packet, completion: completion) })
                     } catch { reply = packet.reply(error: error.localizedDescription) }
+                    if state.isOpen { channel.send(reply) }
+                }
+                return
+            case .simulatorList, .simulatorOpen, .simulatorFrame, .simulatorClose, .simulatorInput:
+                guard let simulators, device != nil else { throw NocturneError.permissionDenied }
+                let connection = connectionID, channel = channel, state = appConnection
+                Task {
+                    let reply: Packet
+                    do { reply = try await simulators.handle(packet, connection: connection, isConnected: { state.isOpen }) }
+                    catch { reply = packet.reply(error: error.localizedDescription) }
                     if state.isOpen { channel.send(reply) }
                 }
                 return

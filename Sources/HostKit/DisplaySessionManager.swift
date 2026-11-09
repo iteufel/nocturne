@@ -1,6 +1,7 @@
 import Foundation
 import NocturneKit
 import DisplayBridge
+import CoreGraphics
 
 @MainActor
 protocol StreamingDisplayDriver: AnyObject {
@@ -132,11 +133,15 @@ extension NDDisplayLayout: StreamingDisplayLayout {}
 struct StreamingDisplayEnvironment {
     var isSessionAvailable: () -> Bool
     var isScreenLocked: () -> Bool
+    var isDisplayActive: (UInt32) -> Bool
+    var hasActiveDisplayOtherThan: (UInt32) -> Bool
     var create: (StreamDisplaySize) throws -> StreamingVirtualDisplay
     var captureLayout: (UInt32) -> StreamingDisplayLayout
     static var native: Self {
         .init(isSessionAvailable: { NDDisplayLayout.isSessionAvailable() },
-            isScreenLocked: { NDDisplayLayout.isScreenLocked() }, create: {
+            isScreenLocked: { NDDisplayLayout.isScreenLocked() },
+            isDisplayActive: { CGDisplayIsActive($0) != 0 },
+            hasActiveDisplayOtherThan: { NDDisplayLayout.hasActiveDisplayOtherThan($0) }, create: {
             try NDVirtualDisplay(width: UInt($0.width), height: UInt($0.height), refreshRate: UInt($0.frameRate))
         }, captureLayout: { NDDisplayLayout(excludingDisplay: $0) })
     }
@@ -160,6 +165,13 @@ final class NativeStreamingDisplayDriver: StreamingDisplayDriver {
         guard environment.isSessionAvailable() else { throw NocturneError.remote("Sign in to this Mac before starting its streaming display.") }
         guard requested.isValid else { throw NocturneError.invalidFrame }
         let epoch = UUID(); revision = epoch
+        // loginwindow may still own the existing framebuffer. Replacing it, or
+        // even selecting its mode again, can leave a locked headless Mac black.
+        // Keep its geometry until the next preparation after unlock; the encoder
+        // can still fit that source into the viewer's requested video dimensions.
+        if environment.isScreenLocked(), let display, environment.isDisplayActive(display.displayID) {
+            return display.displayID
+        }
         // The default mode never rearranges, mirrors, resizes, or disables a
         // physical display, including while capture follows the lock screen.
         let changePhysicalLayout = disablePhysicalDisplays && !environment.isScreenLocked()
@@ -168,6 +180,12 @@ final class NativeStreamingDisplayDriver: StreamingDisplayDriver {
         if let display, size == requested { replacement = display }
         else { replacement = try environment.create(requested) }
         try await settle(replacement, revision: epoch)
+        guard revision == epoch, environment.isSessionAvailable() else { throw NocturneError.disconnected }
+        // Lock may arrive while WindowServer publishes the replacement's modes.
+        // Do not retire the previous framebuffer underneath loginwindow then.
+        if environment.isScreenLocked(), let display, environment.isDisplayActive(display.displayID) {
+            return display.displayID
+        }
         // A locked connection must reach the existing password screen first.
         // The monitor-off preference applies on the next preparation after unlock.
         if changePhysicalLayout, !environment.isScreenLocked() {
@@ -178,14 +196,21 @@ final class NativeStreamingDisplayDriver: StreamingDisplayDriver {
     }
     func restore() throws {
         revision = UUID()
-        // Keep the framebuffer only while physical-screen recovery is pending.
-        // Once recovery succeeds, ending the lease must also remove the monitor
-        // from WindowServer. The next stream creates and selects a fresh target.
         try layout?.restore()
         layout = nil
+        // An idle headless server needs a persistent framebuffer for loginwindow.
+        // Releasing the authenticated lease must not tear down its only monitor.
+        // With another usable display, preserve the normal removal behavior.
+        if let display, environment.isSessionAvailable(), environment.isDisplayActive(display.displayID),
+           !environment.hasActiveDisplayOtherThan(display.displayID) { return }
         display = nil; size = nil
     }
-    func stop() throws { try restore() }
+    func stop() throws {
+        try restore()
+        // Explicit server shutdown (including worker EOF) always releases it,
+        // after any pending physical-display restoration has succeeded.
+        display = nil; size = nil
+    }
     private func settle(_ display: StreamingVirtualDisplay, revision epoch: UUID) async throws {
         var failure: Error = NocturneError.timeout
         for _ in 0..<40 {

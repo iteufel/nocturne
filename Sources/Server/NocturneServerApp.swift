@@ -143,7 +143,7 @@ struct ServerSettingsView: View {
             } header: {
                 Label(L("Displays"), systemImage: "display.2")
             } footer: {
-                Text(L("The virtual monitor works with or without a physical screen and adapts to your device. Connected displays keep their layout unless you separately enable turning them off. Apply changes to restart a running server."))
+                Text(L("The virtual monitor works with or without a physical screen and adapts to your device. Connected displays keep their layout unless you separately enable turning them off. While locked, an existing virtual monitor keeps its resolution; reconnect after unlocking to match your device again. Without another usable display, the virtual monitor stays available until the server stops. Apply changes to restart a running server."))
             }
             Section {
                 Picker(L("Appearance"), selection: $appearance) {

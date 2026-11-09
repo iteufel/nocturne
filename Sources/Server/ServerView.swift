@@ -14,6 +14,11 @@ private struct ChatProviderSettingsView: View {
                     subtitle: L("Let paired devices read and continue agent conversations. This switch applies immediately; agents can use files and tools on this Mac."))
             }.toggleStyle(.switch)
             Divider()
+            Toggle(isOn: $model.browserEnabled) {
+                FeatureRow(icon: "globe", title: L("Browser on Mac"),
+                     subtitle: L("Let paired users explicitly open private web sessions using this Mac’s network, including localhost and LAN services. Disabling closes sessions immediately. Reconnect devices after enabling."))
+            }.toggleStyle(.switch)
+            Divider()
             Text(L("Chat providers")).font(.headline)
             ForEach(model.chatAgents) { agent in
                 HStack {
@@ -284,6 +289,8 @@ struct ServerView: View {
             MoonPanel {
                 VStack(spacing: 20) {
                     Toggle(isOn: $model.settings.screenSharing) { FeatureRow(icon: "display", title: L("Screen sharing"), subtitle: L("Start and keep screen and app sharing ready while Nocturne is open. Files and terminal work independently when this is off.")) }.toggleStyle(.switch)
+                    Divider()
+                    Toggle(isOn: $model.settings.simulators) { FeatureRow(icon: "iphone", title: L("Simulator"), subtitle: L("Let paired devices view and control a running iOS simulator. Requires Xcode 27 or newer. Start simulators in Xcode first.")) }.toggleStyle(.switch)
                     Divider()
                     Toggle(isOn: $model.settings.terminal) { FeatureRow(icon: "terminal", title: L("Terminal"), subtitle: L("Shells keep running when devices disconnect. Applying changes closes all terminal tabs, including background shells.")) }.toggleStyle(.switch)
                     Divider()
