@@ -93,7 +93,7 @@ public final class ChatSupervisorService {
     func permissions(for session: String) -> [ChatPermission] { pending.values.filter { $0.0.supervisorID == session }.map { $0.1 } }
     func approve(_ id: String, option: String, supervisor: String) throws -> Bool {
         guard let (worker, _) = pending[id], worker.supervisorID == supervisor else { return false }
-        try worker.agent.approve(id, option: option); pending.removeValue(forKey: id); return true
+        try worker.agent.approve(id, option: option, session: worker.session.id); pending.removeValue(forKey: id); return true
     }
     public nonisolated func reset(configurations: [ChatAgentConfiguration]? = nil) {
         DispatchQueue.main.async {
@@ -219,7 +219,7 @@ public final class ChatSupervisorService {
         }
         if let permission = event.permission {
             worker.status = "Waiting for your decision"
-            let labelled = ChatPermission(id: permission.id, title: worker.session.title + " · " + permission.title, detail: permission.detail, options: permission.options)
+            let labelled = ChatPermission(id: permission.id, title: worker.session.title + " · " + permission.title, detail: permission.detail, options: permission.options, expiresAt: permission.expiresAt, attentionKind: permission.attentionKind)
             pending[permission.id] = (worker, labelled)
             publish(ChatEvent(providerID: worker.supervisorProvider, sessionID: worker.supervisorID, kind: .permission, permission: labelled))
         }

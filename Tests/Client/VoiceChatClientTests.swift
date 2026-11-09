@@ -21,7 +21,7 @@ final class VoiceChatClientTests: XCTestCase {
     }
     func testSupervisorVoiceAutostartRequiresOptInAndSelectedSupervisor() async throws {
         let (peer, client, model) = try await connected(supervisor: true); defer { client.disconnect(); peer.stop() }
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }, applicationState: { .active })
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }, applicationState: { .active })
         defer { voice.stop() }
         voice.startSupervisorIfEnabled(false)
         XCTAssertFalse(voice.engaged); XCTAssertEqual(audio.starts, 0)
@@ -39,7 +39,7 @@ final class VoiceChatClientTests: XCTestCase {
         let (peer, client, model) = try await connected(supervisor: true); defer { client.disconnect(); peer.stop() }
         let audio = FakeVoiceAudio()
         var state = UIApplication.State.inactive, permissionRequests = 0
-        let voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: {
+        let voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: {
             permissionRequests += 1; return true
         }, applicationState: { state })
         defer { voice.stop() }
@@ -58,7 +58,7 @@ final class VoiceChatClientTests: XCTestCase {
     func testFailedVoicePreparationNeverStartsMicrophoneAndKeepsWorkspaceConnected() async throws {
         let (peer, client, model) = try await connected(supervisor: true); defer { client.disconnect(); peer.stop() }
         peer.failVoicePreparation = true
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }, applicationState: { .active })
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }, applicationState: { .active })
         defer { voice.stop() }
         voice.startSupervisorIfEnabled(true)
         try await waitUntil { voice.error != nil }
@@ -68,7 +68,7 @@ final class VoiceChatClientTests: XCTestCase {
     func testVoiceContinuationKeepsOriginalAndRoutesCallAndRetryToNewThread() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
         peer.continueVoice = true; model.draft = "Keep my draft"
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }); defer { voice.stop() }
         voice.start(); try await waitUntil { voice.active }
         XCTAssertEqual(model.selected?.id, "voice-continuation")
         XCTAssertTrue(model.sessions.contains { $0.id == "voice-chat" })
@@ -83,7 +83,7 @@ final class VoiceChatClientTests: XCTestCase {
     func testPreflightFailureDoesNotRecordAndCanRetry() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
         peer.failPreflight = true
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }); defer { voice.stop() }
         voice.start(); try await waitUntil { voice.error != nil }
         XCTAssertEqual(audio.starts, 0); XCTAssertEqual(peer.voiceStarts, 0)
         XCTAssertEqual(model.selected?.id, "voice-chat"); XCTAssertNil(model.voiceContinuationNotice)
@@ -94,7 +94,7 @@ final class VoiceChatClientTests: XCTestCase {
     func testCanceledPreflightCannotSwitchThreadsOrStartRecording() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
         peer.continueVoice = true; peer.delayPreflight = true
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }); defer { voice.stop() }
         voice.start(); try await waitUntil { peer.pendingPreflight != nil }
         voice.stop(); peer.pendingPreflight?(); peer.pendingPreflight = nil
         try await Task.sleep(nanoseconds: 100_000_000)
@@ -105,13 +105,13 @@ final class VoiceChatClientTests: XCTestCase {
     func testOlderHostCanStillStartVoiceWithoutPreflight() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
         peer.supportsPreflight = false
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }); defer { voice.stop() }
         voice.start(); try await waitUntil { voice.active }
         XCTAssertEqual(peer.preflightSessions, []); XCTAssertEqual(peer.startedSessions, ["voice-chat"])
     }
     func testPermissionDenialNeverStartsAudio() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { false })
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { false })
         voice.start(); try await waitUntil { voice.error != nil && !voice.engaged }
         XCTAssertEqual(audio.starts, 0); XCTAssertFalse(model.voiceEngaged); XCTAssertEqual(peer.voiceStarts, 0)
         XCTAssertEqual(client.state, .connected)
@@ -120,7 +120,7 @@ final class VoiceChatClientTests: XCTestCase {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
         let audio = FakeVoiceAudio()
         var pending: CheckedContinuation<Bool, Never>?, answered = false
-        let voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: {
+        let voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: {
             let allowed = await withCheckedContinuation { pending = $0 }; answered = true; return allowed
         })
         voice.start(); try await waitUntil { pending != nil }
@@ -130,7 +130,7 @@ final class VoiceChatClientTests: XCTestCase {
     }
     func testWebRTCOfferAnswerAndMuteKeepExistingVoiceControls() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true })
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true })
         defer { voice.stop() }
         voice.start(); try await waitUntil { voice.active }
         XCTAssertEqual(peer.offers, [FakeVoiceAudio.sdp]); XCTAssertEqual(audio.answers, [FakeVoiceAudio.sdp])
@@ -153,7 +153,7 @@ final class VoiceChatClientTests: XCTestCase {
     func testAppServerStartedIsNotEnoughUntilWebRTCMediaConnects() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
         let audio = FakeVoiceAudio(); audio.autoConnect = false
-        let voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        let voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }); defer { voice.stop() }
         voice.start(); try await waitUntil { !audio.answers.isEmpty }
         XCTAssertTrue(voice.starting); XCTAssertFalse(voice.active)
         audio.emit(.connected); try await waitUntil { voice.active }
@@ -161,7 +161,7 @@ final class VoiceChatClientTests: XCTestCase {
     func testBackgroundKeepsWebRTCAudioAliveUntilHangup() async throws {
         XCTAssertTrue((Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String])?.contains("audio") == true)
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }); defer { voice.stop() }
         voice.start(); try await waitUntil { voice.active }; let stops = audio.stops
         NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
         XCTAssertTrue(voice.active); XCTAssertTrue(model.voiceEngaged); XCTAssertEqual(audio.stops, stops)
@@ -175,7 +175,7 @@ final class VoiceChatClientTests: XCTestCase {
     func testBackgroundCancelsPendingMicrophonePermission() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
         let audio = FakeVoiceAudio(); var pending: CheckedContinuation<Bool, Never>?, answered = false
-        let voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: {
+        let voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: {
             let allowed = await withCheckedContinuation { pending = $0 }; answered = true; return allowed
         }); defer { voice.stop() }
         voice.start(); try await waitUntil { pending != nil }
@@ -187,7 +187,7 @@ final class VoiceChatClientTests: XCTestCase {
     }
     func testDisconnectStopsMediaAndRejectsPreviousVoiceLease() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }); defer { voice.stop() }
         voice.start(); try await waitUntil { voice.active }; let previous = try XCTUnwrap(peer.lastLease)
         voice.stop(); XCTAssertFalse(voice.engaged); XCTAssertFalse(model.voiceEngaged)
         voice.start(); try await waitUntil { voice.active }
@@ -199,7 +199,7 @@ final class VoiceChatClientTests: XCTestCase {
     }
     func testMediaFailureClosesOnlyVoiceConnection() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }); defer { voice.stop() }
         voice.start(); try await waitUntil { voice.active }
         audio.emit(.failed("WebRTC lost audio")); try await waitUntil { !voice.engaged && voice.error != nil }
         XCTAssertEqual(voice.error, "WebRTC lost audio"); XCTAssertFalse(model.voiceEngaged)
@@ -208,14 +208,14 @@ final class VoiceChatClientTests: XCTestCase {
     func testMalformedAnswerStopsMediaBeforeBecomingActive() async throws {
         let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
         peer.answerSDP = "not SDP"
-        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, requestPermission: { true }); defer { voice.stop() }
+        let audio = FakeVoiceAudio(), voice = ClientVoiceChat(chat: model, audio: audio, calls: FakeVoiceSystemCall(), requestPermission: { true }); defer { voice.stop() }
         voice.start(); try await waitUntil { !voice.engaged && voice.error != nil }
         XCTAssertFalse(voice.active); XCTAssertFalse(model.voiceEngaged)
         _ = try await client.request(Packet(.ping))
     }
     func testClientSuspensionKeepsWorkspaceDuringVoiceAndReleasesAfterHangup() async throws {
         let peer = try VoiceWorkspacePeer(); try await peer.start(); defer { peer.stop() }
-        let audio = FakeVoiceAudio(), app = ClientModel(voiceAudio: audio, voicePermission: { true })
+        let audio = FakeVoiceAudio(), app = ClientModel(voiceAudio: audio, voiceCalls: FakeVoiceSystemCall(), voicePermission: { true })
         defer { app.voice.stop(); app.server.disconnect() }
         try await app.server.connect(peer.invitation())
         await app.chats.refresh(); await app.chats.open(try XCTUnwrap(app.chats.sessions.first))
@@ -223,6 +223,82 @@ final class VoiceChatClientTests: XCTestCase {
         app.suspend()
         XCTAssertTrue(app.voice.active); XCTAssertEqual(app.server.state, .connected)
         app.voice.end(); try await waitUntil { !app.voice.engaged && app.server.state == .disconnected }
+    }
+    func testCallKitActivationGatesConnectedStateAndSystemMuteChangesTheTrack() async throws {
+        let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
+        let audio = FakeVoiceAudio(), calls = FakeVoiceSystemCall(); calls.autoActivate = false
+        let voice = ClientVoiceChat(chat: model, audio: audio, calls: calls, requestPermission: { true })
+        defer { voice.stop() }
+        voice.start(); try await waitUntil { !audio.answers.isEmpty }
+        XCTAssertTrue(voice.starting); XCTAssertFalse(voice.active); XCTAssertEqual(calls.connections, 0)
+        XCTAssertEqual(calls.onMute?(true), true)
+        XCTAssertTrue(voice.muted); XCTAssertTrue(audio.muted)
+        calls.onAudioActivation?(true); try await waitUntil { voice.active }
+        XCTAssertEqual(calls.connections, 1); XCTAssertEqual(audio.activations, [true])
+        XCTAssertEqual(calls.onMute?(false), true)
+        XCTAssertFalse(voice.muted); XCTAssertFalse(audio.muted)
+        voice.toggleMuted(); XCTAssertTrue(audio.muted); XCTAssertTrue(voice.muted)
+    }
+    func testSystemHangupStopsMediaAndServerWithoutAnInterruptionError() async throws {
+        let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
+        let audio = FakeVoiceAudio(), calls = FakeVoiceSystemCall()
+        let voice = ClientVoiceChat(chat: model, audio: audio, calls: calls, requestPermission: { true })
+        defer { voice.stop() }
+        voice.start(); try await waitUntil { voice.active }
+        let stops = audio.stops
+        calls.onEnd?()
+        XCTAssertFalse(voice.active); XCTAssertGreaterThan(audio.stops, stops)
+        calls.onAudioActivation?(false)
+        try await waitUntil { !voice.engaged && peer.voiceStops == 1 }
+        XCTAssertNil(voice.error); XCTAssertFalse(model.voiceEngaged)
+        XCTAssertEqual(client.state, .connected)
+    }
+    func testSystemCallRejectionCleansUpBeforeSendingVoiceStart() async throws {
+        let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
+        let audio = FakeVoiceAudio(), calls = FakeVoiceSystemCall()
+        calls.startError = NocturneError.remote("CallKit rejected the call")
+        let voice = ClientVoiceChat(chat: model, audio: audio, calls: calls, requestPermission: { true })
+        defer { voice.stop() }
+        voice.start(); try await waitUntil { voice.error != nil }
+        XCTAssertFalse(voice.engaged); XCTAssertFalse(model.voiceEngaged)
+        XCTAssertEqual(peer.voiceStarts, 0); XCTAssertTrue(calls.lastFailed)
+        XCTAssertEqual(client.state, .connected)
+    }
+    func testSystemDeactivationAndProviderFailureCloseTheRealVoiceSession() async throws {
+        let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
+        let audio = FakeVoiceAudio(), calls = FakeVoiceSystemCall()
+        let voice = ClientVoiceChat(chat: model, audio: audio, calls: calls, requestPermission: { true })
+        defer { voice.stop() }
+        voice.start(); try await waitUntil { voice.active }
+        calls.onAudioActivation?(false)
+        XCTAssertFalse(voice.engaged); XCTAssertFalse(model.voiceEngaged); XCTAssertNotNil(voice.error)
+        XCTAssertTrue(calls.lastFailed); XCTAssertEqual(client.state, .connected)
+        voice.start(); try await waitUntil { voice.active }
+        calls.onFailure?("Provider reset")
+        XCTAssertFalse(voice.engaged); XCTAssertEqual(voice.error, "Provider reset")
+        XCTAssertEqual(client.state, .connected)
+    }
+    func testBusySystemCallDoesNotPrepareOrRecordAnotherSession() async throws {
+        let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
+        let audio = FakeVoiceAudio(), calls = FakeVoiceSystemCall(); calls.available = false
+        let voice = ClientVoiceChat(chat: model, audio: audio, calls: calls, requestPermission: { XCTFail("No microphone permission while system is busy"); return true })
+        voice.start()
+        XCTAssertFalse(voice.engaged); XCTAssertEqual(audio.starts, 0); XCTAssertEqual(calls.starts, 0)
+        XCTAssertEqual(peer.voiceStarts, 0)
+    }
+    func testVoiceWaitsForDesktopAudioTeardownBeforePreparingMedia() async throws {
+        let (peer, client, model) = try await connected(); defer { client.disconnect(); peer.stop() }
+        let audio = FakeVoiceAudio(), calls = FakeVoiceSystemCall()
+        let voice = ClientVoiceChat(chat: model, audio: audio, calls: calls, requestPermission: { true })
+        defer { voice.stop() }
+        var teardown: CheckedContinuation<Void, Never>?
+        voice.beforeStart = { await withCheckedContinuation { teardown = $0 } }
+        voice.start(); try await waitUntil { teardown != nil }
+        XCTAssertEqual(audio.starts, 0); XCTAssertEqual(calls.starts, 0)
+        voice.stop(); teardown?.resume(); teardown = nil
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(audio.starts, 0); XCTAssertEqual(peer.voiceStarts, 0)
+        XCTAssertFalse(model.voiceEngaged)
     }
     private func waitUntil(_ condition: () -> Bool) async throws {
         for _ in 0..<250 { if condition() { return }; try await Task.sleep(nanoseconds: 20_000_000) }
@@ -234,6 +310,7 @@ final class VoiceChatClientTests: XCTestCase {
 private final class FakeVoiceAudio: VoiceAudioDevice {
     static let sdp = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=fingerprint:sha-256 fixture\r\n"
     var starts = 0, stops = 0, reactivations = 0
+    var activations: [Bool] = []
     var muted = false, autoConnect = true
     var answers: [String] = []
     private var continuation: AsyncStream<VoicePeerEvent>.Continuation?
@@ -248,6 +325,7 @@ private final class FakeVoiceAudio: VoiceAudioDevice {
     }
     func setMuted(_ value: Bool) { muted = value }
     func reactivate() throws { reactivations += 1 }
+    func systemAudioActivation(_ active: Bool) { activations.append(active) }
     func emit(_ event: VoicePeerEvent) { continuation?.yield(event) }
     func stop() { stops += 1; continuation?.finish(); continuation = nil }
 }
@@ -257,7 +335,7 @@ private final class FakeVoiceAudio: VoiceAudioDevice {
 private final class VoiceWorkspacePeer {
     let key: Data
     let listener: NWListener
-    var voiceStarts = 0, heartbeats = 0
+    var voiceStarts = 0, voiceStops = 0, heartbeats = 0
     var offers: [String] = []
     var answerSDP = FakeVoiceAudio.sdp
     var lastLease: String?
@@ -320,6 +398,7 @@ private final class VoiceWorkspacePeer {
                     self.send(.answer, connection: id)
                     reply.chatVoiceEvent = event
                 case .chatVoiceStop:
+                    self.voiceStops += 1
                     self.send(.closed, connection: id); self.leases.removeValue(forKey: id)
                 case .chatVoiceHeartbeat: self.heartbeats += 1
                 case .ping: break
@@ -339,4 +418,26 @@ private final class VoiceWorkspacePeer {
         }
     }
     func stop() { listener.cancel(); Array(channels.values).forEach { $0.cancel() }; channels = [:]; leases = [:] }
+}
+
+@MainActor
+private final class FakeVoiceSystemCall: VoiceSystemCall {
+    var available = true
+    var onEnd: (() -> Void)?
+    var onMute: ((Bool) -> Bool)?
+    var onAudioActivation: ((Bool) -> Void)?
+    var onFailure: ((String) -> Void)?
+    var starts = 0, connections = 0, finishes = 0
+    var autoActivate = true
+    var startError: Error?
+    var lastFailed = false
+    func start() async throws {
+        starts += 1
+        if let startError { throw startError }
+        if autoActivate { onAudioActivation?(true) }
+    }
+    func connected() { connections += 1 }
+    func requestEnd() { onEnd?() }
+    func requestMute(_ muted: Bool) { _ = onMute?(muted) }
+    func finish(failed: Bool) { finishes += 1; lastFailed = failed }
 }

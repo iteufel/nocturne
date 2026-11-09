@@ -12,7 +12,7 @@ Stream your Mac to iPhone, iPad, or another Mac. The Mac app can host your deskt
 - Pair several Macs and switch between them.
 - Connect Mac to Mac from **Computers**, with desktop video, audio, keyboard, and mouse in a separate window.
 
-Requires iOS/iPadOS 17+ and an Apple Silicon Mac running macOS 14+. Nocturne includes its streaming engine; no separate Sunshine installation is needed.
+Requires iOS/iPadOS 17+ and an Apple Silicon Mac running macOS 15+. Nocturne includes its streaming engine; no separate Sunshine installation is needed.
 
 ## Get started
 
@@ -33,6 +33,7 @@ The Mac desktop matches its viewer window by default, including Retina resolutio
 - [Remote access](docs/REMOTE_ACCESS.md) — connecting across networks and hosting a broker.
 - [Development](docs/DEVELOPMENT.md) — prerequisites, local builds, signing, and tests.
 - [Releases and TestFlight](docs/RELEASING.md) — automated builds and distribution.
+- [iOS agent calls](docs/CALLKIT.md) — system call controls, audio lifecycle, vehicle limits and incoming-call prerequisites.
 - [Implementation](docs/IMPLEMENTATION.md) — architecture, authentication, and protocols.
 - [Verification](docs/VERIFICATION.md) — test evidence, limitations, and remaining device checks.
 
