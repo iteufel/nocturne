@@ -31,13 +31,13 @@ struct ChatConfigurationBar: View {
                     ForEach(model.options) { option in
                         if option.category == "mode" {
                             Button { policy = option } label: {
-                                Label("Approvals: " + (option.choices.first { $0.value == option.value }?.name ?? option.name), systemImage: "hand.raised")
+                                Label(L("Approvals: %@", policyText(option.choices.first { $0.value == option.value }?.name ?? option.name, option: option)), systemImage: "hand.raised")
                                     .font(.caption).lineLimit(1)
                             }.accessibilityIdentifier("chatApprovalPolicy")
                         } else {
                             Menu {
                                 Picker(NocturneLocalization.message(option.name), selection: Binding(get: { option.value }, set: { value in Task { await model.configure(option, value: value) } })) {
-                                    ForEach(option.choices) { choice in Text(choice.name).tag(choice.value) }
+                                    ForEach(option.choices) { choice in Text(policyText(choice.name, option: option)).tag(choice.value) }
                                 }
                             } label: {
                                 Label(option.choices.first(where: { $0.value == option.value })?.name ?? option.name,
@@ -57,37 +57,41 @@ struct ChatConfigurationBar: View {
                 }
             }
             if !model.options.contains(where: { $0.category == "mode" }), model.selected != nil, !model.loading {
-                Text("Approval policy is managed by this provider. Requests still require your selection.").font(.caption2).foregroundStyle(ChatStyle.secondary)
+                Text(L("Approval policy is managed by this provider. Requests still require your selection.")).font(.caption2).foregroundStyle(ChatStyle.secondary)
             }
         }.padding(.horizontal, inline ? 0 : 16).padding(.top, inline || (model.options.isEmpty && model.optionsError == nil) ? 0 : 10)
             .sheet(item: $policy) { option in
                 NavigationStack {
                     List {
                         Section {
-                            if let detail = option.detail { Text(detail) }
+                            if let detail = option.detail { Text(policyText(detail, option: option)) }
                             if option.id != "nocturne.approvalPolicy" {
-                                Text("Applies to this provider session in this chat. Provider restrictions and required interactive approvals still apply. Select a different mode here to change it back. Provider-saved rules must be revoked on your Mac.")
+                                Text(L("Applies to this provider session in this chat. Provider restrictions and required interactive approvals still apply. Select a different mode here to change it back. Provider-saved rules must be revoked on your Mac."))
                             }
-                            Text("Current: " + (option.choices.first { $0.value == option.value }?.name ?? option.value))
+                            Text(L("Current: %@", policyText(option.choices.first { $0.value == option.value }?.name ?? option.value, option: option)))
                         }
-                        Section("Choose a policy") {
+                        Section(L("Choose a policy")) {
                             ForEach(option.choices) { choice in
                                 Button {
                                     policy = nil
                                     Task { await model.configure(option, value: choice.value) }
                                 } label: {
                                     VStack(alignment: .leading, spacing: 6) {
-                                        Text(choice.name)
-                                        if let detail = choice.detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                                        Text(policyText(choice.name, option: option))
+                                        if let detail = choice.detail { Text(policyText(detail, option: option)).font(.caption).foregroundStyle(.secondary) }
                                     }.padding(.vertical, 4)
                                 }
                             }
                         }
-                    }.navigationTitle("Chat approval policy")
-                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { policy = nil } } }
+                    }.navigationTitle(L("Chat approval policy"))
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Cancel")) { policy = nil } } }
                 }
             }
     }
+    private func policyText(_ text: String, option: ChatConfigOption) -> String {
+        option.id == "nocturne.approvalPolicy" ? NocturneLocalization.message(text) : text
+    }
+
 }
 
 struct DeveloperProjectPane: View {

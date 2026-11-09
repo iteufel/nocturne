@@ -159,6 +159,10 @@ let values: [String: Any] = [
     "files": L("Files"), "unknown": L("user text %s 🤖"),
     "attention": L("Nocturne needs your attention"),
     "attentionIntent": String(localized: LocalizedStringResource("Decide pending Nocturne request", table: "AppIntents")),
+    "browserTitle": L("Browser on %@", "Mac %@ / O'Neil"),
+    "simulatorState": NocturneLocalization.message("Booted"),
+    "approvalTitle": NocturneLocalization.message("Allow for session"),
+    "approvalRule": NocturneLocalization.message("Codex saves this rule on your Mac: git literal-%@ / O'Neil. May affect other chats. Revoke in Codex rules on your Mac."),
     "argument": L("Open %@", "literal %@ / O'Neil 🤖"),
     "error": NocturneLocalization.message("Install tool-%@ on your Mac or set its full path in Sharing → Chat providers."),
     "keychain": NocturneLocalization.message("Keychain operation failed (-50)."),
@@ -182,6 +186,10 @@ print(String(data: try JSONSerialization.data(withJSONObject: values), encoding:
             assert output['files'] == tables[language]['Files'], (preference, output)
             assert output['attention'] == tables[language]['Nocturne needs your attention']
             assert output['attentionIntent'] == tables[language]['Decide pending Nocturne request']
+            assert output['browserTitle'] == tables[language]['Browser on %@'].replace('%@', "Mac %@ / O'Neil")
+            assert output['simulatorState'] == tables[language]['Booted']
+            assert output['approvalTitle'] == tables[language]['Allow for session']
+            assert output['approvalRule'] == tables[language]['Codex saves this rule on your Mac: %@. May affect other chats. Revoke in Codex rules on your Mac.'].replace('%@', "git literal-%@ / O'Neil")
             assert output['unknown'] == 'user text %s 🤖'
             assert output['opaque'] == 'opaque agent reply %s'
             assert output['keychain'] == tables[language]['Keychain operation failed (%@).'].replace('%@', '-50')

@@ -36,15 +36,20 @@ such as `Match device`, tab IDs, appearance raw values and status comparisons st
 unchanged. Only their UI labels are localized. Provider-generated metadata and
 external service prose remain provider-owned.
 
-This localization branch has been merged normally with `main` commit
-`86b8a1b6e6f9ecae8ed402c7d93dcb9478daef8d`, preserving the CallKit and local
-attention behavior already on `main`. Its new settings, local notification copy,
-Live Activity controls, authentication reasons and system-call errors use the
-same five native language tables. Remote APNs payloads remain stable protocol
-content; only the local presentation boundary translates them. No code from the
-other independent chat-status, browser, simulator or headless-lockscreen PRs is
-included. Integrators should reuse `L`/`LCount` for presentation text and keep
-protocol and storage values stable. There is no in-app language selector.
+The integrated localization covers CallKit and local attention, chat activity
+and approval controls, the Mac browser, simulator control, and the headless
+display settings. Their labels, help text and owned errors share the same five
+native language tables. Provider policy descriptions remain provider-owned;
+only Nocturne's own policy choices and scope messages are translated. Saved
+command prefixes remain literal arguments inside the translated explanation.
+
+Browser frames optionally mark host-authored notices so the receiving client
+can translate them. Website alerts and WebKit errors remain verbatim, even when
+their text matches a Nocturne message. Older frames without this marker also
+remain verbatim. Remote APNs payloads remain stable protocol content; only the
+local presentation boundary translates them. Integrators should reuse
+`L`/`LCount` for presentation text and keep protocol and storage values stable.
+There is no in-app language selector.
 
 ## App Intents metadata
 
@@ -83,18 +88,23 @@ The localization runtime check covers:
   `fr-CA`, `it-CH`, `es-MX`, unsupported Japanese, and ordered mixed preferences.
 - English fallback, InfoPlist and streaming-table lookup, singular/zero/plural
   forms, literal percent signs/Unicode in arguments, remote error templates,
-  unknown text and unknown protocol-state preservation.
+  browser titles, simulator states, approval scopes, unknown text and unknown
+  protocol-state preservation.
 
 The standalone Localization GitHub workflow runs this check without requiring
 Rust, the streaming runtime, or simulator startup. The existing build workflow
 continues to build/test both app targets with the project's pinned dependencies.
 
-Local verification on 2026-11-09 used Xcode 27.1. All 1,040 strings, seven
+Local verification on 2026-11-09 used Xcode 27.1. All 1,159 strings, seven
 plural keys, ten streaming overlays and permission resources passed validation.
 Eight native language/preference/fallback cases passed. The actual App Intents
 metadata exporter accepted the main-bundle resources in the app and extension,
 including all five language tables, and rejected the former custom-bundle
-regression. The [PR checks](https://github.com/iteufel/nocturne/pull/30/checks)
+regression. The integrated Mac app and iOS simulator test bundle build. The
+combined feature suite passes 129 tests, with ten hardware/provider-dependent
+tests skipped. A real WebKit fixture confirms that a website alert matching a
+host warning remains website content, while the host warning is marked for
+translation. The [PR checks](https://github.com/iteufel/nocturne/pull/30/checks)
 record the complete iPhone/iPad, Mac and broker build/test results. The shared
 runtime update now requires macOS 15+; see [Development](DEVELOPMENT.md).
 

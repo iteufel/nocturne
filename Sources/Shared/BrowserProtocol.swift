@@ -42,9 +42,11 @@ public struct BrowserFrame: Codable {
     public var canGoForward: Bool
     public var loading: Bool
     public var notice: String?
+    /// Only host-authored notices may be translated; webpage content stays verbatim.
+    public var noticeIsHostMessage: Bool?
     public var jpeg: Data?
-    public init(page: String, url: String, title: String, canGoBack: Bool, canGoForward: Bool, loading: Bool, notice: String? = nil, jpeg: Data? = nil) {
+    public init(page: String, url: String, title: String, canGoBack: Bool, canGoForward: Bool, loading: Bool, notice: String? = nil, jpeg: Data? = nil, noticeIsHostMessage: Bool? = nil) {
         self.page = page; self.url = url; self.title = title; self.canGoBack = canGoBack; self.canGoForward = canGoForward
-        self.loading = loading; self.notice = notice; self.jpeg = jpeg
+        self.loading = loading; self.notice = notice; self.jpeg = jpeg; self.noticeIsHostMessage = noticeIsHostMessage
     }
 }

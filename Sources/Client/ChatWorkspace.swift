@@ -251,7 +251,7 @@ private struct ChatWorkspaceCanvas: View {
             }
         }.visibilityPriority(.high)
         ToolbarItemGroup(placement: .topBarTrailing) {
-            Button("Browser on Mac", systemImage: "globe") { openBrowser(wide: browserPanelAvailable) }
+            Button(L("Browser on Mac"), systemImage: "globe") { openBrowser(wide: browserPanelAvailable) }
                 .disabled(!connection.capabilities.contains(BrowserProtocol.capability))
                 .accessibilityIdentifier("chatBrowserOpen")
             if mode == .threads, chat.selected != nil, chat.selected?.isSupervisor != true {
@@ -283,7 +283,7 @@ private struct ChatWorkspaceCanvas: View {
     }
     private func tools(wide: Bool) -> some View {
         VStack(spacing: 14) {
-            ChatCircleButton(title: "Browser on Mac", symbol: "globe", selected: browserVisible) { openBrowser(wide: wide) }
+            ChatCircleButton(title: L("Browser on Mac"), symbol: "globe", selected: browserVisible) { openBrowser(wide: wide) }
                 .disabled(!connection.capabilities.contains(BrowserProtocol.capability)).modifier(ChatGlass())
                 .accessibilityIdentifier("chatBrowserOpen")
             if mode == .threads {

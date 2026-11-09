@@ -31,7 +31,7 @@ final class SimulatorPreviewModel: ObservableObject {
             guard let devices = reply.simulators, devices.count <= SimulatorStreaming.maximumDevices,
                   Set(devices.map(\.id)).count == devices.count else { throw NocturneError.invalidFrame }
             self.devices = devices
-        } catch { if epoch == generation { self.error = error.localizedDescription } }
+        } catch { if epoch == generation { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
     func start(_ device: RemoteSimulator) async {
         guard !busy else { return }
@@ -64,16 +64,16 @@ final class SimulatorPreviewModel: ObservableObject {
                         self.frame = frame
                         self.touchEnabled = frame.geometry != nil && self.connection.capabilities.contains(SimulatorStreaming.inputCapability)
                         self.image = image
-                        self.dimensions = "\(frame.pixelWidth) × \(frame.pixelHeight) pixels"
+                        self.dimensions = L("%@ × %@ pixels", String(frame.pixelWidth), String(frame.pixelHeight))
                         // Pull only after decode: no queued frames or unbounded network backlog.
                         try await Task.sleep(nanoseconds: 500_000_000)
                     }
                 } catch {
                     guard self.epoch == generation else { return }
-                    self.stop(); self.error = error.localizedDescription
+                    self.stop(); self.error = NocturneLocalization.message(error.localizedDescription)
                 }
             }
-        } catch { if epoch == generation { stop(); self.error = error.localizedDescription } }
+        } catch { if epoch == generation { stop(); self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
     func stop(release: Bool = true) {
         epoch = UUID(); frames?.cancel(); frames = nil; busy = false
@@ -108,7 +108,7 @@ final class SimulatorPreviewModel: ObservableObject {
                 }
             } catch {
                 guard self.inputEpoch == generation else { return }
-                self.resetInput(); self.error = error.localizedDescription
+                self.resetInput(); self.error = NocturneLocalization.message(error.localizedDescription)
             }
         }
     }
@@ -133,18 +133,18 @@ struct SimulatorWorkspace: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Simulator").font(.title2.bold())
-                Text("View and control a running iOS simulator on your Mac. Tap, hold, and drag on its display. Start or rotate simulators in Xcode on your Mac.")
+                Text(L("Simulator")).font(.title2.bold())
+                Text(L("View and control a running iOS simulator on your Mac. Tap, hold, and drag on its display. Start or rotate simulators in Xcode on your Mac."))
                     .font(.callout).foregroundStyle(.secondary)
                 if connection.state != .connected {
-                    Text("Connect to your Mac to view its simulators.")
+                    Text(L("Connect to your Mac to view its simulators."))
                 } else if !connection.capabilities.contains(SimulatorStreaming.capability) {
-                    Text("Enable Simulator in Nocturne on your Mac and reconnect. Xcode 27 or newer is required for touch control.")
+                    Text(L("Enable Simulator in Nocturne on your Mac and reconnect. Xcode 27 or newer is required for touch control."))
                 } else {
                     HStack {
-                        Button("Refresh devices", systemImage: "arrow.clockwise") { Task { await model.load() } }.disabled(model.busy)
+                        Button(L("Refresh devices"), systemImage: "arrow.clockwise") { Task { await model.load() } }.disabled(model.busy)
                         Spacer()
-                        Button("Stop simulator stream", role: .cancel) { model.stop() }.disabled(model.selected == nil && !model.busy)
+                        Button(L("Stop simulator stream"), role: .cancel) { model.stop() }.disabled(model.selected == nil && !model.busy)
                     }
                     if model.busy { ProgressView() }
                     if let error = model.error { Text(error).foregroundStyle(.secondary) }
@@ -153,7 +153,7 @@ struct SimulatorWorkspace: View {
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(device.name)
-                                    Text("\(device.runtime.replacingOccurrences(of: "com.apple.CoreSimulator.SimRuntime.", with: "")) · \(device.state)")
+                                    Text("\(device.runtime.replacingOccurrences(of: "com.apple.CoreSimulator.SimRuntime.", with: "")) · \(NocturneLocalization.message(device.state))")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -161,19 +161,19 @@ struct SimulatorWorkspace: View {
                             }
                         }.disabled(!device.isBooted || model.busy)
                     }
-                    if model.devices.isEmpty && !model.busy { Text("No available iOS simulators. Manage simulators in Xcode on your Mac.").foregroundStyle(.secondary) }
+                    if model.devices.isEmpty && !model.busy { Text(L("No available iOS simulators. Manage simulators in Xcode on your Mac.")).foregroundStyle(.secondary) }
                     if let image = model.image {
                         Text(model.dimensions).font(.caption.monospacedDigit())
                         SimulatorTouchSurface(image: image, enabled: model.touchEnabled, send: model.touch)
                             .aspectRatio(image.size.width / image.size.height, contentMode: .fit)
                             .frame(maxWidth: .infinity, maxHeight: 900)
-                            .accessibilityLabel(model.touchEnabled ? "Interactive simulator display" : "Simulator display, preview only")
-                        if !model.touchEnabled { Text("This host provides a preview only. Update the Mac app and Xcode to enable touch.").font(.caption).foregroundStyle(.secondary) }
+                            .accessibilityLabel(model.touchEnabled ? L("Interactive simulator display") : L("Simulator display, preview only"))
+                        if !model.touchEnabled { Text(L("This host provides a preview only. Update the Mac app and Xcode to enable touch.")).font(.caption).foregroundStyle(.secondary) }
                     }
                 }
             }.padding()
         }
-        .navigationTitle("Simulator")
+        .navigationTitle(L("Simulator"))
         .task(id: connection.state) {
             model.reset()
             if connection.state == .connected && connection.capabilities.contains(SimulatorStreaming.capability) { await model.load() }
