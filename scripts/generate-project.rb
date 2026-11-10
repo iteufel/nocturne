@@ -394,7 +394,8 @@ info['NSBluetoothAlwaysUsageDescription'] = 'Connect compatible Bluetooth mice a
 info['NSBluetoothPeripheralUsageDescription'] = 'Connect compatible Bluetooth mice and accessories to Nocturne.'
 info['NSCameraUsageDescription'] = 'Scan the pairing QR code displayed by Nocturne on your Mac.'
 info['NSMicrophoneUsageDescription'] = 'Talk with Codex in live voice chats, or send your microphone to your paired Mac for Discord and games when you unmute a stream.'
-info['UIBackgroundModes'] = ['audio']
+# CallKit rejects outgoing transactions as unentitled without the voip mode.
+info['UIBackgroundModes'] = %w[audio voip]
 info['NSSupportsLiveActivities'] = true
 info['UIApplicationSceneManifest'] = {
   'UIApplicationSupportsMultipleScenes' => true,

@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import plistlib
 import shutil
 import subprocess
 import tempfile
@@ -47,6 +48,15 @@ elif name == 'git' and args[0] == 'clone':
 elif name == 'git' and args[2:] == ['rev-parse', 'HEAD']:
     print('02dc9780496eeeac6d01c8bbdccb8b6fe71ef28a' if args[1].endswith('moonlight-ios') else '5d14406844143538cd8f8851d2d8a67c1fe443e5')
 '''
+
+
+class ClientBundleConfigurationTests(unittest.TestCase):
+    def test_voice_calls_have_required_background_modes(self):
+        with (ROOT / 'Resources' / 'Client-Info.plist').open('rb') as source:
+            info = plistlib.load(source)
+        modes = info.get('UIBackgroundModes', [])
+        self.assertIn('audio', modes, 'Voice audio must continue while the app is in the background')
+        self.assertIn('voip', modes, 'CallKit rejects outgoing calls as unentitled (error 1) without voip')
 
 
 class BuildOrchestrationTests(unittest.TestCase):
