@@ -100,25 +100,11 @@ function(nocturne_macos_video source_root output)
     [self.captureCallbacks removeObjectForKey:connection];
   }
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-    @synchronized(self.session) {
-      dispatch_semaphore_t signal;
-      @synchronized(self) {
-        signal = [self.captureSignals objectForKey:connection];
-      }
-      if (!signal) return;
-      [self.session stopRunning];
-      @synchronized(self) {
-        [self.session removeOutput:[self.videoOutputs objectForKey:connection]];
-        [self.videoOutputs removeObjectForKey:connection];
-      }
-      [self.session startRunning];
-      // This block retains self until cleanup completes. The waiting C++ owner
-      // may release its AVVideo reference as soon as this signal is delivered.
-      dispatch_semaphore_signal(signal);
-      @synchronized(self) {
-        [self.captureSignals removeObjectForKey:connection];
-      }
+    dispatch_semaphore_t signal;
+    @synchronized(self) {
+      signal = [self.captureSignals objectForKey:connection];
     }
+    if (signal) [self nocturneStopCapture:signal];
   });
 ]=])
     string(FIND "${video}" "${before}" position)
@@ -126,6 +112,36 @@ function(nocturne_macos_video source_root output)
         message(FATAL_ERROR "The pinned macOS sample callback changed; review the Nocturne overlay")
     endif()
     string(REPLACE "${before}" "${after}" video "${video}")
+    set(stop_capture [=[
+// A sleeping/locked display may never deliver another sample. Cancellation must
+// retire the output and drain callbacks before their C++ captures leave scope.
+- (void)nocturneStopCapture:(dispatch_semaphore_t)signal {
+  @synchronized(self.session) {
+    AVCaptureConnection *connection = nil;
+    @synchronized(self) {
+      for (AVCaptureConnection *candidate in self.captureSignals.keyEnumerator) {
+        if ([self.captureSignals objectForKey:candidate] == signal) {
+          connection = [candidate retain];
+          break;
+        }
+      }
+      if (!connection) return;
+      [self.captureCallbacks removeObjectForKey:connection];
+    }
+    // Never hold the callback-map lock while draining AVFoundation's queue.
+    [self.session stopRunning];
+    @synchronized(self) {
+      [self.session removeOutput:[self.videoOutputs objectForKey:connection]];
+      [self.videoOutputs removeObjectForKey:connection];
+      [self.captureSignals removeObjectForKey:connection];
+    }
+    [self.session startRunning];
+    dispatch_semaphore_signal(signal);
+    [connection release];
+  }
+}
+]=])
+    string(REPLACE "@end" "${stop_capture}\n@end" video "${video}")
     string(REPLACE "#import \"av_video.h\"" "#import \"${source_root}/src/platform/macos/av_video.h\"" video "${video}")
     file(CONFIGURE OUTPUT "${output}" CONTENT "${video}" @ONLY)
 endfunction()

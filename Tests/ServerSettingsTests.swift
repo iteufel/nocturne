@@ -68,8 +68,9 @@ final class ServerLifecycleTests: XCTestCase {
         let model: ServerModel
         let port = UInt16.random(in: 52_000..<60_000)
         let key = Data(repeating: 0x42, count: 32)
+        let activityState = ActivityState()
 
-        init(terminal: Bool = true, screenSharing: Bool = false, legacyAutoStart: Bool? = nil, executable: URL? = nil) throws {
+        init(terminal: Bool = true, screenSharing: Bool = false, legacyAutoStart: Bool? = nil, executable: URL? = nil, keyError: Error? = nil) throws {
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             if let legacyAutoStart { defaults.set(legacyAutoStart, forKey: "startServerAutomatically") }
             defaults.set(screenSharing, forKey: "allowScreenSharing")
@@ -79,12 +80,24 @@ final class ServerLifecycleTests: XCTestCase {
             // Captured state keeps tests away from the real login-item registration.
             let login = LoginState()
             loginState = login
+            let activity = activityState
             model = ServerModel(defaults: defaults, supportDirectory: root,
                 engineExecutable: executable ?? root.appendingPathComponent("missing-engine"), port: port,
                 loginItem: ServerLoginItem(status: { login.status }, setEnabled: {
                     if let error = login.error { throw error }
                     login.changes.append($0); login.status = $0 ? .requiresApproval : .notRegistered
-                }), keyProvider: { _ in Data(repeating: 0x42, count: 32) })
+                }), activity: ServerActivity(begin: {
+                    activity.begins += 1; return activity.token
+                }, end: {
+                    XCTAssertTrue($0 === activity.token); activity.ends += 1
+                }), keyProvider: { _ in
+                    if let keyError { throw keyError }
+                    return Data(repeating: 0x42, count: 32)
+                })
+        }
+        final class ActivityState {
+            let token = NSObject()
+            var begins = 0, ends = 0
         }
         final class LoginState {
             var status: SMAppService.Status = .notRegistered
@@ -109,6 +122,34 @@ final class ServerLifecycleTests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeout)
         while !predicate(), Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
         guard predicate() else { XCTFail("Timed out: " + description); throw NocturneError.timeout }
+    }
+
+    func testIdleServerStaysAwakeUntilStoppedAndRestartReleasesEachActivityOnce() async throws {
+        let fixture = try Fixture(); defer { fixture.cleanup() }
+        let model = fixture.model, activity = fixture.activityState
+        model.start(); model.start()
+        XCTAssertEqual(activity.begins, 1, "Prevent sleep before asynchronous listener startup")
+        try await waitFor("idle listener") { model.running }
+        XCTAssertEqual(model.connections, 0)
+        XCTAssertEqual(activity.ends, 0, "The host must remain reachable with no viewers or video engine")
+        model.settings.files = true; model.applySettings()
+        try await waitFor("restarted listener") { model.running }
+        XCTAssertEqual(activity.begins, 2); XCTAssertEqual(activity.ends, 1)
+        model.stop(); model.stop()
+        XCTAssertEqual(activity.ends, 2)
+    }
+
+    func testDisabledSharingAndFailedStartupDoNotLeakSleepPrevention() async throws {
+        let disabled = try Fixture(terminal: false)
+        let failed = try Fixture(keyError: NocturneError.permissionDenied)
+        defer { disabled.cleanup(); failed.cleanup() }
+        disabled.model.startEnabledServices(); disabled.model.start()
+        XCTAssertEqual(disabled.activityState.begins, 0)
+        failed.model.start()
+        try await waitFor("startup failure") { !failed.model.active }
+        XCTAssertEqual(failed.activityState.begins, 1)
+        XCTAssertEqual(failed.activityState.ends, 1)
+        XCTAssertNotNil(failed.model.error)
     }
 
     func testSavedSharingTogglesControlStartupAndIgnoreTheRemovedStartupPreference() async throws {

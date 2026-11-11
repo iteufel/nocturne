@@ -1,8 +1,11 @@
 #include <cassert>
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <stdexcept>
 using CMSampleBufferRef = void *;
 using namespace std::literals;
@@ -11,7 +14,11 @@ static bool allowed = true;
 static unsigned selected = 27;
 static std::chrono::steady_clock::time_point testNow {};
 namespace platf { bool is_screen_capture_allowed() { return allowed; } }
-namespace nocturne { unsigned captureDisplay(unsigned) { return selected; } }
+namespace nocturne {
+    unsigned captureDisplay(unsigned) { return selected; }
+    bool captureSessionLocked() { return false; }
+}
+[[maybe_unused]] static bool CGDisplayIsAsleep(unsigned) { return false; }
 struct av_sample_buf_t { void *buf; explicit av_sample_buf_t(void *value): buf(value) {} };
 struct av_pixel_buf_t {
     void *buf = nullptr;
@@ -30,14 +37,19 @@ struct temp_retain_av_img_t {
 #define CVPixelBufferGetHeight(buffer) 1080
 #define CVPixelBufferGetBytesPerRow(buffer) (1920 * 4)
 #define DISPATCH_TIME_FOREVER 0
-static void dispatch_semaphore_wait(int *signal, int) {
+#define DISPATCH_TIME_NOW 1
+#define NSEC_PER_MSEC 1000000
+static int dispatch_time(int, int) { return 2; }
+static long dispatch_semaphore_wait(int *signal, int) {
     if (!signal) throw std::runtime_error("AVFoundation rejection reached dispatch_semaphore_wait(nil)");
     assert(*signal == 1); ++waits;
+    return 0;
 }
 struct TestVideo {
     bool reject = false;
     int signal = 0;
     std::function<void(int)> beforeFrame;
+    void nocturneStopCapture(int *value) { *value = 1; }
     template<class Callback> int *capture(Callback callback) {
         if (reject) return nullptr;
         signal = 0;

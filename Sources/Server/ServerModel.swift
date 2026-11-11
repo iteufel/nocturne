@@ -14,10 +14,22 @@ struct ServerLoginItem {
     })
 }
 
+struct ServerActivity {
+    var begin: () -> NSObjectProtocol
+    var end: (NSObjectProtocol) -> Void
+    static let system = ServerActivity(begin: {
+        // A host must remain reachable between streams, including at loginwindow.
+        // userInitiated also prevents App Nap, but allows the display to sleep.
+        ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Nocturne sharing server")
+    }, end: { ProcessInfo.processInfo.endActivity($0) })
+}
+
 @MainActor
 final class ServerModel: ObservableObject {
     private let defaults: UserDefaults
     private let loginItem: ServerLoginItem
+    private let activity: ServerActivity
+    private var activityToken: NSObjectProtocol?
     private let keyProvider: (String) throws -> Data
     private let engineExecutable: URL
     private let port: UInt16
@@ -93,11 +105,13 @@ final class ServerModel: ObservableObject {
     init(defaults: UserDefaults = .standard, supportDirectory: URL? = nil,
          engineExecutable: URL? = nil, port: UInt16 = WorkspaceProtocol.port,
          loginItem: ServerLoginItem = .system,
+         activity: ServerActivity = .system,
          keyProvider: @escaping (String) throws -> Data = { account in
              if let stored = try SecureStore.read(account) { return stored }
              let key = try SecureStore.randomKey(); try SecureStore.write(key, account: account); return key
          }) {
-        self.defaults = defaults; self.loginItem = loginItem; self.keyProvider = keyProvider; self.port = port
+        self.defaults = defaults; self.loginItem = loginItem; self.activity = activity
+        self.keyProvider = keyProvider; self.port = port
         chatAgents = defaults.data(forKey: "chatAgents").flatMap { try? JSONDecoder().decode([ChatAgentConfiguration].self, from: $0) } ?? ChatAgentConfiguration.defaults
         self.engineExecutable = engineExecutable ?? Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/nocturne-stream-host")
         var saved = ServerSettings(defaults: defaults)
@@ -129,6 +143,7 @@ final class ServerModel: ObservableObject {
         }
         updateDisplayStatus()
     }
+    deinit { if let activityToken { activity.end(activityToken) } }
     private func updateDisplayStatus() {
         if let size = displays.size {
             displayStatus = "\(size.width) × \(size.height) · \(displays.deviceName ?? L("Connected device"))"
@@ -140,6 +155,7 @@ final class ServerModel: ObservableObject {
         guard !active, appliedSettings.hasEnabledServices else { return }
         guard DisplaySessionManager.isSessionAvailable else { error = L("Sign in to this Mac before starting the server."); return }
         starting = true; status = L("Starting"); error = nil
+        activityToken = activity.begin()
         let epoch = UUID(); generation = epoch
         let configuration = appliedSettings
         startTask = Task { [self] in
@@ -240,6 +256,7 @@ final class ServerModel: ObservableObject {
         deviceStore?.cancelInvitation(); workspaceConnections = []; publishDevices()
         running = false; starting = false; status = L("Stopped"); connections = 0
         invitation = nil; showPairing = false; pairWhenReady = false
+        if let activityToken { activity.end(activityToken); self.activityToken = nil }
     }
     func pair() {
         guard appliedSettings.hasEnabledServices else {

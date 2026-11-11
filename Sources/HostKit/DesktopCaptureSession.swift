@@ -30,9 +30,9 @@ final class DesktopCaptureSession: DesktopCapture {
          start: @escaping Start, ended: @escaping (Error) -> Void) {
         self.viewport = viewport; self.target = target; self.start = start; self.ended = ended
     }
-    static func target(requested: UInt32, main: UInt32, locked: Bool, available: Bool) throws -> DesktopCaptureTarget {
+    static func target(requested: UInt32, main: UInt32, locked: Bool, available: Bool, mainUsable: Bool = true) throws -> DesktopCaptureTarget {
         guard available else { throw NocturneError.remote("Sign in to the host Mac before connecting to its desktop.") }
-        return DesktopCaptureTarget(displayID: locked && main != 0 ? main : requested, locked: locked)
+        return DesktopCaptureTarget(displayID: locked && main != 0 && mainUsable ? main : requested, locked: locked)
     }
     func begin(monitorChanges: Bool = true) async throws {
         try await refresh()

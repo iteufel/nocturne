@@ -30,8 +30,10 @@ public final class NativeDesktopHost: DesktopHosting {
         }
         let requested = displayID ?? CGMainDisplayID()
         let capture = DesktopCaptureSession(viewport: viewport, target: {
-            try DesktopCaptureSession.target(requested: requested, main: CGMainDisplayID(),
-                locked: NDDisplayLayout.isScreenLocked(), available: NDDisplayLayout.isSessionAvailable())
+            let main = CGMainDisplayID()
+            return try DesktopCaptureSession.target(requested: requested, main: main,
+                locked: NDDisplayLayout.isScreenLocked(), available: NDDisplayLayout.isSessionAvailable(),
+                mainUsable: CGDisplayIsActive(main) != 0 && CGDisplayModelNumber(main) != 0x76697274)
         }, start: { target, viewport, ended in
             if target.locked {
                 let capture = LockedDesktopCapture(displayID: target.displayID, send: send)

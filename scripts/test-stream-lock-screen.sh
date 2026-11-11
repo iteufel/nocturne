@@ -22,10 +22,12 @@ source = File.read(ARGV[0])
 parser = source[/    std::optional<CGDirectDisplayID> parse_display_id.*?(?=\n    \/\*\*)/m]
 selection = source[/    \/\/ Default to main display.*?(?=    \/\/ Print all displays)/m]
 capture = source[/    capture_e capture\(.*?(?=    \/\*\*\n     \* @brief Allocate an image)/m]
-abort 'macOS capture test seam changed; review the pinned source.' unless parser && selection && capture
+probe = source[/    int dummy_img\(.*?(?=    \/\*\*\n     \* A bridge)/m]
+abort 'macOS capture test seam changed; review the pinned source.' unless parser && selection && capture && probe
 File.write("#{ARGV[1]}/parser.inc", parser)
 File.write("#{ARGV[1]}/selection.inc", selection)
 File.write("#{ARGV[1]}/capture.inc", capture.gsub('std::chrono::steady_clock::now()', 'testNow'))
+File.write("#{ARGV[1]}/probe.inc", probe.gsub('std::chrono::steady_clock::now()', 'testNow'))
 RUBY
 clang++ -x objective-c++ -std=c++17 -fobjc-arc -Wall -Wextra -Werror -Wno-unused-parameter \
   -fsanitize=address,undefined -fno-omit-frame-pointer \

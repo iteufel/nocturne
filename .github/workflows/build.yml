@@ -354,8 +354,10 @@ jobs:
           Download the ZIP, unzip it, quit any running copy of Nocturne,
           and move Nocturne.app to Applications.
 
-          This is an early preview. Virtual-display and monitor-off features have
-          an unresolved black-screen issue; keep those features disabled.
+          Includes fixes for locked, headless Mac video startup, sleeping-display
+          wake-up, and capture sessions that stopped delivering frames.
+          For a Mac without a monitor, enable Headless virtual monitor before
+          leaving it locked. The affected Mac mini still needs a hardware retest.
 
           Built from commit $GITHUB_SHA. The ZIP includes Apple's notarization ticket.
           SHA256SUMS.txt contains the download checksum.

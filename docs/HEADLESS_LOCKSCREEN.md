@@ -1,5 +1,59 @@
 # Headless capture and the locked desktop
 
+## Sleeping and unplugged displays — November 11 follow-up
+
+Retaining a virtual framebuffer did not cover sleep or a capture source that
+stops delivering samples. A read-only local snapshot found a locked, signed-in
+console session whose only reported display was inactive and asleep. Nocturne
+also had no idle-system-sleep assertion between viewers.
+
+The affected host is a Mac mini that remains online/Ready while the viewer keeps
+connecting. The engine's `allow_encoder_probing()` applied a Windows DXGI guard
+to macOS too: a nonempty catalog with only inactive displays was rejected before
+`platf::display()` could call `wake_display()`. A focused regression using the
+actual probe gate, probe entry and platform wake call failed on the pinned code.
+The macOS overlay now allows that wake path to run before hardware validation;
+other platforms retain the original guard. An unavailable display still fails
+its hardware probe. Workspace readiness remains independent of video readiness.
+
+The follow-up keeps a Foundation activity for the server's entire starting/running
+lifetime, including idle time and streaming-engine recovery. Stop, startup failure
+and destruction release it. Apple's [activity options](https://developer.apple.com/documentation/foundation/processinfo/activityoptions)
+allow preventing idle system sleep without keeping a display powered on. This
+does not override explicit system sleep or guarantee closed-lid MacBook hosting.
+
+Both desktop transports now avoid selecting an inactive main-display ID or
+WindowServer's headless placeholder over the requested virtual source. The engine
+polls lock state, source changes, display sleep/wake and shutdown independently of
+frame delivery. Encoder probing and waiting for the first sample have five-second
+deadlines. Once a first sample arrives, an unchanged desktop has no frame-arrival
+timeout. A display asleep for three seconds ends capture rather than repeatedly
+waking it. All early exits retire the AVFoundation output and drain callbacks
+before releasing the C++ callback state.
+
+`bash scripts/test-stream-lock-screen.sh` reproduced the original infinite
+encoder-probe wait with no samples. Its expanded deterministic regressions now
+pass under ASan/UBSan. `python3 scripts/test-stream-capture.py --host-only` also
+passes, including output cancellation with no samples and cancellation racing
+sample delivery, plus wake-before-probe with an inactive display and preservation
+of the non-Mac guard. The entire generated Objective-C capture implementation passes
+an SDK syntax check. These use simulated OS media boundaries, not a real screen
+capture or lock/unlock intervention. The hardware acceptance checks below remain
+required for the rebuilt signed app.
+
+On Xcode 27.2, an isolated XCTest bundle compiled the actual Shared, HostKit,
+ServerModel and MacClient modules and ran the unmodified DeviceTests, DisplayTests,
+ServerSettingsTests and MacClientTests files: **71 tests, 67 passed, four native
+display tests skipped, zero failures**. The fixture used the repository's English
+resources for assertions that match English messages, without changing system
+language settings. Only unrelated Rust FFI entry points were aborting stubs; none
+were invoked. A separate check of the production Foundation activity confirmed a
+real `PreventUserIdleSystemSleep` assertion existed while held and disappeared
+after release. Fixture commands and logs are under ignored `.build/HostVerification`
+and `.build/verify-host.py`. Standard `swift test` remains blocked here by the
+missing `Vendor/NocturneRemote.xcframework` and absent Rust toolchain. This is not a
+full app/release build, remote-transport verification, or installation of the fix.
+
 This is a separate headless/lock-screen fix, based on upstream main commit
 `49ee687583adb5b82617cdc024f4bbdcf92cb861` (October 28, 2026), in the isolated
 checkout `/private/tmp/nocturne-headless-lockscreen`. It must remain separate from
