@@ -20,7 +20,7 @@ if [ ! -d "$source_dir/.git" ]; then
   # Upstream rotates prerelease tags. Resolve source by its immutable commit,
   # while the separately checksummed runtime remains an explicit release pin.
   git init "$source_dir"
-  git -C "$source_dir" remote add origin https://github.com/LizardByte/Sunshine.git
+  git -C "$source_dir" remote add origin https://github.com/SunshineStream/Sunshine.git
 fi
 if ! git -C "$source_dir" rev-parse --verify HEAD >/dev/null 2>&1; then
   git -C "$source_dir" fetch --depth 1 origin "$revision"
