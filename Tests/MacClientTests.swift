@@ -155,6 +155,31 @@ final class MacClientTests: XCTestCase {
         try session.input(AppWindowInput(.keyDown)); XCTAssertTrue(captures[1].inputs.isEmpty)
     }
 
+    func testLockedHeadlessDesktopKeepsVirtualSourceWhenMainDisplayBecomesUnusable() async throws {
+        var mainUsable = true
+        var captures: [RecordingDesktopCapture] = []
+        let session = DesktopCaptureSession(viewport: viewport, target: {
+            try DesktopCaptureSession.target(requested: 8, main: 7, locked: true,
+                available: true, mainUsable: mainUsable)
+        }, start: { target, _, _ in
+            let capture = RecordingDesktopCapture(send: self.send)
+            capture.displayID = target.displayID; captures.append(capture); return capture
+        }, ended: { _ in XCTFail("Unexpected capture failure") })
+        defer { session.stop() }
+        try await session.begin(monitorChanges: false)
+        XCTAssertEqual(session.displayID, 7)
+        mainUsable = false
+        try session.input(AppWindowInput(.keyDown))
+        XCTAssertTrue(captures[0].inputs.isEmpty)
+        try await session.refresh()
+        XCTAssertEqual(session.displayID, 8, "An unplugged/asleep main display must not replace the retained headless framebuffer")
+        XCTAssertTrue(session.screenLocked)
+        XCTAssertEqual(captures[0].stops, 1)
+        mainUsable = true; try await session.refresh()
+        XCTAssertEqual(session.displayID, 7)
+        XCTAssertEqual(captures[1].stops, 1)
+    }
+
     func testNativeIdentityAuthenticatesAndSurvivesReloadWithoutChangingKey() throws {
         var storage: [String: Data] = [:]
         var writes = 0

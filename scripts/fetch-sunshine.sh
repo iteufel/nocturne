@@ -7,7 +7,7 @@ if [ "$(uname -m)" != arm64 ]; then
   exit 1
 fi
 mkdir -p .build/downloads Vendor
-# This pinned prerelease fixes duplicate certificate records on re-pairing.
+# This pinned prerelease includes the duplicate-certificate re-pairing fix.
 # v2026.914.233613 rejects a device after a second successful PIN exchange.
 archive="$PWD/.build/downloads/Sunshine-v${NOCTURNE_SUNSHINE_VERSION}-arm64.dmg"
 verify_archive() {
@@ -22,7 +22,7 @@ if [ ! -f "$archive" ]; then
   download="$(mktemp "$archive.partial.XXXXXX")"
   trap 'rm -f "$download"' EXIT
   curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-    --output "$download" "https://github.com/LizardByte/Sunshine/releases/download/v${NOCTURNE_SUNSHINE_VERSION}/Sunshine-macOS-arm64.dmg"
+    --output "$download" "https://github.com/SunshineStream/Sunshine/releases/download/v${NOCTURNE_SUNSHINE_VERSION}/Sunshine-macOS-arm64.dmg"
   verify_archive "$download"
   mv "$download" "$archive"
   trap - EXIT

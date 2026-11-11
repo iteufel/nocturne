@@ -1,5 +1,6 @@
 include("${CMAKE_CURRENT_LIST_DIR}/NocturneMacOSCapture.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/NocturneMacOSVideo.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/NocturneVideo.cmake")
 
 # Apply source overlays to the pinned engine without editing its checkout.
 function(nocturne_streaming_engine)
@@ -8,18 +9,8 @@ function(nocturne_streaming_engine)
     endif()
     get_filename_component(nocturne_root "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../.." ABSOLUTE)
     set(original "${CMAKE_SOURCE_DIR}/src/video.cpp")
-    file(READ "${original}" video)
-    set(before "ctx->flags |= AV_CODEC_FLAG_CLOSED_GOP | AV_CODEC_FLAG_LOW_DELAY;")
-    string(FIND "${video}" "${before}" position)
-    if(position EQUAL -1)
-        message(FATAL_ERROR "The pinned engine encoder setup changed; review the Nocturne overlay")
-    endif()
-    string(REPLACE "${before}" "ctx->flags |= nocturne::encoderFlags(encoder.name);" video "${video}")
-    # Preserve the original file's relative includes without adding src/ to the
-    # global search path (its config.h would shadow FFmpeg's internal config.h).
-    string(REGEX REPLACE "#include \"([^\"]+)\"" "#include \"${CMAKE_SOURCE_DIR}/src/\\1\"" video "${video}")
     set(generated "${CMAKE_BINARY_DIR}/NocturneVideo.cpp")
-    file(CONFIGURE OUTPUT "${generated}" CONTENT "#include \"EncoderFlags.h\"\n${video}" @ONLY)
+    nocturne_video("${CMAKE_SOURCE_DIR}" "${generated}")
     get_target_property(sources sunshine SOURCES)
     list(REMOVE_ITEM sources "${original}")
     list(APPEND sources "${generated}")

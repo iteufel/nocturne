@@ -46,6 +46,7 @@ static int liveTokens;
 @property (nonatomic, retain) NSMapTable *captureSignals;
 - (void)registerCallback:(FrameCallbackBlock)frameCallback connection:(NSObject *)videoConnection signal:(dispatch_semaphore_t)signal;
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sample fromConnection:(AVCaptureConnection *)connection;
+- (void)nocturneStopCapture:(dispatch_semaphore_t)signal;
 @end
 @implementation AVVideo
 - (id)init {
@@ -84,6 +85,7 @@ __attribute__((noinline)) static void registerFromStack(AVVideo *video, NSObject
 }
 
 int main(void) { @autoreleasepool {
+    for (unsigned mode = 0; mode < 3; ++mode) {
     for (unsigned attempt = 0; attempt < 64; ++attempt) {
         AVVideo *video = [AVVideo new];
         TestSession *session = [TestSession new]; video.session = session;
@@ -95,15 +97,20 @@ int main(void) { @autoreleasepool {
         unsigned frames = 0;
         registerFromStack(video, connection, signal, &frames);
         assert(liveTokens == 1);
-        dispatch_async(queue, ^{
+        if (mode != 1) dispatch_async(queue, ^{
             @autoreleasepool {
                 [video captureOutput:nil didOutputSampleBuffer:NULL fromConnection:connection];
                 // Already queued frames must not invoke or retire this callback again.
                 [video captureOutput:nil didOutputSampleBuffer:NULL fromConnection:connection];
             }
         });
+        if (mode != 0) {
+            [video nocturneStopCapture:signal];
+            [video nocturneStopCapture:signal]; // Repeated/concurrent cleanup is idempotent.
+        }
         assert(dispatch_semaphore_wait(signal, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0);
-        assert(frames == 1 && liveTokens == 0);
+        assert(frames <= 1 && liveTokens == 0);
+        if (mode != 2) assert(frames == (mode == 0 ? 1 : 0));
         assert(session.stops == 1 && session.starts == 1 && session.removals == 1);
         // Wait until the callback map cleanup after the semaphore signal finishes.
         @synchronized(session) {}
@@ -111,7 +118,9 @@ int main(void) { @autoreleasepool {
         [video release]; [connection release]; [session release];
         dispatch_release(signal); dispatch_release(queue);
     }
+    }
     puts("PASS: copied MRC callbacks survive their stack scope across 64 reconnects");
     puts("PASS: teardown drains the delivery queue without a lock inversion or duplicate stop");
+    puts("PASS: no-sample cancellation and cancellation racing sample delivery retire each output exactly once");
     return 0;
 } }
