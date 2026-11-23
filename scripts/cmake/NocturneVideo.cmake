@@ -8,22 +8,8 @@ function(nocturne_video source_root output)
     endif()
     string(REPLACE "${before}" "ctx->flags |= nocturne::encoderFlags(encoder.name);" video "${video}")
 
-    # A sleeping Mac can enumerate displays with no active mode. The platform
-    # capture factory wakes them; rejecting here prevents that factory running.
-    # Keep the upstream DXGI protection on other platforms.
-    set(before "      // Since Windows 11 24H2, it is possible that there will be no active devices present")
-    set(after "#ifdef __APPLE__\n      return true;  // macOS wakes the selected display before its hardware probe.\n#else\n${before}")
-    string(FIND "${video}" "${before}" position)
-    if(position EQUAL -1)
-        message(FATAL_ERROR "The pinned encoder display check changed; review the Nocturne overlay")
-    endif()
-    string(REPLACE "${before}" "${after}" video "${video}")
-    set(before "      BOOST_LOG(error) << \"No display devices are active at the moment! Cannot probe the encoders.\";\n      return false;")
-    string(FIND "${video}" "${before}" position)
-    if(position EQUAL -1)
-        message(FATAL_ERROR "The pinned inactive-display error changed; review the Nocturne overlay")
-    endif()
-    string(REPLACE "${before}" "${before}\n#endif" video "${video}")
+    # Upstream now permits probing sleeping displays outside Windows, allowing
+    # the macOS capture factory to wake them. Keep that platform policy intact.
 
     # Preserve relative includes without globally adding src/ (its config.h
     # would shadow FFmpeg's internal config.h).

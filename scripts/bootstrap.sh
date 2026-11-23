@@ -21,8 +21,8 @@ fetch() {
   git -C "$directory" submodule update --init --recursive
 }
 fetch Vendor/moonlight-ios https://github.com/moonlight-stream/moonlight-ios.git 02dc9780496eeeac6d01c8bbdccb8b6fe71ef28a
-fetch Vendor/SwiftTerm https://github.com/migueldeicaza/SwiftTerm.git 5d14406844143538cd8f8851d2d8a67c1fe443e5
-ruby -e 'require "xcodeproj"' 2>/dev/null || { echo 'Install the project generator: gem install xcodeproj -v 1.27.0'; exit 1; }
+fetch Vendor/SwiftTerm https://github.com/migueldeicaza/SwiftTerm.git 282c3c3a932b55c129628876b70f37d993af1615
+ruby -e 'require "xcodeproj"' 2>/dev/null || { echo 'Install the project generator: gem install xcodeproj -v 1.28.1'; exit 1; }
 if [ "$platform" = all ] || [ "$platform" = mac ]; then
   scripts/fetch-sunshine.sh
 fi

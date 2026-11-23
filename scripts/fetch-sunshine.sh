@@ -28,7 +28,9 @@ if [ ! -f "$archive" ]; then
   trap - EXIT
 fi
 verify_archive "$archive"
-mount_point="$(mktemp -d "$PWD/.build/downloads/sunshine-mount.XXXXXX")"
+# DiskImages cannot mount inside some external-volume worktrees. Keep the
+# temporary mount on the system volume; the verified archive stays in the cache.
+mount_point="$(mktemp -d "${TMPDIR:-/tmp}/nocturne-sunshine.XXXXXX")"
 cleanup() { hdiutil detach "$mount_point" -quiet 2>/dev/null || true; rmdir "$mount_point" 2>/dev/null || true; }
 trap cleanup EXIT
 hdiutil attach "$archive" -readonly -nobrowse -mountpoint "$mount_point" -quiet

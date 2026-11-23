@@ -1,6 +1,15 @@
 {
-  "originHash" : "1d1f9840a04f05692914efe97b8f2b5db9d46142cbde4ed17e2dd104284c3aeb",
+  "originHash" : "64974065fbb401e81f4e3c5aeb151ae033be06dee2c5e9755701a92fb5334772",
   "pins" : [
+    {
+      "identity" : "h",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/rarestype/h",
+      "state" : {
+        "revision" : "aa3626829160917d4378330617971977cbd78f5b",
+        "version" : "1.0.1"
+      }
+    },
     {
       "identity" : "openssl-package",
       "kind" : "remoteSourceControl",
@@ -20,12 +29,21 @@
       }
     },
     {
+      "identity" : "swift-png",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tayloraswift/swift-png",
+      "state" : {
+        "revision" : "2d17c6c51c098628574c0383f1119892655a73a2",
+        "version" : "4.5.2"
+      }
+    },
+    {
       "identity" : "webrtc",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stasel/WebRTC.git",
       "state" : {
-        "revision" : "44f36788497f701bc8c0306de3a1c2511d56019d",
-        "version" : "155.0.0"
+        "revision" : "3b7fca3bf68209386d7c9818235bd178281f90af",
+        "version" : "158.0.0"
       }
     }
   ],

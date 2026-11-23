@@ -58,7 +58,7 @@ final class RemoteAccessTests: XCTestCase {
         defer { client.disconnect() }
         try await client.connect(invitation)
         XCTAssertEqual(client.state, .connected)
-        XCTAssertNotEqual(client.connectionRoute, "Local network")
+        XCTAssertNotEqual(client.connectionRoute, L("Local network"))
         XCTAssertEqual(client.connectedInvitation, invitation)
         let tab = try await client.openTerminal()
         var list = Packet(.list); list.path = ""
@@ -81,7 +81,7 @@ final class RemoteAccessTests: XCTestCase {
         try await officeWindow.connect(PairingInvitation(host: "127.0.0.1", port: officePort, name: "Office Mac", secret: officeKey,
             enrollmentToken: officeDevices.createInvitation()), restoreTerminalSessions: false)
         XCTAssertEqual(officeWindow.name, "Office Mac")
-        XCTAssertEqual(officeWindow.connectionRoute, "Local network")
+        XCTAssertEqual(officeWindow.connectionRoute, L("Local network"))
         officeWindow.disconnect(); office.stop()
         // Files keeps the public remote route, strips enrollment, and opens its own
         // workspace-only tunnel while the containing app is connected or suspended.
@@ -95,7 +95,7 @@ final class RemoteAccessTests: XCTestCase {
         let files = WorkspaceConnection(identity: try saved.identity(), remoteStreaming: false)
         defer { files.disconnect() }
         try await files.connect(saved.invitation, restoreTerminalSessions: false)
-        XCTAssertNotEqual(files.connectionRoute, "Local network")
+        XCTAssertNotEqual(files.connectionRoute, L("Local network"))
         XCTAssertEqual(client.state, .connected)
         client.disconnect()
         let payload = Data((0..<150_000).map { UInt8($0 % 251) })

@@ -12,10 +12,28 @@ function(nocturne_macos_capture source_root output)
     string(REPLACE "${before}" "${after}" capture "${capture}")
 
     set(before "    // Print all displays available with their names and ids")
-    set(after "    display->requested_display_id = display->display_id;\n    display->display_id = nocturne::captureDisplay(display->requested_display_id);\n\n${before}")
+    set(after "    const auto requested_display_id = display_id;\n    display_id = nocturne::captureDisplay(requested_display_id);\n\n${before}")
     string(FIND "${capture}" "${before}" position)
     if(position EQUAL -1)
         message(FATAL_ERROR "The pinned macOS display selection changed; review the Nocturne overlay")
+    endif()
+    string(REPLACE "${before}" "${after}" capture "${capture}")
+
+    set(before "display->display_id = display_id;")
+    set(after "${before}\n    display->requested_display_id = requested_display_id;")
+    string(FIND "${capture}" "${before}" position)
+    if(position EQUAL -1)
+        message(FATAL_ERROR "The pinned macOS capture construction changed; review the Nocturne overlay")
+    endif()
+    string(REPLACE "${before}" "${after}" capture "${capture}")
+
+    # loginwindow's password screen requires AVFoundation. Rebuild on lock and
+    # unlock so an ordinary desktop still uses upstream's ScreenCaptureKit path.
+    set(before "policy.prefer_sckit([SCCapture isAvailable])")
+    set(after "!nocturne::captureSessionLocked() && ${before}")
+    string(FIND "${capture}" "${before}" position)
+    if(position EQUAL -1)
+        message(FATAL_ERROR "The pinned macOS backend selection changed; review the Nocturne overlay")
     endif()
     string(REPLACE "${before}" "${after}" capture "${capture}")
 
@@ -35,7 +53,8 @@ function(nocturne_macos_capture source_root output)
         const auto now = std::chrono::steady_clock::now();
         if (now >= next_display_check) {
           next_display_check = now + std::chrono::milliseconds(250);
-          if (nocturne::captureDisplay(requested_display_id) != display_id) {
+          if (nocturne::captureDisplay(requested_display_id) != display_id ||
+              nocturne::captureSessionLocked() != started_locked) {
             display_changed = true;
             return false;
           }
@@ -140,6 +159,49 @@ function(nocturne_macos_capture source_root output)
     string(FIND "${capture}" "${before}" probe_position)
     if(probe_position EQUAL -1)
         message(FATAL_ERROR "The pinned macOS encoder probe changed; review the Nocturne overlay")
+    endif()
+    string(REPLACE "${before}" "${after}" capture "${capture}")
+
+    # The ScreenCaptureKit loop polls its output callback even without frames.
+    # Use that same boundary for display/session changes and a first-frame
+    # deadline; upstream remains responsible for stopping and draining SCStream.
+    set(before "      sc_frame_source_t source {sc_capture};")
+    set(after [=[
+      if (nocturne::captureSessionLocked()) return capture_e::reinit;
+      const auto started = std::chrono::steady_clock::now();
+      bool received_sample = false, display_changed = false, startup_timed_out = false;
+      auto forward_frame = [&](std::shared_ptr<img_t> image, bool captured) {
+        if (nocturne::captureSessionLocked() || nocturne::captureDisplay(requested_display_id) != display_id) {
+          display_changed = true;
+          return false;
+        }
+        received_sample = received_sample || captured;
+        if (!received_sample && std::chrono::steady_clock::now() - started >= std::chrono::seconds(5)) {
+          startup_timed_out = true;
+          return false;
+        }
+        return push_captured_image_cb(std::move(image), captured);
+      };
+      sc_frame_source_t source {sc_capture};
+]=])
+    string(FIND "${capture}" "${before}" position)
+    if(position EQUAL -1)
+        message(FATAL_ERROR "The pinned ScreenCaptureKit source changed; review the Nocturne overlay")
+    endif()
+    string(REPLACE "${before}" "${after}" capture "${capture}")
+    set(before "      const auto status = sckit::run_capture_loop(source, policy, push_captured_image_cb, pull_free_image_cb, process_frame, SCKIT_FRAME_POLL_INTERVAL);")
+    set(after [=[
+      const auto status = sckit::run_capture_loop(source, policy, forward_frame, pull_free_image_cb, process_frame, SCKIT_FRAME_POLL_INTERVAL);
+      if (display_changed) return capture_e::reinit;
+      if (startup_timed_out) {
+        BOOST_LOG(warning) << "ScreenCaptureKit delivered no initial frame; falling back to AVFoundation";
+        policy.note_stream_start_failure();
+        return capture_e::reinit;
+      }
+]=])
+    string(FIND "${capture}" "${before}" position)
+    if(position EQUAL -1)
+        message(FATAL_ERROR "The pinned ScreenCaptureKit loop changed; review the Nocturne overlay")
     endif()
     string(REPLACE "${before}" "${after}" capture "${capture}")
     file(CONFIGURE OUTPUT "${output}" CONTENT "#include <atomic>\n#include <mutex>\n#include \"CaptureDisplay.h\"\n#import \"NocturneAVVideo.h\"\n${capture}" @ONLY)

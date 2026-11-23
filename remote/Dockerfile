@@ -1,11 +1,11 @@
-FROM rust:1.99.1-bookworm AS build
+FROM rust:1.100.0-trixie AS build
 WORKDIR /source
 COPY remote/Cargo.toml remote/Cargo.lock ./
 COPY remote/broker broker
 COPY remote/tunnel tunnel
 RUN cargo build --locked --release -p nocturne-broker
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /source/target/release/nocturne-broker /usr/local/bin/nocturne-broker

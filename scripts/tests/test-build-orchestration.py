@@ -46,7 +46,7 @@ elif name == 'xcrun' and args[:2] == ['simctl', 'bootstatus'] and os.environ.get
 elif name == 'git' and args[0] == 'clone':
     pathlib.Path(args[-1], '.git').mkdir(parents=True)
 elif name == 'git' and args[2:] == ['rev-parse', 'HEAD']:
-    print('02dc9780496eeeac6d01c8bbdccb8b6fe71ef28a' if args[1].endswith('moonlight-ios') else '5d14406844143538cd8f8851d2d8a67c1fe443e5')
+    print('02dc9780496eeeac6d01c8bbdccb8b6fe71ef28a' if args[1].endswith('moonlight-ios') else '282c3c3a932b55c129628876b70f37d993af1615')
 '''
 
 

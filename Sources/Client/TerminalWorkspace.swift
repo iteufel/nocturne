@@ -163,7 +163,7 @@ struct TerminalSurface: UIViewRepresentable {
         let terminal = SwiftTerm.TerminalView(frame: .zero, font: UIFont.monospacedSystemFont(ofSize: 13, weight: .regular))
         terminal.nativeBackgroundColor = UIColor(MoonStyle.terminalInk); terminal.nativeForegroundColor = UIColor(MoonStyle.terminalText)
         terminal.terminalDelegate = context.coordinator
-        terminal.getTerminal().resize(cols: tab.info.columns, rows: tab.info.rows)
+        terminal.resize(cols: tab.info.columns, rows: tab.info.rows)
         context.coordinator.replaying = true
         terminal.feed(byteArray: ArraySlice(tab.history))
         context.coordinator.replaying = false
@@ -173,7 +173,7 @@ struct TerminalSurface: UIViewRepresentable {
             case .append(let data): terminal.feed(byteArray: ArraySlice(data))
             case .reset(let data):
                 coordinator.replaying = true
-                terminal.getTerminal().resetToInitialState(); terminal.feed(byteArray: ArraySlice(data))
+                terminal.resetToInitialState(); terminal.feed(byteArray: ArraySlice(data))
                 coordinator.replaying = false
             }
         }
@@ -185,7 +185,7 @@ struct TerminalSurface: UIViewRepresentable {
         if !active { uiView.resignFirstResponder() }
         // Layout may have changed while disconnected or while another tab was selected.
         if becameActive {
-            let terminal = uiView.getTerminal()
+            let terminal = uiView.terminalDimensions
             context.coordinator.sizeChanged(source: uiView, newCols: terminal.cols, newRows: terminal.rows)
             DispatchQueue.main.async { [weak uiView, weak coordinator = context.coordinator] in
                 guard coordinator?.active == true, let uiView, uiView.window != nil else { return }

@@ -202,9 +202,10 @@ final class MacClientTests: XCTestCase {
         let invitation = try PairingInvitation(host: "example.local", name: "Mac", secret: SecureStore.randomKey())
         XCTAssertFalse(model.addHost(invitation.url.absoluteString)); XCTAssertNil(model.session)
         let own = MacClientModel(read: { $0 == "server-key" ? invitation.secret : nil }, write: { _, _ in XCTFail("Must not touch local server credentials") })
-        XCTAssertFalse(own.addHost("invalid")); XCTAssertTrue(own.error?.contains("pairing code is invalid") == true)
+        XCTAssertFalse(own.addHost("invalid"))
+        XCTAssertEqual(own.error, L("This pairing code is invalid. Copy a new code from Pair a device on the other Mac."))
         XCTAssertFalse(own.addHost(invitation.url.absoluteString)); XCTAssertNil(own.session)
-        XCTAssertTrue(own.error?.contains("own Mac") == true)
+        XCTAssertEqual(own.error, L("This is your own Mac’s pairing code. Copy a code from the other Mac’s Pair a device window."))
     }
 
     func testDesktopLeaseRejectsOtherConnectionsAndSessionsAndReleasesOnExpiry() async throws {
@@ -372,7 +373,7 @@ final class MacClientTests: XCTestCase {
         _ = try await second.connection.request(Packet(.ping))
         remaining.ended(NocturneError.remote("This Mac window has closed."))
         try await waitFor("closed-window message") { second.error != nil }
-        XCTAssertTrue(second.error?.contains("has closed") == true)
+        XCTAssertEqual(second.error, L("This Mac window has closed."))
         XCTAssertEqual(remaining.stops, 1)
     }
 
@@ -395,7 +396,7 @@ final class MacClientTests: XCTestCase {
         let stream = try XCTUnwrap(client.session)
         stream.viewport(CGSize(width: 800, height: 600), scale: 2); stream.activate()
         try await waitFor("missing adaptive display guidance") { stream.error != nil }
-        XCTAssertTrue(stream.error?.contains("Headless virtual monitor") == true)
+        XCTAssertEqual(stream.error, L("Enable Headless virtual monitor in Nocturne → Settings → Displays, then restart the server. Choose a fixed resolution to stream a physical monitor instead."))
         XCTAssertTrue(remote.captures.isEmpty, "Do not silently stream an ultrawide monitor when matching is unavailable")
         stream.selectDisplay(7)
         try await waitFor("native desktop handshake", timeout: 10) { stream.display != nil || stream.error != nil }
@@ -614,7 +615,7 @@ final class MacClientTests: XCTestCase {
             XCTAssertEqual(client.pairedServers, existing)
             XCTAssertEqual(stream.connection.state, .disconnected); XCTAssertTrue(remote.captures.isEmpty)
             XCTAssertEqual(writes, failSave ? 1 : 0)
-            XCTAssertTrue(stream.error?.contains(failSave ? "storage is locked" : "latest Nocturne") == true)
+            XCTAssertEqual(stream.error, failSave ? L("Pairing storage is locked.") : L("Enable Screen sharing and install the latest Nocturne on the other Mac to share its desktop and app windows."))
             client.disconnect()
         }
     }

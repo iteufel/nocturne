@@ -4,10 +4,10 @@ Build and test Nocturne locally. For signed releases and TestFlight automation, 
 
 ## Build
 
-Targets iOS 17+ and macOS 15+ on an Apple Silicon Mac. Build with Rust 1.91+ (rustup), Xcode 27.1 or newer and Ruby's `xcodeproj` gem. The Duo bar integration uses public iOS 27.1 SDK APIs behind runtime availability checks.
+Targets iOS 17+ and macOS 15+ on an Apple Silicon Mac. Build with Rust 1.100.0 (rustup), Xcode 27.1 or newer and Ruby's `xcodeproj` gem. The Duo bar integration uses public iOS 27.1 SDK APIs behind runtime availability checks.
 
 ```sh
-gem install xcodeproj -v 1.27.0
+gem install xcodeproj -v 1.28.1
 brew install cmake pkgconf miniupnpc openssl@4
 ./scripts/bootstrap.sh
 open Nocturne.xcworkspace
@@ -90,7 +90,7 @@ The command with `NOCTURNE_ENGINE_EXECUTABLE` starts a real engine on its standa
 
 `ServerLifecycleTests` and `ServerSettingsTests` cover startup from the saved Sharing toggles, pending edits, Apply/Discard, restart cancellation, login-item approval and registration errors, independent sharing capabilities, and offline video revocation. They use isolated preferences, temporary files, real TLS listeners on test ports, and a failing child executable to verify automatic screen-sharing recovery while a workspace stays connected. Login-item registration is substituted; these tests do not change your Login Items, capture your screen, or verify an actual logout/login.
 
-`test-stream-capture.py` needs the pinned engine source fetched by a Mac build, or `NOCTURNE_ENGINE_SOURCE=/path/to/Sunshine`. It generates the production CMake overlays and checks rejected capture outputs and encoder probes, reconnects, and display changes under AddressSanitizer and UBSan. On macOS it also runs the actual callback registration and delivery methods with manual reference counting against a simulated AVFoundation queue, checking callback lifetime and teardown. It never captures a real screen. The C++ checks also run on Linux with CMake and a C++17 compiler. `--baseline` reproduces the pinned engine's nil-semaphore failure.
+`test-stream-capture.py` needs the pinned engine source fetched by a Mac build, or `NOCTURNE_ENGINE_SOURCE=/path/to/Sunshine`. It generates the production CMake overlays and checks rejected capture outputs and encoder probes, reconnects, and display changes under AddressSanitizer and UBSan. On macOS it also runs the actual ScreenCaptureKit loop with scripted frame delivery, including lock/display transitions, silent shutdown, and first-frame fallback, plus the AVFoundation callback registration and delivery methods with manual reference counting. It never captures a real screen. The portable C++ checks also run on Linux with CMake and a C++20 compiler. `--baseline` reproduces the pinned engine's nil-semaphore failure.
 
 To verify Dock behavior, launch the built Mac app, enable **Sharing → Screen sharing**, and apply, then run:
 
@@ -123,7 +123,7 @@ On an Apple Silicon Mac with hardware encoding available, `bash scripts/test-str
 
 After a Mac build has fetched the pinned engine source, `bash scripts/test-stream-lock-screen.sh` compiles its generated macOS display selection and capture callback under AddressSanitizer and UBSan. It checks connecting while locked, switching an active stream across lock/unlock, main-display changes, headless capture, and inactive user sessions. `--baseline` exercises the pinned upstream code and reproduces the missing capture transitions. The test substitutes the OS capture boundary and does not lock your Mac or type any keys. `swift test --filter DisplayTests` also verifies that locked sessions can acquire/release a display lease while logged-out and inactive sessions remain rejected.
 
-The same lock-screen harness checks missing samples during encoder probing, lock/sleep/wake transitions without frame callbacks, an unplugged main display, shutdown during a silent capture, and a static desktop beyond the startup timeout. `python3 scripts/test-stream-capture.py --host-only` checks the generated Mac capture and output teardown without requiring the iOS client overlay, including cancellation racing sample delivery. It also exercises the actual encoder-probe gate and platform wake call with sleeping displays: macOS must reach wake-up before hardware validation, while other platforms retain the upstream inactive-display guard. `swift test --filter 'ServerLifecycleTests|MacClientTests'` covers idle-server sleep-prevention ownership and the native desktop's headless target transitions. These deterministic boundaries do not replace a connection test on a locked Mac without a monitor.
+The same lock-screen harness checks missing samples during encoder probing, lock/sleep/wake transitions without frame callbacks, an unplugged main display, shutdown during a silent capture, and a static desktop beyond the startup timeout. `python3 scripts/test-stream-capture.py --host-only` checks the generated Mac capture and output teardown without requiring the iOS client overlay, including cancellation racing sample delivery. It also exercises the actual encoder-probe gate and platform wake call with sleeping displays: macOS must reach wake-up before hardware validation, while Windows retains the upstream inactive-display guard. `swift test --filter 'ServerLifecycleTests|MacClientTests'` covers idle-server sleep-prevention ownership and the native desktop's headless target transitions. These deterministic boundaries do not replace a connection test on a locked Mac without a monitor.
 
 Display sizing, ownership, authenticated disconnect, removal, and heartbeat expiry are included in `swift test`. Native display checks are opt-in because they change the Mac's real display layout:
 
