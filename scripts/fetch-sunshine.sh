@@ -22,7 +22,7 @@ if [ ! -f "$archive" ]; then
   download="$(mktemp "$archive.partial.XXXXXX")"
   trap 'rm -f "$download"' EXIT
   curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-    --output "$download" "https://github.com/SunshineStream/Sunshine/releases/download/v${NOCTURNE_SUNSHINE_VERSION}/Sunshine-macOS-arm64.dmg"
+    --output "$download" "$NOCTURNE_SUNSHINE_ARM64_URL"
   verify_archive "$download"
   mv "$download" "$archive"
   trap - EXIT

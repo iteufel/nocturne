@@ -2,3 +2,5 @@
 NOCTURNE_SUNSHINE_VERSION=2026.1110.222616
 NOCTURNE_SUNSHINE_REVISION=357bd98cb1e203dbacbd831dbc6ddfac76d22ac0
 NOCTURNE_SUNSHINE_ARM64_SHA256=98819933a8c827ce336d5c92dcd250f717cbd8383a7d8f3ed4b2bd432c047925
+# Retain the unmodified official archive: upstream rotates prerelease assets.
+NOCTURNE_SUNSHINE_ARM64_URL=https://github.com/iteufel/nocturne/releases/download/runtime-sunshine-v2026.1110.222616/Sunshine-macOS-arm64.dmg

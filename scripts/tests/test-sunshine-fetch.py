@@ -40,6 +40,7 @@ if name == 'curl':
         self.log = self.root / 'commands'
         self.env = dict(os.environ, PATH=str(self.root / 'bin') + os.pathsep + os.environ['PATH'], FETCH_LOG=str(self.log))
         version = next(line.split('=', 1)[1] for line in pins.splitlines() if line.startswith('NOCTURNE_SUNSHINE_VERSION='))
+        self.download_url = next(line.split('=', 1)[1] for line in pins.splitlines() if line.startswith('NOCTURNE_SUNSHINE_ARM64_URL='))
         self.archive = self.root / '.build/downloads' / ('Sunshine-v' + version + '-arm64.dmg')
 
     def fetch(self, mode='good'):
@@ -56,6 +57,7 @@ if name == 'curl':
         self.assertEqual(sum(line.startswith('curl ') for line in log.splitlines()), 1)
         self.assertIn('--proto =https --proto-redir =https', log)
         self.assertIn('/Sunshine-macOS-arm64.dmg', log)
+        self.assertIn(self.download_url, log)
 
     def test_wrong_checksum_never_caches_or_extracts(self):
         result = self.fetch('wrong')

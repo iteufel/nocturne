@@ -215,8 +215,16 @@ final class NativeStreamingDisplayDriver: StreamingDisplayDriver {
         var failure: Error = NocturneError.timeout
         for _ in 0..<40 {
             try Task.checkCancellation()
-            guard revision == epoch else { throw NocturneError.disconnected }
-            do { try display.selectRequestedMode(); return } catch { failure = error }
+            guard revision == epoch, environment.isSessionAvailable() else { throw NocturneError.disconnected }
+            if environment.isScreenLocked() {
+                // A new framebuffer already has a usable default mode. Completing
+                // a mode transaction while loginwindow owns it can hang inside
+                // WindowServer, even when no physical display is being changed.
+                // Wait for publication now; select the exact mode after unlock.
+                if environment.isDisplayActive(display.displayID) { return }
+            } else {
+                do { try display.selectRequestedMode(); return } catch { failure = error }
+            }
             // WindowServer publishes a new mode list asynchronously. Yield the main
             // actor so disconnect/Stop can restore displays while it is settling.
             try await Task.sleep(nanoseconds: 50_000_000)

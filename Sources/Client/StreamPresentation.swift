@@ -94,8 +94,15 @@ final class StreamPresentationController: UIViewController {
     private var targetSession: StreamSession?
     private(set) var stream: StreamHostingController?
     private var transitioning = false
+    private var sessionObserver: AnyCancellable?
 
-    init(model: ClientModel) { self.model = model; super.init(nibName: nil, bundle: nil) }
+    init(model: ClientModel) {
+        self.model = model; super.init(nibName: nil, bundle: nil)
+        // Full-screen UIKit presentation hides the SwiftUI view that owns this
+        // controller. Observe session changes directly so a timeout or failure
+        // can dismiss it before SwiftUI resumes updating that hidden view.
+        sessionObserver = model.$session.sink { [weak self] in self?.update(session: $0) }
+    }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func loadView() { view = UIView(); view.isUserInteractionEnabled = false }
     override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); synchronize() }

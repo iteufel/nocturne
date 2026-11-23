@@ -163,6 +163,32 @@ final class HostConnectionTests: XCTestCase {
         XCTAssertNil(current.connectionDeadline)
         XCTAssertFalse(model.busy)
     }
+    func testTimedOutPreparingScreenDismissesWithoutAnotherSwiftUIUpdate() async throws {
+        let workspace = try TestWorkspace()
+        let (model, engine) = try model(for: workspace.invitation, linked: true)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let presenter = StreamPresentationController(model: model)
+        window.rootViewController = presenter
+        window.makeKeyAndVisible()
+        defer {
+            model.suspend(); workspace.stop()
+            window.isHidden = true; window.rootViewController = nil
+        }
+        let current = StreamSession(host: engine.host, app: StreamingApp(["id": "desktop", "name": "Desktop"]), preferences: model.preferences)
+        // Hold preparation so rendering the viewport cannot start the video engine.
+        current.reconfigure = Task { try? await Task.sleep(nanoseconds: 30_000_000_000) }
+        model.session = current
+        presenter.update(session: current)
+        try await waitUntil { presenter.stream?.presentingViewController != nil && presenter.stream?.isBeingPresented == false }
+        model.startStreamDeadline(current, timeout: 1_000_000)
+        await current.connectionDeadline?.value
+        XCTAssertNil(model.session)
+        XCTAssertNotNil(model.error)
+        // Full-screen UIKit presentation hides the SwiftUI view that owns the
+        // representable. Its next update must not be required to dismiss it.
+        try await waitUntil { presenter.stream == nil && presenter.presentedViewController == nil }
+    }
     func testReadyStreamCancelsStartupDeadline() async throws {
         let workspace = try TestWorkspace()
         let (model, engine) = try model(for: workspace.invitation, linked: true)
