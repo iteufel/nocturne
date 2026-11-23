@@ -17,6 +17,15 @@ struct ClientSettingsView: View {
                     }
                 }.accessibilityIdentifier("pairedHostsSettings")
             }.listRowBackground(MoonStyle.surface)
+            Section(L("Agent chats")) {
+                NavigationLink {
+                    MCPServersView(model: MCPServersModel(connection: model.server)) { model.chats.leaveConversation(); Task { await model.chats.refresh() } }
+                } label: { Label(L("MCP servers"), systemImage: "puzzlepiece.extension") }
+                    .disabled(model.server.state != .connected || !model.server.capabilities.contains(MCPServerConfiguration.capability))
+                    .accessibilityIdentifier("mcpServersSettings")
+                Text(L("Connect to your Mac and update Nocturne on the Mac to manage MCP servers."))
+                    .font(.caption).foregroundStyle(MoonStyle.secondary)
+            }.listRowBackground(MoonStyle.surface)
             Section(L("Agent attention")) {
                 Toggle(L("Notifications for pending requests"), isOn: Binding(get: { attention.notificationsEnabled },
                     set: { enabled in Task { await attention.setNotifications(enabled) } }))

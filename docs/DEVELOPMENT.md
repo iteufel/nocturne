@@ -40,6 +40,12 @@ The Mac product is `.build/XcodeMac/Build/Products/Debug/Nocturne.app`; the simu
 
 ## Tests
 
+`swift test --filter MCPServerTests` covers MCP URL/header validation, secure-store
+persistence and write failures, real stdio Codex/ACP configuration payloads,
+provider snapshot replacement, active-reply guards, and authenticated TLS server
+management with chat-access revocation. Fixtures use temporary storage and do
+not connect to external MCP services or run inference.
+
 Chat protocol fixtures run with `swift test --filter ChatTests`. They exercise real stdio processes, Codex legacy and paginated history, ACP replay and capability negotiation, streaming, approvals, cancellation, and authenticated chat revocation. The optional `NOCTURNE_TEST_CODEX=1 swift test --filter ChatTests/testInstalledCodexHistoryReadOnly` checks the installed Codex's local history without starting or resuming an inference turn.
 
 Developer workspace tests run with `swift test --filter 'DeveloperWorkspaceTests|ForgeTests|ChatTests'`. Temporary real repositories cover staging/unstaging, unusual paths, renames, branch comparisons, isolated worktree creation and stale/symlink-safe edits. The authenticated server test verifies thread-directory binding and permission/active-turn guards. `DeveloperClientTests` in the simulator exercises model/worktree/changes/PR flows over real TLS with deterministic media-free forge responses. PR edits are tested with structured payloads and stale-write rejection without modifying real PRs.

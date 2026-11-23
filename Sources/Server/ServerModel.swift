@@ -50,6 +50,7 @@ final class ServerModel: ObservableObject {
     @Published var invitation: PairingInvitation?
     @Published private(set) var resettingPairing = false
     var changingDevices: Bool { removingDevice != nil || resettingPairing }
+    let mcpServers = MCPServerStore()
     let codexAccount = CodexAccountController()
     @Published private(set) var chatAgents: [ChatAgentConfiguration]
     @Published var settings: ServerSettings
@@ -176,7 +177,7 @@ final class ServerModel: ObservableObject {
                 // Chat grants can be revoked immediately while startup is pending.
                 let permissions = HostPermissions(terminal: configuration.terminal, files: configuration.files,
                     microphone: configuration.microphone, chats: appliedSettings.chats, browser: appliedSettings.browser)
-                let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: permissions, appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil, simulators: configuration.simulators ? simulators : nil, chatAgents: chatAgents)
+                let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: permissions, appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil, simulators: configuration.simulators ? simulators : nil, chatAgents: chatAgents, mcpServers: mcpServers)
                 if let tunnel = remoteTunnel {
                     host.authorizeRemoteDevice = { [weak tunnel] port, device in
                         guard let tunnel else { throw NocturneError.disconnected }

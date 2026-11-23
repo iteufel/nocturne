@@ -1156,3 +1156,26 @@
 "Wait for the simulator display to finish starting." = "Wait for the simulator display to finish starting.";
 "Waiting for approval" = "Waiting for approval";
 "Writing reply" = "Writing reply";
+
+"MCP servers" = "MCP servers";
+"Add MCP server" = "Add MCP server";
+"Manage MCP servers…" = "Manage MCP servers…";
+"Custom MCP server" = "Custom MCP server";
+"No custom MCP servers" = "No custom MCP servers";
+"Server name" = "Server name";
+"Server URL" = "Server URL";
+"HTTP headers" = "HTTP headers";
+"Header name" = "Header name";
+"Header value" = "Header value";
+"Add header" = "Add header";
+"Remove header" = "Remove header";
+"Remove MCP server?" = "Remove MCP server?";
+"Connect to your Mac and update Nocturne on the Mac to manage MCP servers." = "Connect to your Mac and update Nocturne on the Mac to manage MCP servers.";
+"Add remote MCP tools for agent chats. Servers connect from your Mac, so localhost refers to the Mac. Changes apply when you start or reopen a conversation." = "Add remote MCP tools for agent chats. Servers connect from your Mac, so localhost refers to the Mac. Changes apply when you start or reopen a conversation.";
+"HTTP MCP servers are supported. Add authentication with HTTP headers, such as Authorization: Bearer your-token. Credentials are saved in the Mac’s Keychain." = "HTTP MCP servers are supported. Add authentication with HTTP headers, such as Authorization: Bearer your-token. Credentials are saved in the Mac’s Keychain.";
+"Enter a server name of up to 128 bytes." = "Enter a server name of up to 128 bytes.";
+"Enter a full HTTP or HTTPS server URL without a username, password, or fragment." = "Enter a full HTTP or HTTPS server URL without a username, password, or fragment.";
+"Enter unique HTTP header names and single-line values, using at most 16 headers and 16 KB in total." = "Enter unique HTTP header names and single-line values, using at most 16 headers and 16 KB in total.";
+"Use at most 24 MCP servers with unique identifiers." = "Use at most 24 MCP servers with unique identifiers.";
+"Finish the current reply or voice call before changing MCP servers." = "Finish the current reply or voice call before changing MCP servers.";
+"This provider does not support HTTP MCP servers. Disable the custom servers or choose a provider with HTTP MCP support." = "This provider does not support HTTP MCP servers. Disable the custom servers or choose a provider with HTTP MCP support.";

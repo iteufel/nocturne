@@ -50,7 +50,7 @@ private struct ChatVerticalBarEnvironment<Content: View>: View {
 
 private enum ChatWorkspaceMode { case threads, pullRequests }
 private enum ChatWorkspaceSheet: String, Identifiable {
-    case browser, worktrees, changes, terminal, files, git, prEditor
+    case browser, worktrees, changes, terminal, files, git, prEditor, mcpServers
     var id: String { rawValue }
 }
 
@@ -128,6 +128,8 @@ private struct ChatWorkspaceCanvas: View {
     }
     @ViewBuilder private func sheetContent(_ destination: ChatWorkspaceSheet) -> some View {
         switch destination {
+        case .mcpServers:
+            MCPServersView(model: MCPServersModel(connection: connection)) { saveDraft(); chat.leaveConversation(); Task { await chat.refresh() } }
         case .browser: BrowserWorkspace(connection: connection) { sheet = nil }
         case .worktrees: DeveloperWorktreesView(model: project)
         case .changes: NavigationStack { DeveloperProjectPane(model: project, tab: .changes).navigationTitle(L("Review changes")).navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Done")) { sheet = nil } } } }
@@ -142,7 +144,7 @@ private struct ChatWorkspaceCanvas: View {
     }
     @ViewBuilder private func side(wide: Bool) -> some View {
         if mode == .threads {
-            ChatThreadSidebar(chat: chat, project: project, navigation: navigation, openSupervisor: { openSupervisor(wide: wide) }, newThread: { newThread(wide: wide) }, open: { openThread($0, wide: wide) }, exit: exit, saveDraft: saveDraft, darkChat: $darkChat, showsControls: !usesSystemBar)
+            ChatThreadSidebar(chat: chat, project: project, navigation: navigation, openSupervisor: { openSupervisor(wide: wide) }, newThread: { newThread(wide: wide) }, open: { openThread($0, wide: wide) }, exit: exit, saveDraft: saveDraft, darkChat: $darkChat, showsControls: !usesSystemBar, showMCPServers: { sheet = .mcpServers })
         } else { ChatPRSidebar(inbox: inbox, selectedURL: selectedPRURL, selectionDisabled: locked || project.busy, open: { openPR($0, wide: wide) }, settings: { mode = .threads }, showsControls: !usesSystemBar) }
     }
     private func main(wide: Bool) -> some View {
@@ -269,7 +271,7 @@ private struct ChatWorkspaceCanvas: View {
         }.visibilityPriority(.high)
         ToolbarOverflowMenu {
             if mode == .pullRequests, selectedPRURL != nil { Section(L("Pull request")) { prActions } }
-            ChatSettingsActions(chat: chat, darkChat: $darkChat, saveDraft: saveDraft, exit: exit)
+            ChatSettingsActions(chat: chat, darkChat: $darkChat, saveDraft: saveDraft, exit: exit, showMCPServers: { sheet = .mcpServers })
         }
     }
     private func toggleSidebar() { composing = false; sidebar.toggle(); if sidebar { browserVisible = false } }

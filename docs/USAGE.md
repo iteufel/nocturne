@@ -179,3 +179,24 @@ An active voice chat keeps its microphone, spoken replies, and connection runnin
 Pairing QR codes contain a private 256-bit transport key and a single-use enrollment token that expires after five minutes. Each device also proves possession of its own streaming certificate on every workspace connection; the proof is bound to that TLS session. A certificate alone cannot register a new workspace device, and a removed device cannot reuse the old shared key or invitation to regain access. Update both apps for workspace protocol version 4; an existing workspace-only pairing may need a fresh QR code. Keys are stored in Keychain, never in Bonjour or UserDefaults. Workspace traffic uses authenticated TLS-PSK; video uses the upstream pairing and encrypted transport implementation. Terminal access runs as the Mac user and is explicitly opt-in.
 
 Streaming approval is stored separately in Keychain and bound to the computer ID and both certificates. Discovery and cached transport credentials cannot grant it. The direct server runtime is pinned to Sunshine `v2026.1107.185223`, an official prerelease containing the fix for duplicate certificate records when re-pairing; its download checksum is verified by bootstrap.
+
+## Custom MCP servers
+
+On iPhone or iPad, open **Settings → Agent chats → MCP servers**, or choose
+**MCP servers** from the chat settings menu. Connect to the Mac with Agent chats
+enabled first. On macOS, open **Sharing → Manage MCP servers…**.
+
+Add a name and full HTTP/HTTPS MCP endpoint URL. Use **Add header** for an API
+key or an `Authorization` header with a `Bearer …` value. Header values are
+masked in the editor; the server list and credentials are saved in the Mac’s
+Keychain and shared with its paired chat clients over the authenticated connection.
+You can edit, disable, or remove each server. Refresh the list to see changes
+made from another device.
+
+Servers connect from the Mac, so `localhost` refers to the Mac. Start or reopen
+a conversation after changing servers. Existing replies keep their current tools.
+Codex and ACP providers advertising HTTP MCP support receive the configured
+servers; an incompatible ACP provider reports an error until custom servers are
+disabled. This editor supports remote HTTP MCP endpoints and header-based
+authentication; stdio commands, legacy SSE endpoints, and OAuth sign-in are not
+configured here. Existing provider configuration on the Mac remains available.

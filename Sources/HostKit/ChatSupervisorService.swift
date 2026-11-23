@@ -29,6 +29,7 @@ public final class ChatSupervisorService {
             "sourceSessionID": ["type": "string"], "text": ["type": "string"], "cursor": ["type": "string"]
         ], "required": ["action"], "additionalProperties": false]
     ]]
+    private let mcpServers: MCPServerStore
     private let directory: URL
     nonisolated(unsafe) private let defaults: UserDefaults
     private var configurations: [ChatAgentConfiguration]
@@ -54,8 +55,8 @@ public final class ChatSupervisorService {
             self.agent = agent; self.session = session; self.supervisorProvider = supervisorProvider; self.supervisorID = supervisorID
         }
     }
-    public nonisolated init(configurations: [ChatAgentConfiguration], directory: URL, defaults: UserDefaults = .standard) {
-        self.configurations = configurations; self.directory = directory; self.defaults = defaults
+    public nonisolated init(configurations: [ChatAgentConfiguration], directory: URL, defaults: UserDefaults = .standard, mcpServers: MCPServerStore = MCPServerStore()) {
+        self.configurations = configurations; self.directory = directory; self.defaults = defaults; self.mcpServers = mcpServers
     }
     private func key(_ provider: String) -> String {
         let scope = directory.resolvingSymlinksInPath().path + "\n" + provider
@@ -160,15 +161,19 @@ public final class ChatSupervisorService {
         guard ["send", "create"].contains(action), let text = arguments["text"] as? String,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= ChatProtocol.maximumPromptBytes else { throw NocturneError.invalidFrame }
         guard workers.values.filter({ $0.running }).count < 8 else { throw NocturneError.remote("Eight agents are already working. Wait for one to finish or stop it first.") }
+        if action == "send", workers[workerKey]?.running == true {
+            throw NocturneError.remote("This agent is still working. Read its progress or stop it before sending another task.")
+        }
         let worker: Worker
-        if let existing = workers[workerKey], !existing.agent.isClosed, action == "send" {
+        if let existing = workers[workerKey], !existing.agent.isClosed, action == "send", existing.agent.mcpServers == (try mcpServers.load()) {
             guard !existing.running else { throw NocturneError.remote("This agent is still working. Read its progress or stop it before sending another task.") }; worker = existing
         } else {
+            if action == "send" { workers.removeValue(forKey: workerKey)?.agent.close() }
             if workers.count >= 32 {
                 guard let idle = workers.first(where: { !$0.value.running }) else { throw NocturneError.remote("Too many agent conversations are open.") }
                 idle.value.agent.close(); workers.removeValue(forKey: idle.key)
             }
-            let agent = try ChatAgentSession(configuration: configuration, directory: configuration.workingDirectory(fallback: directory))
+            let agent = try ChatAgentSession(configuration: configuration, directory: configuration.workingDirectory(fallback: directory), mcpServers: mcpServers.load())
             var retained = false
             defer { if !retained { agent.close() } }
             try await agent.initialize(); try check()
@@ -203,8 +208,9 @@ public final class ChatSupervisorService {
         return try json(["providerID": providerID, "sessionID": worker.session.id, "directory": worker.session.directory, "status": "Started"])
     }
     private func catalog(_ configuration: ChatAgentConfiguration) async throws -> ChatAgentSession {
-        if let agent = catalogs[configuration.id], !agent.isClosed { return agent }
-        let agent = try ChatAgentSession(configuration: configuration, directory: configuration.workingDirectory(fallback: directory))
+        if let agent = catalogs[configuration.id], !agent.isClosed, agent.mcpServers == (try mcpServers.load()) { return agent }
+        catalogs[configuration.id]?.close()
+        let agent = try ChatAgentSession(configuration: configuration, directory: configuration.workingDirectory(fallback: directory), mcpServers: mcpServers.load())
         catalogs[configuration.id] = agent
         do { try await agent.initialize(); return agent } catch { agent.close(); catalogs.removeValue(forKey: configuration.id); throw error }
     }

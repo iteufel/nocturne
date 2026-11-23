@@ -6,6 +6,7 @@ struct ChatSettingsActions: View {
     @Binding var darkChat: Bool
     let saveDraft: () -> Void
     let exit: () -> Void
+    var showMCPServers: () -> Void = {}
     private var locked: Bool { chat.loading || chat.loadingOlder || chat.responding || chat.voiceEngaged || chat.configuring }
     var body: some View {
         Section(L("Provider")) {
@@ -19,6 +20,9 @@ struct ChatSettingsActions: View {
             Button(chat.archived ? L("Recent threads") : L("Archived threads"), systemImage: "archivebox") { saveDraft(); Task { await chat.showArchived(!chat.archived) } }.disabled(locked)
         }
         Button(L("Refresh threads"), systemImage: "arrow.clockwise") { Task { await chat.refresh() } }.disabled(locked)
+        if chat.connection.capabilities.contains(MCPServerConfiguration.capability) {
+            Button(L("MCP servers"), systemImage: "puzzlepiece.extension", action: showMCPServers).disabled(locked)
+        }
         Toggle(L("Dark chat"), isOn: $darkChat)
         Divider()
         Button(L("Back to Nocturne"), systemImage: "desktopcomputer", action: exit)
@@ -36,6 +40,7 @@ struct ChatThreadSidebar: View {
     let saveDraft: () -> Void
     @Binding var darkChat: Bool
     var showsControls = true
+    var showMCPServers: () -> Void = {}
     @State private var search = ""
     @State private var collapsed: Set<String> = []
     @State private var renaming: ChatSessionInfo?
@@ -47,7 +52,7 @@ struct ChatThreadSidebar: View {
                 Text("Nocturne").font(.system(size: 22, weight: .semibold, design: .rounded))
                 Spacer()
                 if showsControls {
-                    Menu { ChatSettingsActions(chat: chat, darkChat: $darkChat, saveDraft: saveDraft, exit: exit) }
+                    Menu { ChatSettingsActions(chat: chat, darkChat: $darkChat, saveDraft: saveDraft, exit: exit, showMCPServers: showMCPServers) }
                     label: { Image(systemName: "gearshape").font(.title3).foregroundStyle(Color.primary).frame(width: 44, height: 44).modifier(ChatGlass()) }
                         .accessibilityLabel(L("Chat settings")).accessibilityIdentifier("chatSettings")
                 }

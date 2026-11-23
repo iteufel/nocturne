@@ -7,6 +7,7 @@ import NocturneMacClient
 private struct ChatProviderSettingsView: View {
     @ObservedObject var model: ServerModel
     @State private var editing: ChatAgentConfiguration?
+    @State private var showingMCPServers = false
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Toggle(isOn: $model.chatsEnabled) {
@@ -39,8 +40,15 @@ private struct ChatProviderSettingsView: View {
             Text(L("Install and sign in to each agent on this Mac. Codex uses your existing Codex history and login. Claude Code needs claude-agent-acp. Saving providers stops active replies; refresh Chats on your device afterward."))
                 .font(.caption).foregroundStyle(MoonStyle.secondary)
             Divider()
+            Button(L("Manage MCP servers…"), systemImage: "puzzlepiece.extension") { showingMCPServers = true }
+                .buttonStyle(NocturneGlassButtonStyle()).accessibilityIdentifier("manageMCPServers")
+            Divider()
             CodexVoiceSignInView(account: model.codexAccount,
                 configuration: model.chatAgents.first { $0.transport == .codex }, directory: model.appliedSettings.sharedFolder)
+        }
+        .sheet(isPresented: $showingMCPServers) {
+            MCPServersView(model: MCPServersModel(fetch: { try model.mcpServers.load() },
+                save: { try model.mcpServers.save($0) }, remove: { try model.mcpServers.remove($0) }))
         }
         .sheet(item: $editing) { agent in
             ChatAgentEditor(agent: agent) { try model.saveChatAgent($0) }

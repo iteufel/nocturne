@@ -9,8 +9,8 @@ from pathlib import Path
 import shutil, sys
 fixture = Path(sys.argv[1])
 for target, source, names in [
-    ('kit', 'Shared', ['ChatProtocol', 'ChatPermission', 'AgentAttention', 'NocturneError', 'DeveloperProtocol', 'ChatVoice', 'ChatSupervisor']),
-    ('host', 'HostKit', ['ChatAgentSession', 'ChatAgentConfiguration', 'AgentRPC', 'ChatSupervisorService', 'CodexAttentionQuestions', 'RepositoryService', 'DeveloperCommand', 'ForgeService'])
+    ('kit', 'Shared', ['ChatProtocol', 'ChatPermission', 'AgentAttention', 'NocturneError', 'DeveloperProtocol', 'ChatVoice', 'ChatSupervisor', 'MCPServerConfiguration', 'Keychain']),
+    ('host', 'HostKit', ['ChatAgentSession', 'ChatAgentConfiguration', 'AgentRPC', 'ChatSupervisorService', 'MCPServerStore', 'CodexAttentionQuestions', 'RepositoryService', 'DeveloperCommand', 'ForgeService'])
 ]:
     for name in names:
         shutil.copy(Path('Sources') / source / (name + '.swift'), fixture / target)
