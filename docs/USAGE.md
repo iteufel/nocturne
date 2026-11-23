@@ -128,7 +128,7 @@ The Files location provides browsing and downloads; send new files through Noctu
 
 ## Agent chats
 
-On your Mac, enable **Nocturne Server → Sharing → Agent chats**, then reconnect your device and open **Chats**. Codex is selected by default. Browse **Recent** or **Archived**, load more conversations or scroll up to fetch earlier messages automatically, and continue a recent conversation or start a new one. The list includes Codex sessions from all local sources and model providers, using the Mac user's Codex installation and history. Cloud-only conversations that have not reached that Mac are not imported. Archived conversations are read-only.
+On your Mac, enable **Nocturne Server → Sharing → Agent chats**, then reconnect your device and open **Chats**. Codex is selected by default. Browse **Recent** or **Archived**, load more conversations or scroll up to fetch earlier messages automatically, and continue a recent conversation or start a new one. The list shows conversations created by Nocturne, across local sources and model providers. Chats created by other apps are hidden. Codex identifies existing Nocturne chats by their recorded origin; for providers without origin metadata, Nocturne remembers chats created from this version onward. Cloud-only conversations that have not reached that Mac are not imported. Archived conversations are read-only.
 
 Use the provider menu to switch to **Claude Code** or another ACP agent. Install and sign in to the agent on your Mac first. Claude Code uses the `claude-agent-acp` executable; see its [adapter installation guide](https://github.com/agentclientprotocol/claude-agent-acp). Under **Sharing → Chat providers**, edit an executable or add any ACP v1 stdio agent. Enter arguments one per line and an optional working directory; new conversations otherwise start in the shared folder. Existing conversations retain their project directory. History discovery and reopening depend on the ACP agent's advertised capabilities; the app explains when an agent cannot provide them.
 
@@ -136,7 +136,7 @@ Replies stream into the conversation. **Stop reply** interrupts a running turn. 
 
 The **Supervisor** is pinned above Codex's thread list. Open it to ask for progress, send a fix to an existing project conversation, or start a feature in a known project's directory. It can discover configured providers, read conversations, and start or stop its own workers. A running conversation owned by another client must finish or be stopped there unless that client's tools are available to the supervisor. Worker approval requests appear in the supervisor conversation and still require your decision.
 
-In **Supervisor → …**, enable **Start voice when opened** to begin listening when you open it. This is off by default, is saved separately for each paired Mac/provider, and uses the existing Codex voice sign-in and iOS microphone permission. Ending voice does not restart it automatically. Both apps must support the supervisor capability. Supervisor workers continue on the Mac when you switch between text and voice or disconnect; stopping the server, disabling Agent chats, or removing a paired device cancels these workers. The supervisor conversation itself remains in Codex history.
+In **Supervisor → …**, enable **Start voice when opened** to begin listening when you open it. This is off by default, is saved separately for each paired Mac/provider, and uses the existing Codex voice sign-in and iOS microphone permission. Ending voice does not restart it automatically. Both apps must support the supervisor capability. Supervisor workers continue on the Mac when you switch between text and voice or disconnect; stopping the server, disabling Agent chats, or removing a paired device cancels these workers. Use **Supervisor → … → Reset supervisor** to start with fresh context and stop its workers; project conversations are kept. End a reply or voice call before resetting. The previous supervisor stays in provider history but is hidden in Nocturne. Reset requires updated apps on both devices.
 
 Chats are also available in **Stream controls → Chats** alongside the terminal and files.
 
@@ -179,3 +179,24 @@ An active voice chat keeps its microphone, spoken replies, and connection runnin
 Pairing QR codes contain a private 256-bit transport key and a single-use enrollment token that expires after five minutes. Each device also proves possession of its own streaming certificate on every workspace connection; the proof is bound to that TLS session. A certificate alone cannot register a new workspace device, and a removed device cannot reuse the old shared key or invitation to regain access. Update both apps for workspace protocol version 4; an existing workspace-only pairing may need a fresh QR code. Keys are stored in Keychain, never in Bonjour or UserDefaults. Workspace traffic uses authenticated TLS-PSK; video uses the upstream pairing and encrypted transport implementation. Terminal access runs as the Mac user and is explicitly opt-in.
 
 Streaming approval is stored separately in Keychain and bound to the computer ID and both certificates. Discovery and cached transport credentials cannot grant it. The direct server runtime is pinned to Sunshine `v2026.1107.185223`, an official prerelease containing the fix for duplicate certificate records when re-pairing; its download checksum is verified by bootstrap.
+
+## Custom MCP servers
+
+On iPhone or iPad, open **Settings → Agent chats → MCP servers**, or choose
+**MCP servers** from the chat settings menu. Connect to the Mac with Agent chats
+enabled first. On macOS, open **Sharing → Manage MCP servers…**.
+
+Add a name and full HTTP/HTTPS MCP endpoint URL. Use **Add header** for an API
+key or an `Authorization` header with a `Bearer …` value. Header values are
+masked in the editor; the server list and credentials are saved in the Mac’s
+Keychain and shared with its paired chat clients over the authenticated connection.
+You can edit, disable, or remove each server. Refresh the list to see changes
+made from another device.
+
+Servers connect from the Mac, so `localhost` refers to the Mac. Start or reopen
+a conversation after changing servers. Existing replies keep their current tools.
+Codex and ACP providers advertising HTTP MCP support receive the configured
+servers; an incompatible ACP provider reports an error until custom servers are
+disabled. This editor supports remote HTTP MCP endpoints and header-based
+authentication; stdio commands, legacy SSE endpoints, and OAuth sign-in are not
+configured here. Existing provider configuration on the Mac remains available.

@@ -19,6 +19,7 @@ public enum Operation: String, Codable {
     case simulatorList, simulatorOpen, simulatorFrame, simulatorClose, simulatorInput
     case appList, appIcon, appLaunch, appOpen, appResize, appInput, appHeartbeat, appClose, appVideo, appEnded
     case chatSupervisor, chatProviders, chatList, chatLoad, chatNew, chatPrompt, chatCancel, chatPermission, chatEvent
+    case chatMCPList, chatMCPSave, chatMCPRemove
     case chatOptions, chatConfigure, chatRepository
     case chatVoicePrepare, chatVoiceOpen, chatVoiceStart, chatVoiceHeartbeat, chatVoiceStop, chatVoiceEvent
     case desktopList, desktopOpen, desktopResize, desktopInput, desktopHeartbeat, desktopClose, desktopVideo, desktopAudio, desktopEnded
@@ -83,6 +84,8 @@ public struct Packet: Codable {
     public var viewport: AppWindowViewport? = nil
     public var input: AppWindowInput? = nil
     public var video: AppWindowVideoFrame? = nil
+    public var mcpServers: [MCPServerConfiguration]? = nil
+    public var mcpServer: MCPServerConfiguration? = nil
     public var chatRequest: ChatRequest? = nil
     public var chatProviders: [ChatProvider]? = nil
     public var chatPage: ChatSessionPage? = nil

@@ -4,6 +4,7 @@ import NocturneKit
 /// One agent process per authenticated connection; disconnect and access revocation tear it down.
 @MainActor
 public final class ChatHostSession {
+    private let mcpServers: MCPServerStore
     private let supervisor: ChatSupervisorService
     private let ownsSupervisor: Bool
     private let supervisorListener = UUID()
@@ -26,10 +27,11 @@ public final class ChatHostSession {
     private var repositoryTask: Task<RepositoryResponse, Error>?
     private var repositoryBusy = false
 
-    public nonisolated init(configurations: [ChatAgentConfiguration], directory: URL, enabled: Bool, supervisor: ChatSupervisorService? = nil) {
+    public nonisolated init(configurations: [ChatAgentConfiguration], directory: URL, enabled: Bool, supervisor: ChatSupervisorService? = nil, mcpServers: MCPServerStore = MCPServerStore()) {
         self.configurations = configurations; self.directory = directory; self.enabled = enabled
         self.ownsSupervisor = supervisor == nil
-        self.supervisor = supervisor ?? ChatSupervisorService(configurations: configurations, directory: directory)
+        self.mcpServers = mcpServers
+        self.supervisor = supervisor ?? ChatSupervisorService(configurations: configurations, directory: directory, mcpServers: mcpServers)
     }
     public nonisolated func setEnabled(_ value: Bool) {
         DispatchQueue.main.async {
@@ -78,6 +80,22 @@ public final class ChatHostSession {
     private func perform(_ packet: Packet, send: @escaping (Packet) -> Void) async throws -> Packet {
         guard enabled, !closed else { throw NocturneError.permissionDenied }
         var reply = packet.reply()
+        switch packet.operation {
+        case .chatMCPList: reply.mcpServers = try mcpServers.load(); return reply
+        case .chatMCPSave, .chatMCPRemove:
+            guard !loading, activeSession == nil, voiceID == nil, !repositoryBusy else {
+                throw NocturneError.remote("Finish the current reply or voice call before changing MCP servers.")
+            }
+            if packet.operation == .chatMCPSave {
+                guard let server = packet.mcpServer else { throw NocturneError.invalidFrame }
+                reply.mcpServers = try mcpServers.save(server)
+            } else {
+                guard let id = packet.sessionID, !id.isEmpty, id.utf8.count <= 128 else { throw NocturneError.invalidFrame }
+                reply.mcpServers = try mcpServers.remove(id)
+            }
+            return reply
+        default: break
+        }
         if packet.operation == .chatProviders {
             reply.chatProviders = configurations.map(\.descriptor); return reply
         }
@@ -171,8 +189,12 @@ public final class ChatHostSession {
         guard generation == epoch, enabled, !closed else { throw NocturneError.permissionDenied }
         supervisorSelection = request.sessionID.flatMap { supervisor.isSupervisor($0, provider: request.providerID) ? $0 : nil }
         supervisor.subscribe(supervisorListener) { [weak self] event in
-            guard let self, self.enabled, !self.closed, self.supervisorSelection == event.sessionID else { return }
+            guard let self, self.enabled, !self.closed, self.supervisorSelection == event.sessionID,
+                  event.providerID == request.providerID else { return }
             self.event(event)
+            if event.kind == .failed, event.detail == ChatSupervisor.resetNotice {
+                self.endActive(ChatSupervisor.resetNotice); self.reset()
+            }
         }
         switch packet.operation {
         case .chatVoiceOpen:
@@ -180,7 +202,7 @@ public final class ChatHostSession {
             do { reply.chatSession = supervisor.decorate(try await provider.prepareVoiceSession(session, allowContinuation: true), provider: request.providerID) }
             catch { provider.close(); if agent === provider { agent = nil }; throw error }
         case .chatSupervisor:
-            reply.chatHistory = try await supervisor.open(using: provider)
+            reply.chatHistory = try await supervisor.open(using: provider, reset: request.resetSupervisor == true)
             supervisorSelection = reply.chatHistory?.session.id
             if let id = supervisorSelection {
                 reply.chatPermissions = supervisor.permissions(for: id)
@@ -310,14 +332,15 @@ public final class ChatHostSession {
         return result
     }
     private func provider(_ id: String, forVoice: Bool = false) async throws -> ChatAgentSession {
-        if let agent, agent.isVoiceProvider != forVoice { agent.close(); self.agent = nil }
+        let servers = try mcpServers.load()
+        if let agent, agent.mcpServers != servers || agent.isVoiceProvider != forVoice { agent.close(); self.agent = nil }
         if let agent, agent.configuration.id == id, !agent.isClosed { return agent }
         guard let configuration = configurations.first(where: { $0.id == id }) else { throw NocturneError.remote("This provider is no longer configured on your Mac. Refresh the provider list.") }
         guard !forVoice || configuration.transport == .codex else { throw NocturneError.remote("Live voice is currently available for Codex.") }
         agent?.close(); agent = nil
         let epoch = generation
         let next = try ChatAgentSession(configuration: configuration, directory: configuration.workingDirectory(fallback: directory),
-            chatGPTOnly: forVoice)
+            chatGPTOnly: forVoice, mcpServers: servers)
         next.supervisorSession = { [weak supervisor] id in supervisor?.isSupervisor(id, provider: configuration.id) == true }
         next.supervisorTool = { [weak supervisor] id, arguments in
             guard let supervisor else { throw NocturneError.disconnected }

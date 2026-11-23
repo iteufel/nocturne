@@ -6,6 +6,7 @@ struct ChatSettingsActions: View {
     @Binding var darkChat: Bool
     let saveDraft: () -> Void
     let exit: () -> Void
+    var showMCPServers: () -> Void = {}
     private var locked: Bool { chat.loading || chat.loadingOlder || chat.responding || chat.voiceEngaged || chat.configuring }
     var body: some View {
         Section(L("Provider")) {
@@ -19,6 +20,9 @@ struct ChatSettingsActions: View {
             Button(chat.archived ? L("Recent threads") : L("Archived threads"), systemImage: "archivebox") { saveDraft(); Task { await chat.showArchived(!chat.archived) } }.disabled(locked)
         }
         Button(L("Refresh threads"), systemImage: "arrow.clockwise") { Task { await chat.refresh() } }.disabled(locked)
+        if chat.connection.capabilities.contains(MCPServerConfiguration.capability) {
+            Button(L("MCP servers"), systemImage: "puzzlepiece.extension", action: showMCPServers).disabled(locked)
+        }
         Toggle(L("Dark chat"), isOn: $darkChat)
         Divider()
         Button(L("Back to Nocturne"), systemImage: "desktopcomputer", action: exit)
@@ -30,14 +34,17 @@ struct ChatThreadSidebar: View {
     @ObservedObject var project: DeveloperWorkspaceModel
     @ObservedObject var navigation: ChatNavigationState
     let openSupervisor: () -> Void
+    let resetSupervisor: () -> Void
     let newThread: () -> Void
     let open: (ChatSessionInfo) -> Void
     let exit: () -> Void
     let saveDraft: () -> Void
     @Binding var darkChat: Bool
     var showsControls = true
+    var showMCPServers: () -> Void = {}
     @State private var search = ""
     @State private var collapsed: Set<String> = []
+    @State private var confirmingSupervisorReset = false
     @State private var renaming: ChatSessionInfo?
     @State private var title = ""
     private var locked: Bool { chat.loading || chat.loadingOlder || chat.responding || chat.voiceEngaged || chat.configuring }
@@ -47,7 +54,7 @@ struct ChatThreadSidebar: View {
                 Text("Nocturne").font(.system(size: 22, weight: .semibold, design: .rounded))
                 Spacer()
                 if showsControls {
-                    Menu { ChatSettingsActions(chat: chat, darkChat: $darkChat, saveDraft: saveDraft, exit: exit) }
+                    Menu { ChatSettingsActions(chat: chat, darkChat: $darkChat, saveDraft: saveDraft, exit: exit, showMCPServers: showMCPServers) }
                     label: { Image(systemName: "gearshape").font(.title3).foregroundStyle(Color.primary).frame(width: 44, height: 44).modifier(ChatGlass()) }
                         .accessibilityLabel(L("Chat settings")).accessibilityIdentifier("chatSettings")
                 }
@@ -68,6 +75,10 @@ struct ChatThreadSidebar: View {
                     }.buttonStyle(.plain).disabled(locked).accessibilityIdentifier("chatSupervisor")
                     Menu {
                         Toggle(L("Start voice when opened"), isOn: $navigation.supervisorStartsVoice)
+                        if chat.supportsSupervisorReset {
+                            Button(L("Reset supervisor"), systemImage: "arrow.counterclockwise", role: .destructive) { confirmingSupervisorReset = true }
+                                .disabled(locked).accessibilityIdentifier("resetSupervisor")
+                        }
                     } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).foregroundStyle(ChatStyle.secondary) }
                         .accessibilityLabel(L("Supervisor settings")).accessibilityIdentifier("supervisorSettings")
                 }.background(chat.selected?.isSupervisor == true ? ChatStyle.selected : ChatStyle.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
@@ -130,6 +141,12 @@ struct ChatThreadSidebar: View {
                 if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel(L("Clear search")) }
             }.padding(16).modifier(ChatGlass()).padding(16)
         }.background(ChatStyle.sidebar)
+            .confirmationDialog(L("Reset supervisor?"), isPresented: $confirmingSupervisorReset, titleVisibility: .visible) {
+                Button(L("Reset supervisor"), role: .destructive, action: resetSupervisor)
+                Button(L("Cancel"), role: .cancel) {}
+            } message: {
+                Text(L("Start a fresh supervisor conversation and stop its workers. Project conversations are kept."))
+            }
             .alert(L("Rename thread"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
                 TextField(L("Title"), text: $title)
                 Button(L("Cancel"), role: .cancel) { renaming = nil }

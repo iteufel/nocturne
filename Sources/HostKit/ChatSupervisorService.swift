@@ -29,6 +29,7 @@ public final class ChatSupervisorService {
             "sourceSessionID": ["type": "string"], "text": ["type": "string"], "cursor": ["type": "string"]
         ], "required": ["action"], "additionalProperties": false]
     ]]
+    private let mcpServers: MCPServerStore
     private let directory: URL
     nonisolated(unsafe) private let defaults: UserDefaults
     private var configurations: [ChatAgentConfiguration]
@@ -54,8 +55,8 @@ public final class ChatSupervisorService {
             self.agent = agent; self.session = session; self.supervisorProvider = supervisorProvider; self.supervisorID = supervisorID
         }
     }
-    public nonisolated init(configurations: [ChatAgentConfiguration], directory: URL, defaults: UserDefaults = .standard) {
-        self.configurations = configurations; self.directory = directory; self.defaults = defaults
+    public nonisolated init(configurations: [ChatAgentConfiguration], directory: URL, defaults: UserDefaults = .standard, mcpServers: MCPServerStore = MCPServerStore()) {
+        self.configurations = configurations; self.directory = directory; self.defaults = defaults; self.mcpServers = mcpServers
     }
     private func key(_ provider: String) -> String {
         let scope = directory.resolvingSymlinksInPath().path + "\n" + provider
@@ -66,12 +67,14 @@ public final class ChatSupervisorService {
         guard isSupervisor(session.id, provider: provider) else { return session }
         return ChatSessionInfo(id: session.id, title: ChatSupervisor.title, directory: session.directory, updatedAt: session.updatedAt, isSupervisor: true)
     }
-    func open(using agent: ChatAgentSession) async throws -> ChatHistoryPage {
+    func open(using agent: ChatAgentSession, reset: Bool = false) async throws -> ChatHistoryPage {
         guard agent.configuration.transport == .codex, !opening else { throw NocturneError.remote("Wait for the supervisor to finish opening.") }
+        guard !reset || !operationBusy else { throw NocturneError.remote("Wait for the current supervisor action to finish.") }
         opening = true; let epoch = generation
         defer { if generation == epoch { opening = false } }
         let provider = agent.configuration.id
-        if let saved = supervisorIDs[provider] ?? defaults.string(forKey: key(provider)) {
+        let previous = supervisorIDs[provider] ?? defaults.string(forKey: key(provider))
+        if !reset, let saved = previous {
             do {
                 let page = try await agent.load(saved, cursor: nil, archived: false)
                 guard generation == epoch else { throw CancellationError() }
@@ -84,7 +87,19 @@ public final class ChatSupervisorService {
         }
         let session = try await agent.create(supervisor: true)
         guard generation == epoch else { throw CancellationError() }
+        guard !reset || session.id != previous else { throw NocturneError.invalidFrame }
         supervisorIDs[provider] = session.id; defaults.set(session.id, forKey: key(provider))
+        if reset, let previous, previous != session.id {
+            // Commit the replacement only after creation succeeds. Project chats stay intact.
+            agent.hideRetiredSupervisor(previous)
+            let retired = workers.filter { $0.value.supervisorProvider == provider && $0.value.supervisorID == previous }
+            for (id, worker) in retired {
+                workers.removeValue(forKey: id)
+                for (permissionID, value) in pending where value.0 === worker { pending.removeValue(forKey: permissionID) }
+                worker.cancellation?.cancel(); worker.agent.close()
+            }
+            publish(ChatEvent(providerID: provider, sessionID: previous, kind: .failed, detail: ChatSupervisor.resetNotice))
+        }
         return ChatHistoryPage(session: decorate(session, provider: provider), messages: [])
     }
 
@@ -104,7 +119,7 @@ public final class ChatSupervisorService {
         }
     }
     func call(_ arguments: [String: Any], supervisorProvider: String, supervisorID: String) async throws -> String {
-        guard isSupervisor(supervisorID, provider: supervisorProvider), !operationBusy,
+        guard isSupervisor(supervisorID, provider: supervisorProvider), !operationBusy, !opening,
               let action = arguments["action"] as? String else { throw NocturneError.remote("Wait for the current supervisor action to finish.") }
         for field in ["sessionID", "sourceSessionID"] {
             if let value = arguments[field] as? String, value.isEmpty || value.utf8.count > 512 { throw NocturneError.invalidFrame }
@@ -160,15 +175,19 @@ public final class ChatSupervisorService {
         guard ["send", "create"].contains(action), let text = arguments["text"] as? String,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= ChatProtocol.maximumPromptBytes else { throw NocturneError.invalidFrame }
         guard workers.values.filter({ $0.running }).count < 8 else { throw NocturneError.remote("Eight agents are already working. Wait for one to finish or stop it first.") }
+        if action == "send", workers[workerKey]?.running == true {
+            throw NocturneError.remote("This agent is still working. Read its progress or stop it before sending another task.")
+        }
         let worker: Worker
-        if let existing = workers[workerKey], !existing.agent.isClosed, action == "send" {
+        if let existing = workers[workerKey], !existing.agent.isClosed, action == "send", existing.agent.mcpServers == (try mcpServers.load()) {
             guard !existing.running else { throw NocturneError.remote("This agent is still working. Read its progress or stop it before sending another task.") }; worker = existing
         } else {
+            if action == "send" { workers.removeValue(forKey: workerKey)?.agent.close() }
             if workers.count >= 32 {
                 guard let idle = workers.first(where: { !$0.value.running }) else { throw NocturneError.remote("Too many agent conversations are open.") }
                 idle.value.agent.close(); workers.removeValue(forKey: idle.key)
             }
-            let agent = try ChatAgentSession(configuration: configuration, directory: configuration.workingDirectory(fallback: directory))
+            let agent = try ChatAgentSession(configuration: configuration, directory: configuration.workingDirectory(fallback: directory), defaults: defaults, mcpServers: mcpServers.load())
             var retained = false
             defer { if !retained { agent.close() } }
             try await agent.initialize(); try check()
@@ -203,13 +222,15 @@ public final class ChatSupervisorService {
         return try json(["providerID": providerID, "sessionID": worker.session.id, "directory": worker.session.directory, "status": "Started"])
     }
     private func catalog(_ configuration: ChatAgentConfiguration) async throws -> ChatAgentSession {
-        if let agent = catalogs[configuration.id], !agent.isClosed { return agent }
-        let agent = try ChatAgentSession(configuration: configuration, directory: configuration.workingDirectory(fallback: directory))
+        if let agent = catalogs[configuration.id], !agent.isClosed, agent.mcpServers == (try mcpServers.load()) { return agent }
+        catalogs[configuration.id]?.close()
+        let agent = try ChatAgentSession(configuration: configuration, directory: configuration.workingDirectory(fallback: directory), defaults: defaults, mcpServers: mcpServers.load())
         catalogs[configuration.id] = agent
         do { try await agent.initialize(); return agent } catch { agent.close(); catalogs.removeValue(forKey: configuration.id); throw error }
     }
     private func json(_ value: [String: Any]) throws -> String { String(decoding: try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), as: UTF8.self) }
     private func receive(_ event: ChatEvent, worker: Worker) {
+        guard workers[worker.agent.configuration.id + "\n" + worker.session.id] === worker else { return }
         if let message = event.message {
             if let index = worker.messages.firstIndex(where: { $0.id == message.id }) {
                 if event.kind == .delta { worker.messages[index].text = String((worker.messages[index].text + message.text).suffix(8000)) }

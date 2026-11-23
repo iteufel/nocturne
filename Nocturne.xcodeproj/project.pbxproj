@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AEC06BA2AFD14446BA978ED0 /* MCPServersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEC06BA2AFD14446BA978ED1 /* MCPServersView.swift */; };
 		0B5B48F0840ADA164F7AB7DB /* ServerOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84F24355E5F700568944B562 /* ServerOnboardingView.swift */; };
 		3259B15BE921E88E2C7B8ADC /* NocturneMacClient in Frameworks */ = {isa = PBXBuildFile; productRef = 93CB88F4C67B6A62AA80B0CD /* NocturneMacClient */; };
 		34C6EABB33D1CAAEB3F3E379 /* NocturneServerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FECE177EFC02F8D64D35D91 /* NocturneServerApp.swift */; };
@@ -26,6 +27,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AEC06BA2AFD14446BA978ED1 /* MCPServersView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MCPServersView.swift; path = Sources/Design/MCPServersView.swift; sourceTree = "<group>"; };
 		002017491E1EA293A2347E66 /* MicrophoneInstallation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MicrophoneInstallation.swift; path = Sources/Server/MicrophoneInstallation.swift; sourceTree = "<group>"; };
 		2614280CAF5CF883FD531634 /* fr */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = fr; path = Resources/Localization/Server/fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		4FECE177EFC02F8D64D35D91 /* NocturneServerApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NocturneServerApp.swift; path = Sources/Server/NocturneServerApp.swift; sourceTree = "<group>"; };
@@ -98,6 +100,7 @@
 			isa = PBXGroup;
 			children = (
 				CD9A9B27FA64C45876C2D08C /* NocturneTheme.swift */,
+				AEC06BA2AFD14446BA978ED1 /* MCPServersView.swift */,
 				4FECE177EFC02F8D64D35D91 /* NocturneServerApp.swift */,
 				89D8CB2A8DC57528812CE513 /* ServerModel.swift */,
 				74BB712FA3C668265AE12E32 /* ServerView.swift */,
@@ -215,6 +218,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				43872880C76666DA1AEFA155 /* NocturneTheme.swift in Sources */,
+				AEC06BA2AFD14446BA978ED0 /* MCPServersView.swift in Sources */,
 				34C6EABB33D1CAAEB3F3E379 /* NocturneServerApp.swift in Sources */,
 				EDCBDDE3AB67AAF59ED82753 /* ServerModel.swift in Sources */,
 				59AF08C4CE7754ABDC0FED38 /* ServerView.swift in Sources */,

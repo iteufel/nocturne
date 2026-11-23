@@ -1,12 +1,37 @@
 import Foundation
+import CryptoKit
 import NocturneKit
+
+/// ACP has no app-origin field; remember only sessions created by Nocturne.
+/// Codex's immutable originator also identifies chats from before this registry existed.
+@MainActor
+private final class ChatSessionOwnership {
+    private let defaults: UserDefaults
+    private let key: String
+    init(configuration: ChatAgentConfiguration, defaults: UserDefaults) {
+        self.defaults = defaults
+        let scope = [configuration.id, configuration.transport.rawValue, configuration.executable] + configuration.arguments
+        let data = (try? JSONEncoder().encode(scope)) ?? Data()
+        key = "nocturne.chats." + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+    func contains(_ id: String) -> Bool { defaults.stringArray(forKey: key)?.contains(id) == true }
+    func isHidden(_ id: String) -> Bool { defaults.stringArray(forKey: key + ".hidden")?.contains(id) == true }
+    func insert(_ id: String) { insert(id, key: key) }
+    func hide(_ id: String) { insert(id, key: key + ".hidden") }
+    private func insert(_ id: String, key: String) {
+        var ids = defaults.stringArray(forKey: key) ?? []
+        if !ids.contains(id) { ids.append(id); defaults.set(ids, forKey: key) }
+    }
+}
 
 @MainActor
 final class ChatAgentSession {
     let configuration: ChatAgentConfiguration
+    let mcpServers: [MCPServerConfiguration]
     private let rpc: AgentRPC
     private let directory: URL
     private let chatGPTOnly: Bool
+    private let ownership: ChatSessionOwnership
     var emit: ((ChatEvent) -> Void)?
     var emitVoice: ((ChatVoiceEvent) -> Void)?
     var supervisorSession: ((String) -> Bool)?
@@ -74,8 +99,11 @@ final class ChatAgentSession {
     private var approvals: [String: Approval] = [:]
     private let approvalLifetime: TimeInterval
 
-    init(configuration: ChatAgentConfiguration, directory: URL, chatGPTOnly: Bool = false, approvalLifetime: TimeInterval = 300) throws {
+    init(configuration: ChatAgentConfiguration, directory: URL, chatGPTOnly: Bool = false, approvalLifetime: TimeInterval = 300, defaults: UserDefaults = .standard, mcpServers: [MCPServerConfiguration] = []) throws {
+        try MCPServerConfiguration.validate(mcpServers)
+        self.mcpServers = mcpServers
         self.configuration = configuration; self.directory = directory
+        ownership = ChatSessionOwnership(configuration: configuration, defaults: defaults)
         self.approvalLifetime = min(300, max(0, approvalLifetime))
         self.chatGPTOnly = chatGPTOnly
         rpc = try AgentRPC(configuration: configuration, directory: directory, chatGPTOnly: chatGPTOnly)
@@ -100,6 +128,25 @@ final class ChatAgentSession {
             capabilities = result["agentCapabilities"] as? [String: Any] ?? [:]
         }
     }
+    // Dotted overrides merge individual servers with the user's existing Codex configuration.
+    private func codexMCPParameters(_ parameters: [String: Any]) -> [String: Any] {
+        guard !mcpServers.isEmpty else { return parameters }
+        var result = parameters, config = parameters["config"] as? [String: Any] ?? [:]
+        for server in mcpServers {
+            config["mcp_servers." + server.id] = ["url": server.url, "http_headers": server.headers, "enabled": server.enabled] as [String: Any]
+        }
+        result["config"] = config; return result
+    }
+    private func acpMCPServers() throws -> [[String: Any]] {
+        let enabled = mcpServers.filter(\.enabled)
+        guard enabled.isEmpty || (capabilities["mcpCapabilities"] as? [String: Any])?["http"] as? Bool == true else {
+            throw NocturneError.remote("This provider does not support HTTP MCP servers. Disable the custom servers or choose a provider with HTTP MCP support.")
+        }
+        return enabled.map { server in
+            ["type": "http", "name": server.name, "url": server.url,
+             "headers": server.headers.keys.sorted().map { ["name": $0, "value": server.headers[$0]!] }]
+        }
+    }
     var isClosed: Bool { rpc.closed }
     var isResponding: Bool { activeSession != nil }
     func close() { toolTasks.values.forEach { $0.cancel() }; toolTasks = [:]; cancelApprovals(); endVoiceLocally(); rpc.close(); emit = nil; emitVoice = nil }
@@ -109,7 +156,10 @@ final class ChatAgentSession {
             guard cursor == listToken, archived == listArchived else { throw NocturneError.invalidFrame }
         } else { listRemainder = []; listRemoteCursor = nil; listToken = nil; listArchived = archived }
         var notice: String?
-        if listRemainder.isEmpty {
+        // Skip a bounded number of unrelated pages, preserving the remote cursor.
+        var scanned = 0
+        while listRemainder.isEmpty, scanned < 8 {
+            scanned += 1
             var params: [String: Any] = [:]
             if let next = listRemoteCursor { params["cursor"] = next }
             if configuration.transport == .codex {
@@ -118,23 +168,32 @@ final class ChatAgentSession {
                 // Interactive and noninteractive sources are explicit: Codex otherwise hides exec/subagent sessions.
                 params["sourceKinds"] = ["cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview", "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown"]
                 let result = try await rpc.call("thread/list", params)
-                listRemainder = (result["data"] as? [[String: Any]] ?? []).compactMap(Self.codexSession)
+                listRemainder = (result["data"] as? [[String: Any]] ?? []).filter {
+                    guard let id = $0["id"] as? String, !ownership.isHidden(id) else { return false }
+                    return $0["originator"] as? String == "nocturne" || ownership.contains(id) || supervisorSession?(id) == true
+                }.compactMap(Self.codexSession)
                 listRemoteCursor = result["nextCursor"] as? String
             } else if (capabilities["sessionCapabilities"] as? [String: Any])?["list"] != nil {
                 let result = try await rpc.call("session/list", params)
                 listRemainder = (result["sessions"] as? [[String: Any]] ?? []).compactMap(Self.acpSession)
+                    .filter { ownership.contains($0.id) && !ownership.isHidden($0.id) }
                 listRemoteCursor = result["nextCursor"] as? String
             } else {
-                listRemainder = Array(known.values).sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
+                listRemainder = known.values.filter { ownership.contains($0.id) && !ownership.isHidden($0.id) }.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
                 listRemoteCursor = nil
                 notice = "This provider does not expose conversation history. Only chats opened in this connection appear here."
             }
+            guard listRemoteCursor == nil || listRemoteCursor != params["cursor"] as? String else { throw NocturneError.invalidFrame }
+            if listRemoteCursor == nil { break }
         }
+        listRemainder.removeAll { ownership.isHidden($0.id) }
         let page = Array(listRemainder.prefix(ChatProtocol.pageSize)); listRemainder.removeFirst(page.count)
         for session in page { known[session.id] = session }
         listToken = listRemainder.isEmpty && listRemoteCursor == nil ? nil : UUID().uuidString
         return ChatSessionPage(sessions: page, nextCursor: listToken, notice: notice)
     }
+
+    func hideRetiredSupervisor(_ id: String) { ownership.hide(id) }
 
     func load(_ id: String, cursor: String?, archived: Bool) async throws -> ChatHistoryPage {
         guard activeSession == nil else { throw NocturneError.remote("Stop the current reply before opening another conversation.") }
@@ -170,7 +229,7 @@ final class ChatAgentSession {
                 if capabilities["loadSession"] as? Bool == true {
                     transcript = []; toolTitles = [:]; replayBytes = 0; replaying = true; chunkID = nil; chunkRole = nil
                     defer { replaying = false }
-                    let result = try await rpc.call("session/load", ["sessionId": id, "cwd": info.directory, "mcpServers": [Any]()], timeout: 90)
+                    let result = try await rpc.call("session/load", ["sessionId": id, "cwd": info.directory, "mcpServers": try acpMCPServers()], timeout: 90)
                     sessionOptions[id] = Self.acpOptions(result)
                     opened.insert(id)
                 } else if let saved = savedTranscripts[id] { transcript = saved }
@@ -212,7 +271,7 @@ final class ChatAgentSession {
                 // Codex 0.164 advertises paginated threads before implementing thread/items/list.
                 params["historyMode"] = "legacy"
             }
-            let result = try await rpc.call("thread/start", params)
+            let result = try await rpc.call("thread/start", codexMCPParameters(params))
             guard let thread = result["thread"] as? [String: Any], let session = Self.codexSession(thread) else { throw NocturneError.invalidFrame }
             if supervisor, !ephemeral {
                 // Naming materializes an otherwise empty thread so a dedicated voice process can resume it.
@@ -220,11 +279,12 @@ final class ChatAgentSession {
             }
             info = session
         } else {
-            let result = try await rpc.call("session/new", ["cwd": workingDirectory.path, "mcpServers": [Any]()])
+            let result = try await rpc.call("session/new", ["cwd": workingDirectory.path, "mcpServers": try acpMCPServers()])
             guard let id = result["sessionId"] as? String else { throw NocturneError.invalidFrame }
             info = ChatSessionInfo(id: id, title: "New conversation", directory: workingDirectory.path, updatedAt: Date())
             sessionOptions[id] = Self.acpOptions(result)
         }
+        if !ephemeral { ownership.insert(info.id) }
         if configuration.transport == .acp, capabilities["loadSession"] as? Bool != true, let previous = transcriptSession { savedTranscripts[previous] = transcript }
         known[info.id] = info; opened.insert(info.id); created.insert(info.id); transcript = []; transcriptSession = info.id; toolTitles = [:]; chunkID = nil; chunkRole = nil
         return info
@@ -239,7 +299,7 @@ final class ChatAgentSession {
                 if !opened.contains(id) {
                     var params: [String: Any] = ["threadId": id, "excludeTurns": true, "approvalPolicy": "on-request", "sandbox": "workspace-write"]
                     if supervisorSession?(id) == true { params["developerInstructions"] = ChatSupervisorService.instructions }
-                    _ = try await rpc.call("thread/resume", params)
+                    _ = try await rpc.call("thread/resume", codexMCPParameters(params))
                     opened.insert(id)
                 }
                 var params: [String: Any] = ["threadId": id,
@@ -349,7 +409,7 @@ final class ChatAgentSession {
         guard let option = options.first(where: { $0.id == id }), option.choices.contains(where: { $0.value == value }) else { throw NocturneError.invalidFrame }
         if configuration.transport == .codex {
             if !opened.contains(session) {
-                _ = try await rpc.call("thread/resume", ["threadId": session, "excludeTurns": true, "approvalPolicy": "on-request", "sandbox": "workspace-write"])
+                _ = try await rpc.call("thread/resume", codexMCPParameters(["threadId": session, "excludeTurns": true, "approvalPolicy": "on-request", "sandbox": "workspace-write"]))
                 opened.insert(session)
             }
             var params: [String: Any] = ["threadId": session, id == "model" ? "model" : "effort": value]
@@ -740,7 +800,7 @@ extension ChatAgentSession {
         if supervisorSession?(session) == true { params["developerInstructions"] = ChatSupervisorService.instructions }
         let result: [String: Any]
         var continued = false
-        do { result = try await rpc.call("thread/resume", params) }
+        do { result = try await rpc.call("thread/resume", codexMCPParameters(params)) }
         catch let error as AgentRPCError where error.code == -32600 && error.message == "thread \(session) already has an active writer" {
             guard supervisorSession?(session) != true else {
                 throw NocturneError.remote("The supervisor is open in another client. End its voice session or close it there, then try again.")
@@ -750,7 +810,7 @@ extension ChatAgentSession {
             }
             // A carried goal must not launch work before the user has spoken.
             params["deferGoalContinuation"] = true
-            result = try await rpc.call("thread/fork", params)
+            result = try await rpc.call("thread/fork", codexMCPParameters(params))
             continued = true
         }
         guard let thread = result["thread"] as? [String: Any], var info = Self.codexSession(thread),
@@ -760,6 +820,7 @@ extension ChatAgentSession {
             do { _ = try await rpc.call("thread/name/set", ["threadId": info.id, "name": title]) }
             catch { _ = try? await rpc.call("thread/archive", ["threadId": info.id]); throw error }
             info = ChatSessionInfo(id: info.id, title: title, directory: info.directory, updatedAt: Date())
+            ownership.insert(info.id)
         }
         opened.insert(info.id); preparedVoiceSessions.insert(info.id); known[info.id] = info
         return info

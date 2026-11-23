@@ -40,6 +40,12 @@ The Mac product is `.build/XcodeMac/Build/Products/Debug/Nocturne.app`; the simu
 
 ## Tests
 
+`swift test --filter MCPServerTests` covers MCP URL/header validation, secure-store
+persistence and write failures, real stdio Codex/ACP configuration payloads,
+provider snapshot replacement, active-reply guards, and authenticated TLS server
+management with chat-access revocation. Fixtures use temporary storage and do
+not connect to external MCP services or run inference.
+
 Chat protocol fixtures run with `swift test --filter ChatTests`. They exercise real stdio processes, Codex legacy and paginated history, ACP replay and capability negotiation, streaming, approvals, cancellation, and authenticated chat revocation. The optional `NOCTURNE_TEST_CODEX=1 swift test --filter ChatTests/testInstalledCodexHistoryReadOnly` checks the installed Codex's local history without starting or resuming an inference turn.
 
 Developer workspace tests run with `swift test --filter 'DeveloperWorkspaceTests|ForgeTests|ChatTests'`. Temporary real repositories cover staging/unstaging, unusual paths, renames, branch comparisons, isolated worktree creation and stale/symlink-safe edits. The authenticated server test verifies thread-directory binding and permission/active-turn guards. `DeveloperClientTests` in the simulator exercises model/worktree/changes/PR flows over real TLS with deterministic media-free forge responses. PR edits are tested with structured payloads and stale-write rejection without modifying real PRs.
@@ -49,6 +55,8 @@ Workspace network fixtures bind port `0`, wait for readiness and read `listening
 `ChatNavigationTests` covers provider/Mac preference isolation, snooze expiration, draft persistence, exact slash-command routing and bounded PR-agent context. Repository tests commit in disposable checkouts, reject stale index previews, preserve unstaged files and push only to a temporary local bare repository. Forge creation/activity tests use adapters with structured fixture replies; live forge checks only read actual PRs, comments and diffs. Regenerating the Xcode projects must preserve the microphone description and both `audio` and `voip` background modes needed by Codex voice and CallKit.
 
 `ChatTranscriptScrollTests` checks real native scroll geometry: jumping to the bottom, retaining the visible position when prepending history, manual follow-mode restoration, and switching conversations. `DeveloperClientTests/testScrollingToEarlierHistoryLoadsWithoutAButton` drives the actual transcript against paginated TLS history; it fails against the old button-only pagination. PR inbox discovery uses an independent authenticated connection, keeping already loaded results and the conversation responsive.
+
+Run `bash scripts/test-chat-policy.sh` for chat ownership, reset and permission fixtures without the streaming, WebRTC or Rust build dependencies. Ownership fixtures cover mixed app origins, archived and empty pages, provider-scoped persistence, and failed resets that preserve the current supervisor. Reset fixtures also verify worker process shutdown, approval cleanup and retired-supervisor hiding.
 
 Supervisor fixtures cover persisted identity, real stdio dynamic-tool dispatch, configured-provider discovery, worker approvals, early cancellation, external-active-target rejection, and authenticated opening. `NOCTURNE_TEST_CODEX_SUPERVISOR=1 swift test --filter ChatTests/testInstalledCodexSupervisorToolsWithoutInference` also creates a disposable real Codex supervisor, verifies its empty history, releases its writer, resumes it through a separate process, and archives the test thread. It performs no inference or microphone capture. Codex 0.164 needs explicit legacy history for these new threads, `thread/name/set` to materialize an empty thread, and process release before the voice connection can acquire the writer. Client voice tests cover the opt-in startup and preparation request using injected media; live spoken supervisor delegation remains a hardware/service acceptance check.
 

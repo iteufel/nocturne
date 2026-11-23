@@ -42,7 +42,7 @@ public struct ChatAgentConfiguration: Codable, Equatable, Identifiable, Sendable
     var descriptor: ChatProvider {
         ChatProvider(id: id, name: name, available: executableURL != nil,
             detail: executableURL == nil ? "Install \(executable) on your Mac or set its full path in Sharing → Chat providers."
-                : transport == .codex ? "Conversations from Codex on this Mac" : "Agent Client Protocol", supportsVoice: transport == .codex)
+                : transport == .codex ? "Nocturne conversations with Codex on this Mac" : "Agent Client Protocol", supportsVoice: transport == .codex)
     }
     func workingDirectory(fallback: URL) throws -> URL {
         let url = directory.isEmpty ? fallback : URL(fileURLWithPath: NSString(string: directory).expandingTildeInPath)
