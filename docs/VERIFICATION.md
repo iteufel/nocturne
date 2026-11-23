@@ -313,3 +313,26 @@ base; their feature branches and working trees were not modified here.
 - The focused display suite passed 38 tests (four opt-in hardware tests skipped). The broader actual-source host/settings/device/Mac-client fixture passed 73 tests (four skipped). Its unrelated Rust FFI was replaced with aborting stubs that these tests never invoke; this is not a full SwiftPM run. The full app/client builds and complete CI suites remain release checks.
 - Upstream also removed the pinned `v2026.1110.222616` DMG. The exact original archive is retained in [the runtime dependency release](https://github.com/iteufel/nocturne/releases/tag/runtime-sunshine-v2026.1110.222616), with SHA-256 `98819933a8c827ce336d5c92dcd250f717cbd8383a7d8f3ed4b2bd432c047925`. Source, libraries and resources retain their existing revision. Four checksum/cache tests and ten build-orchestration tests passed.
 - These checks reproduce and fix the two observed boundaries. They do not establish successful password-screen video from the final signed app to the physical iPad; the user must retest that path with the new release.
+
+### Dependency upgrade and ScreenCaptureKit startup (2026-11-24)
+
+The dependency audit used the current official releases and source references on
+November 23. The locked-display and client-dismissal fixes remain included.
+
+| Dependency | Pinned version |
+| --- | --- |
+| Sunshine | `v2026.1123.40502`, source `cae70da9f71595aa07e7948b11175bb2f5134787` |
+| SwiftTerm | `v1.99.3`, source `282c3c3a932b55c129628876b70f37d993af1615` |
+| WebRTC | `158.0.0`, source `3b7fca3bf68209386d7c9818235bd178281f90af` |
+| iroh / iroh-relay | `1.5.0` |
+| Tokio / libc / netdev | `1.54.1` / `0.2.191` / `0.47.0` |
+| Rust toolchain / xcodeproj | `1.100.0` / `1.28.1` |
+| Broker container base | Rust `1.100.0-trixie`, Debian `trixie-slim` |
+
+- Moonlight's default branch still resolves to the existing pinned commit `02dc9780496eeeac6d01c8bbdccb8b6fe71ef28a`. OpenSSL-Package `3.6.5000` and argument-parser `1.8.2` are already current. GitHub Actions use verified commit pins for their current stable releases. Both Swift package lockfiles and the Rust lockfile were regenerated. Cargo reports no further compatible updates; `generic-array 0.14.7` remains an exact requirement of upstream `crypto-common 0.1.7` in iroh's dependency graph.
+- The official Sunshine arm64 DMG matches SHA-256 `8dab090eb6f67ce59affcdfed6a58bb3e1ba8ec46bef6a0d6adc384a7a07f16d`. The identical archive is retained in [the runtime release](https://github.com/iteufel/nocturne/releases/tag/runtime-sunshine-v2026.1123.40502). Source, libraries and resources use this same release. The new CMake dependency lock replaces most source submodules; the build still initializes its pinned `lizardbyte-common` helper.
+- Ported display targeting to both capture backends. Unlocked streams prefer the new ScreenCaptureKit implementation; locked streams use AVFoundation for loginwindow. Lock/display changes retire capture even without frames, and a missing initial ScreenCaptureKit frame triggers AVFoundation fallback. The old encoder-probe wake workaround was removed because upstream now implements it, retaining its Windows-specific guard.
+- The new upstream ScreenCaptureKit content lookup and stream startup each waited indefinitely for an OS completion. A replay of their actual methods failed when the callbacks did not arrive. Both waits now have five-second deadlines with shared completion state; late content is discarded safely and late stream startup is stopped. The replay passes success/error, timeout, ownership and late-completion cases under AddressSanitizer and UBSan. Nine additional scenarios exercise the actual ScreenCaptureKit capture loop, including silent lock transitions and shutdown.
+- SwiftTerm removed `getTerminal()`. The client now uses its supported view resize/reset methods and copied dimension snapshot. Existing Mac regression assertions were corrected to compare localized labels and complete messages, including the remote-route negative assertions, so the real suite can run on this German Mac.
+- After integrating main's chat/MCP changes at `f5c476f`, the complete upgraded development Mac app acknowledged the original locked virtual-display request in **0.980 seconds**, removed the temporary display on EOF, and passed strict bundle signature verification. No physical display was disabled. This remains a development build; final distribution signing/notarization and physical iPad video are separate release checks.
+- Final integrated validation: both full app builds passed; the actual SwiftPM suite passed **264 tests with 16 opt-in skips**, with the real upgraded broker enabled. The client suite passed **110 tests on iPad (four skips)** and **110 on iPhone (five skips)**. Rust's six transport integration tests, strict Clippy, formatting, all four Apple transport slices, 10 build-orchestration tests, four download/cache tests, 15 chat-policy checks, and audio/video/capture/microphone sanitizer replays passed. The localization audit passed all five languages, 1,184 strings and seven plural keys. The result bundles and logs are under `.build/DependencyUpgrade/` (ignored).
