@@ -26,5 +26,5 @@ xcrun swiftc "${common[@]}" -parse-as-library -emit-library -module-name ChatPol
     -F "$platform/Library/Frameworks" -I "$platform/usr/lib" -L "$platform/usr/lib" \
     -lNocturneKit -lNocturneHostKit \
     -Xlinker -rpath -Xlinker "$platform/Library/Frameworks" -Xlinker -rpath -Xlinker "$platform/usr/lib" \
-    Tests/ChatStatusApprovalTests.swift -o "$fixture/ChatPolicyTests.xctest/Contents/MacOS/ChatPolicyTests"
+    Tests/ChatStatusApprovalTests.swift Tests/ChatOwnershipTests.swift -o "$fixture/ChatPolicyTests.xctest/Contents/MacOS/ChatPolicyTests"
 xcrun xctest "$fixture/ChatPolicyTests.xctest"

@@ -170,18 +170,27 @@ public final class ChatWorkspaceModel: ObservableObject {
     public var supportsSupervisor: Bool {
         connection.capabilities.contains(ChatSupervisor.capability) && provider?.supportsVoice == true
     }
-    public func openSupervisor() async {
+    public var supportsSupervisorReset: Bool {
+        supportsSupervisor && connection.capabilities.contains(ChatSupervisor.resetCapability)
+    }
+    public func openSupervisor() async { await openSupervisor(reset: false) }
+    public func resetSupervisor() async {
+        guard supportsSupervisorReset else { return }
+        await openSupervisor(reset: true)
+    }
+    private func openSupervisor(reset: Bool) async {
         guard available, supportsSupervisor, !loading, !loadingOlder, !responding, !voiceEngaged, !configuring else { return }
         generation = UUID(); let epoch = generation; loading = true; error = nil
         defer { if generation == epoch { loading = false } }
         do {
             var packet = Packet(.chatSupervisor); packet.chatRequest = ChatRequest(providerID: providerID)
+            if reset { packet.chatRequest?.resetSupervisor = true }
             let response = try await connection.request(packet, timeout: 100)
             guard generation == epoch else { return }
             guard let page = response.chatHistory, page.session.isSupervisor == true else { throw NocturneError.invalidFrame }
             clearConversation(); selected = page.session; messages = page.messages; canPrompt = page.canPrompt; permissions = response.chatPermissions ?? []
             historyCursor = page.nextCursor; hasOlderMessages = page.nextCursor != nil; archived = false
-            sessions.removeAll { $0.id == page.session.id }; sessions.insert(page.session, at: 0)
+            sessions.removeAll { $0.isSupervisor == true || $0.id == page.session.id }; sessions.insert(page.session, at: 0)
             await refreshOptions()
         } catch { if generation == epoch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
@@ -317,6 +326,9 @@ public final class ChatWorkspaceModel: ObservableObject {
             activities[event.sessionID] = ChatActivity(event.detail == "Stopped" ? .stopped : .completed, event.detail == "Stopped" ? "Stopped" : "Completed")
             responding = false; respondingSince = nil; permissions = []; notice = event.detail.map(NocturneLocalization.message); pendingUserID = nil
         case .failed:
+            if event.detail == ChatSupervisor.resetNotice {
+                canPrompt = false; sessions.removeAll { $0.id == event.sessionID }
+            }
             activities[event.sessionID] = ChatActivity(.failed, "Failed")
             responding = false; respondingSince = nil; permissions = []; error = event.detail.map(NocturneLocalization.message); pendingUserID = nil
         }

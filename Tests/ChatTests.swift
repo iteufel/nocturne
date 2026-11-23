@@ -100,6 +100,13 @@ final class ChatTests: XCTestCase {
         try await waitUntil { !model.responding }
         XCTAssertTrue(model.messages.contains { $0.text.contains("providers") })
         await model.openSupervisor(); XCTAssertEqual(model.selected?.id, id)
+        XCTAssertTrue(model.supportsSupervisorReset)
+        await model.resetSupervisor(); XCTAssertNil(model.error)
+        let replacement = try XCTUnwrap(model.selected?.id)
+        XCTAssertNotEqual(replacement, id); XCTAssertTrue(model.selected?.isSupervisor == true)
+        XCTAssertFalse(model.sessions.contains { $0.id == id })
+        XCTAssertTrue(model.draft.isEmpty); XCTAssertTrue(model.permissions.isEmpty)
+        await model.openSupervisor(); XCTAssertEqual(model.selected?.id, replacement)
     }
     func testNewCodexThreadCanOpenBeforeItsFirstTurnIsMaterialized() async throws {
         let agent = try await agent("unmaterialized")
@@ -107,7 +114,7 @@ final class ChatTests: XCTestCase {
         let page = try await agent.load(session.id, cursor: nil, archived: false)
         XCTAssertEqual(page.session.id, session.id); XCTAssertTrue(page.messages.isEmpty); XCTAssertTrue(page.canPrompt)
     }
-    func testCodexListsEverySourceAndModelProviderAndPagesArchivedHistory() async throws {
+    func testCodexListsNocturneChatsAcrossSourcesAndModelProvidersAndPagesArchivedHistory() async throws {
         let agent = try await agent()
         let first = try await agent.list(cursor: nil, archived: false)
         XCTAssertEqual(first.sessions.count, 40)
@@ -159,6 +166,7 @@ final class ChatTests: XCTestCase {
     }
     func testACPReplaysChunksAndSupportsPermissionAndCancellation() async throws {
         let agent = try await agent("acp")
+        _ = try await agent.create()
         let list = try await agent.list(cursor: nil, archived: false)
         let id = try XCTUnwrap(list.sessions.first?.id)
         let history = try await agent.load(id, cursor: nil, archived: false)
@@ -547,6 +555,7 @@ final class ChatTests: XCTestCase {
     }
     func testACPAdvertisedModelOptionsFlattenGroupsAndUseSessionConfiguration() async throws {
         let agent = try await agent("acp")
+        _ = try await agent.create()
         let page = try await agent.list(cursor: nil, archived: false)
         let session = try XCTUnwrap(page.sessions.first)
         _ = try await agent.load(session.id, cursor: nil, archived: false)
@@ -686,7 +695,7 @@ def reply(rid, result):
 def event(method, params):
     send({'jsonrpc':'2.0', 'method':method, 'params':params})
 def thread(tid, title='A conversation'):
-    return {'id':tid, 'name':title, 'cwd':thread_directories.get(tid,cwd), 'model':selected_model,'reasoningEffort':selected_effort,'updatedAt':1700000000, 'historyMode':'paginated' if mode == 'modern' else 'legacy'}
+    return {'id':tid, 'originator':'nocturne', 'name':title, 'cwd':thread_directories.get(tid,cwd), 'model':selected_model,'reasoningEffort':selected_effort,'updatedAt':1700000000, 'historyMode':'paginated' if mode == 'modern' else 'legacy'}
 def config_options():
     return [{'id':'agent-model','name':'Agent model','category':'model','type':'select','currentValue':selected_model,'options':[{'group':'recommended','name':'Recommended','options':[{'value':'fixture-fast','name':'Fast'},{'value':'fixture-deep','name':'Deep'}]}]}]
 def item(i, text, role='agentMessage'):
@@ -753,7 +762,10 @@ for line in sys.stdin:
             if p.get('dynamicTools'):
                 assert p['dynamicTools'][0]['name'] == 'nocturne_agents' and p['dynamicTools'][0]['type'] == 'function'
                 assert 'supervisor' in p['developerInstructions']
-                tid = 'supervisor'
+                counter = os.path.join(cwd,'supervisor-counter')
+                count = int(open(counter).read()) + 1 if os.path.exists(counter) else 1
+                with open(counter,'w') as f: f.write(str(count))
+                tid = 'supervisor' if count == 1 else 'supervisor-' + str(count)
             thread_directories[tid] = p['cwd']
         reply(rid, {'thread':thread(tid)})
     elif method == 'thread/fork':

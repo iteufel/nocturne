@@ -1156,3 +1156,8 @@
 "Wait for the simulator display to finish starting." = "Attendez la fin du démarrage de l’écran du simulateur.";
 "Waiting for approval" = "En attente d’approbation";
 "Writing reply" = "Rédaction de la réponse";
+"Reset supervisor" = "Réinitialiser le superviseur";
+"Reset supervisor?" = "Réinitialiser le superviseur ?";
+"Start a fresh supervisor conversation and stop its workers. Project conversations are kept." = "Démarrer une nouvelle conversation avec le superviseur et arrêter ses agents. Les conversations des projets sont conservées.";
+"The supervisor was reset. Open Supervisor to start a fresh conversation." = "Le superviseur a été réinitialisé. Ouvrez le superviseur pour démarrer une nouvelle conversation.";
+"Nocturne conversations with Codex on this Mac" = "Conversations Nocturne avec Codex sur ce Mac";

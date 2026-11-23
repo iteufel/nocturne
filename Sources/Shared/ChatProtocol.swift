@@ -105,6 +105,7 @@ public struct ChatRequest: Codable {
     public var worktreePath: String?
     public var configID: String?
     public var configValue: String?
+    public var resetSupervisor: Bool?
     public init(providerID: String = "codex", sessionID: String? = nil) {
         self.providerID = providerID; self.sessionID = sessionID
     }
