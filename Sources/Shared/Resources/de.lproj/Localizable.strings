@@ -1179,3 +1179,8 @@
 "Use at most 24 MCP servers with unique identifiers." = "Verwende höchstens 24 MCP-Server mit eindeutigen Kennungen.";
 "Finish the current reply or voice call before changing MCP servers." = "Beende die aktuelle Antwort oder den Sprachanruf, bevor du MCP-Server änderst.";
 "This provider does not support HTTP MCP servers. Disable the custom servers or choose a provider with HTTP MCP support." = "Dieser Anbieter unterstützt keine HTTP-MCP-Server. Deaktiviere die eigenen Server oder wähle einen Anbieter mit HTTP-MCP-Unterstützung.";
+"Reset supervisor" = "Supervisor zurücksetzen";
+"Reset supervisor?" = "Supervisor zurücksetzen?";
+"Start a fresh supervisor conversation and stop its workers. Project conversations are kept." = "Eine neue Supervisor-Unterhaltung starten und seine Agenten stoppen. Projektunterhaltungen bleiben erhalten.";
+"The supervisor was reset. Open Supervisor to start a fresh conversation." = "Der Supervisor wurde zurückgesetzt. Öffne den Supervisor, um eine neue Unterhaltung zu starten.";
+"Nocturne conversations with Codex on this Mac" = "Nocturne-Unterhaltungen mit Codex auf diesem Mac";

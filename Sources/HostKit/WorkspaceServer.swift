@@ -241,6 +241,7 @@ private final class HostSession {
                     result.capabilities?.append(ChatVoice.capability)
                     result.capabilities?.append(ChatVoice.preparationCapability)
                     result.capabilities?.append(ChatSupervisor.capability)
+                    result.capabilities?.append(ChatSupervisor.resetCapability)
                     result.capabilities?.append(DeveloperProtocol.capability)
                     result.capabilities?.append(DeveloperProtocol.actionsCapability)
                 }

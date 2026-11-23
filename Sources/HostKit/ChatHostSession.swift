@@ -189,8 +189,12 @@ public final class ChatHostSession {
         guard generation == epoch, enabled, !closed else { throw NocturneError.permissionDenied }
         supervisorSelection = request.sessionID.flatMap { supervisor.isSupervisor($0, provider: request.providerID) ? $0 : nil }
         supervisor.subscribe(supervisorListener) { [weak self] event in
-            guard let self, self.enabled, !self.closed, self.supervisorSelection == event.sessionID else { return }
+            guard let self, self.enabled, !self.closed, self.supervisorSelection == event.sessionID,
+                  event.providerID == request.providerID else { return }
             self.event(event)
+            if event.kind == .failed, event.detail == ChatSupervisor.resetNotice {
+                self.endActive(ChatSupervisor.resetNotice); self.reset()
+            }
         }
         switch packet.operation {
         case .chatVoiceOpen:
@@ -198,7 +202,7 @@ public final class ChatHostSession {
             do { reply.chatSession = supervisor.decorate(try await provider.prepareVoiceSession(session, allowContinuation: true), provider: request.providerID) }
             catch { provider.close(); if agent === provider { agent = nil }; throw error }
         case .chatSupervisor:
-            reply.chatHistory = try await supervisor.open(using: provider)
+            reply.chatHistory = try await supervisor.open(using: provider, reset: request.resetSupervisor == true)
             supervisorSelection = reply.chatHistory?.session.id
             if let id = supervisorSelection {
                 reply.chatPermissions = supervisor.permissions(for: id)

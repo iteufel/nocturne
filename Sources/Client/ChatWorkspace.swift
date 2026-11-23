@@ -144,7 +144,7 @@ private struct ChatWorkspaceCanvas: View {
     }
     @ViewBuilder private func side(wide: Bool) -> some View {
         if mode == .threads {
-            ChatThreadSidebar(chat: chat, project: project, navigation: navigation, openSupervisor: { openSupervisor(wide: wide) }, newThread: { newThread(wide: wide) }, open: { openThread($0, wide: wide) }, exit: exit, saveDraft: saveDraft, darkChat: $darkChat, showsControls: !usesSystemBar, showMCPServers: { sheet = .mcpServers })
+            ChatThreadSidebar(chat: chat, project: project, navigation: navigation, openSupervisor: { openSupervisor(wide: wide) }, resetSupervisor: { openSupervisor(wide: wide, reset: true) }, newThread: { newThread(wide: wide) }, open: { openThread($0, wide: wide) }, exit: exit, saveDraft: saveDraft, darkChat: $darkChat, showsControls: !usesSystemBar, showMCPServers: { sheet = .mcpServers })
         } else { ChatPRSidebar(inbox: inbox, selectedURL: selectedPRURL, selectionDisabled: locked || project.busy, open: { openPR($0, wide: wide) }, settings: { mode = .threads }, showsControls: !usesSystemBar) }
     }
     private func main(wide: Bool) -> some View {
@@ -350,10 +350,10 @@ private struct ChatWorkspaceCanvas: View {
         }.padding(.leading, 20).padding(.trailing, !usesSystemBar && wide ? 80 : 20).padding(.bottom, 14).padding(.top, 8)
     }
     private func saveDraft() { if let selected = chat.selected, !chat.loading { navigation.saveDraft(chat.draft, for: selected.id) } }
-    private func openSupervisor(wide: Bool) {
+    private func openSupervisor(wide: Bool, reset: Bool = false) {
         guard !locked else { return }; composing = false; saveDraft(); mode = .threads
         Task {
-            await chat.openSupervisor()
+            if reset { await chat.resetSupervisor() } else { await chat.openSupervisor() }
             guard chat.selected?.isSupervisor == true, chat.error == nil else { return }
             if let id = chat.selected?.id { chat.draft = navigation.entry(id).draft ?? "" }
             if !wide { sidebar = false }

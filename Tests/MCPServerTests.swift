@@ -57,8 +57,8 @@ final class MCPServerTests: XCTestCase {
     }
     func testACPReceivesHTTPServersOnCreateAndLoadAndRejectsUnsupportedTransport() async throws {
         let agent = try makeAgent("acp", servers: [server]); defer { agent.close() }
-        try await agent.initialize(); _ = try await agent.create(); _ = try await agent.list(cursor: nil, archived: false)
-        _ = try await agent.load("existing", cursor: nil, archived: false)
+        try await agent.initialize(); let session = try await agent.create()
+        _ = try await agent.load(session.id, cursor: nil, archived: false)
         for method in ["session/new", "session/load"] {
             let params = try XCTUnwrap(try recordedCalls().first { $0["method"] as? String == method }?["params"] as? [String: Any])
             let value = try XCTUnwrap((params["mcpServers"] as? [[String: Any]])?.first)
