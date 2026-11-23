@@ -22,13 +22,15 @@ if [ ! -f "$archive" ]; then
   download="$(mktemp "$archive.partial.XXXXXX")"
   trap 'rm -f "$download"' EXIT
   curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-    --output "$download" "https://github.com/SunshineStream/Sunshine/releases/download/v${NOCTURNE_SUNSHINE_VERSION}/Sunshine-macOS-arm64.dmg"
+    --output "$download" "$NOCTURNE_SUNSHINE_ARM64_URL"
   verify_archive "$download"
   mv "$download" "$archive"
   trap - EXIT
 fi
 verify_archive "$archive"
-mount_point="$(mktemp -d "$PWD/.build/downloads/sunshine-mount.XXXXXX")"
+# DiskImages cannot mount inside some external-volume worktrees. Keep the
+# temporary mount on the system volume; the verified archive stays in the cache.
+mount_point="$(mktemp -d "${TMPDIR:-/tmp}/nocturne-sunshine.XXXXXX")"
 cleanup() { hdiutil detach "$mount_point" -quiet 2>/dev/null || true; rmdir "$mount_point" 2>/dev/null || true; }
 trap cleanup EXIT
 hdiutil attach "$archive" -readonly -nobrowse -mountpoint "$mount_point" -quiet

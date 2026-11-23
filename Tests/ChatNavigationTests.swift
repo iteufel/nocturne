@@ -35,8 +35,8 @@ final class ChatNavigationTests: XCTestCase {
     }
     func testProviderEnvelopesCollapseWithoutChangingOrdinaryMessages() {
         let voice = ChatMessage(id: "voice", role: .user, text: "<realtime_delegation>\n<input>Fix the chat</input>\n<transcript_delta>user: hello</transcript_delta>\n</realtime_delegation>")
-        XCTAssertEqual(ChatMessagePresentation.summary(voice), "Voice request · Fix the chat")
-        XCTAssertEqual(ChatMessagePresentation.summary(.init(id: "review", role: .assistant, text: #"{"risk_level":"low","user_authorization":"high","outcome":"allow","rationale":"Read only"}"#)), "Action approved")
+        XCTAssertEqual(ChatMessagePresentation.summary(voice), L("Voice request · ") + "Fix the chat")
+        XCTAssertEqual(ChatMessagePresentation.summary(.init(id: "review", role: .assistant, text: #"{"risk_level":"low","user_authorization":"high","outcome":"allow","rationale":"Read only"}"#)), L("Action approved"))
         XCTAssertNil(ChatMessagePresentation.summary(.init(id: "normal", role: .user, text: "Explain <realtime_delegation> to me")))
         XCTAssertNil(ChatMessagePresentation.summary(.init(id: "json", role: .assistant, text: #"{"outcome":"allow"}"#)))
         XCTAssertNil(ChatMessagePresentation.summary(.init(id: "partial", role: .user, text: "<realtime_delegation><input>Incomplete")))

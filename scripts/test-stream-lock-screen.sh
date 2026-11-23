@@ -19,13 +19,14 @@ fi
 # clock, frame buffers and OS capture boundary. --baseline runs the pinned engine.
 ruby - "$source_file" "$test_directory" <<'RUBY'
 source = File.read(ARGV[0])
-parser = source[/    std::optional<CGDirectDisplayID> parse_display_id.*?(?=\n    \/\*\*)/m]
+parser = source[/    std::optional<CGDirectDisplayID> parse_display_id.*?^    }/m]
 selection = source[/    \/\/ Default to main display.*?(?=    \/\/ Print all displays)/m]
 capture = source[/    capture_e capture\(.*?(?=    \/\*\*\n     \* @brief Allocate an image)/m]
-probe = source[/    int dummy_img\(.*?(?=    \/\*\*\n     \* A bridge)/m]
+probe = source[/    int dummy_img\(.*?(?=    \/\*\*)/m]
 abort 'macOS capture test seam changed; review the pinned source.' unless parser && selection && capture && probe
 File.write("#{ARGV[1]}/parser.inc", parser)
-File.write("#{ARGV[1]}/selection.inc", selection)
+requested = selection.include?('const auto requested_display_id') ? 'requested_display_id' : 'display_id'
+File.write("#{ARGV[1]}/selection.inc", selection + "    display->requested_display_id = #{requested};\n    display->display_id = display_id;\n")
 File.write("#{ARGV[1]}/capture.inc", capture.gsub('std::chrono::steady_clock::now()', 'testNow'))
 File.write("#{ARGV[1]}/probe.inc", probe.gsub('std::chrono::steady_clock::now()', 'testNow'))
 RUBY

@@ -92,6 +92,7 @@ private final class FakeDisplayEnvironment {
     var locked = false
     var hasOtherDisplay = true
     var displayActive = true
+    var inactiveDisplays: Set<UInt32> = []
     var onSelect: (() -> Void)?
     weak var lastDisplay: FakeVirtualDisplay?
     let layout = FakeDisplayLayout()
@@ -103,7 +104,7 @@ private final class FakeDisplayEnvironment {
                 "CGSSessionScreenIsLocked": self.locked
             ])
         }, isScreenLocked: { self.locked },
-           isDisplayActive: { _ in self.displayActive },
+           isDisplayActive: { self.displayActive && !self.inactiveDisplays.contains($0) },
            hasActiveDisplayOtherThan: { _ in self.hasOtherDisplay }, create: {
             self.sizes.append($0)
             let display = FakeVirtualDisplay(UInt32(100 + self.sizes.count))
@@ -122,6 +123,37 @@ final class DisplayTests: XCTestCase {
     private let landscape = StreamDisplaySize(width: 2868, height: 1320, frameRate: 60)
     private func request(_ operation: NocturneKit.Operation = .displayPrepare, id: String, size: StreamDisplaySize? = nil) -> Packet {
         var packet = Packet(operation); packet.sessionID = id; packet.display = size; return packet
+    }
+    func testLockedColdStartPublishesFramebufferWithoutSelectingItsMode() async throws {
+        let environment = FakeDisplayEnvironment()
+        environment.locked = true; environment.hasOtherDisplay = false
+        environment.onSelect = { XCTFail("CGCompleteDisplayConfiguration can hang while loginwindow owns the console") }
+        let driver = NativeStreamingDisplayDriver(environment: environment.environment)
+        defer { try? driver.stop() }
+        let display = try await driver.start()
+        XCTAssertEqual(display, environment.lastDisplay?.displayID)
+        XCTAssertEqual(environment.lastDisplay?.selected, false)
+        XCTAssertTrue(environment.layout.primaryChanges.isEmpty)
+        environment.locked = false
+        environment.lastDisplay?.onSelect = nil
+        let unlocked = try await driver.apply(.init(width: 1920, height: 1080, frameRate: 60), disablePhysicalDisplays: false)
+        XCTAssertEqual(unlocked, display)
+        XCTAssertEqual(environment.lastDisplay?.selected, true, "Apply the exact Retina mode on the next unlocked preparation")
+    }
+
+    func testLockedFramebufferPublicationWaitsForActivityWithoutModeTransactions() async throws {
+        let environment = FakeDisplayEnvironment()
+        environment.locked = true; environment.hasOtherDisplay = false
+        environment.onSelect = { XCTFail("A pending framebuffer must be observed without a locked mode transaction") }
+        var native = environment.environment
+        var checks = 0
+        native.isDisplayActive = { _ in checks += 1; return checks >= 3 }
+        let driver = NativeStreamingDisplayDriver(environment: native)
+        defer { try? driver.stop() }
+        let display = try await driver.start()
+        XCTAssertEqual(display, environment.lastDisplay?.displayID)
+        XCTAssertGreaterThanOrEqual(checks, 3)
+        XCTAssertEqual(environment.lastDisplay?.selected, false)
     }
     func testHeadlessIdleAndLockedReconnectPreserveOnlyFramebuffer() async throws {
         for reason in ["release", "socket", "heartbeat"] {
@@ -212,11 +244,11 @@ final class DisplayTests: XCTestCase {
         defer { try? driver.stop() }
         let initial = try await driver.start()
         environment.locked = true
-        environment.displayActive = false
+        environment.inactiveDisplays.insert(initial)
+        environment.onSelect = { XCTFail("Replacing a stale locked framebuffer must not select a display mode") }
         let replacement = try await driver.apply(portrait, disablePhysicalDisplays: false)
         XCTAssertNotEqual(replacement, initial, "Do not return a stale display just because the session is locked")
         weak var framebuffer = environment.lastDisplay
-        environment.displayActive = true
         environment.onConsole = false
         try driver.restore()
         XCTAssertNil(framebuffer, "An inactive console session must not keep a headless display")

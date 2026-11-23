@@ -6,6 +6,7 @@ from pathlib import Path
 import platform
 import re
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,7 +51,7 @@ nocturne_video("{source}" "{directory}/engine-video.cpp")
     # A ready workspace does not imply that the video backend can start. Exercise
     # the engine's real pre-probe gate before the platform's real wake call.
     engine_video = (source / 'src/video.cpp' if args.baseline else directory / 'engine-video.cpp').read_text()
-    gate = re.search(r'    bool allow_encoder_probing\(\).*?(?=\n  }  // namespace)', engine_video, re.S)
+    gate = re.search(r'  bool allow_encoder_probing\(.*?(?=\n  namespace)', engine_video, re.S)
     probe_entry = re.search(r'  int probe_encoders\(\) \{(.*?)(?=    auto encoder_list)', engine_video, re.S)
     wake = re.search(r'    if \(!display_device::wake_display\(display_name, 1s\)\) \{.*?\n    }', display, re.S)
     if not gate or not probe_entry or not wake:
@@ -59,19 +60,36 @@ nocturne_video("{source}" "{directory}/engine-video.cpp")
     (directory / 'probe-entry.inc').write_text(probe_entry.group(1))
     (directory / 'display-wake.inc').write_text(wake.group())
     binary = directory / 'probe-wake-test'
-    subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++17', '-Wall', '-Wextra', '-Werror',
+    subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++20', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-I', str(directory),
                     str(ROOT / 'scripts/tests/stream-probe-wake.cpp'), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-    # The overlay must retain the inactive-display guard outside macOS.
+    # Upstream retains the inactive-display guard specifically on Windows.
     other_binary = directory / 'probe-other-platform-test'
-    subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++17', '-Wall', '-Wextra', '-Werror',
-                    '-DNOCTURNE_TEST_OTHER_PLATFORM=1', '-fsanitize=address,undefined',
+    subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++20', '-Wall', '-Wextra', '-Werror',
+                    '-DNOCTURNE_TEST_WINDOWS=1', '-fsanitize=address,undefined',
                     '-fno-omit-frame-pointer', '-I', str(directory),
                     str(ROOT / 'scripts/tests/stream-probe-wake.cpp'), '-o', str(other_binary)], check=True)
     subprocess.run([str(other_binary)], check=True)
 
     if platform.system() == 'Darwin':
+        subprocess.run([sys.executable, str(ROOT / 'scripts/test-stream-sckit-startup.py')]
+                       + (['--baseline'] if args.baseline else []), check=True)
+        sc_class = display[display.index('  struct sc_display_t:'):]
+        sc_capture = re.search(r'    capture_e capture\(.*?(?=    /\*\*)', sc_class, re.S)
+        if not sc_capture:
+            raise SystemExit('The pinned ScreenCaptureKit capture seam changed; review the test.')
+        (directory / 'sc-capture.inc').write_text(sc_capture.group().replace('std::chrono::steady_clock::now()', 'testNow'))
+        for name, extension in [('sc-loop-header.inc', 'h'), ('sc-loop.inc', 'cpp')]:
+            loop = (source / f'src/platform/macos/sc_capture_loop.{extension}').read_text()
+            (directory / name).write_text(loop[loop.index('namespace platf::sckit {'):])
+        binary = directory / 'sckit-test'
+        subprocess.run(['clang++', '-std=c++17', '-Wall', '-Wextra', '-Werror',
+                        '-Wno-unused-parameter',
+                        '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
+                        '-framework', 'CoreMedia', '-framework', 'CoreFoundation', '-I', str(directory),
+                        str(ROOT / 'scripts/tests/stream-sckit.cpp'), '-o', str(binary)], check=True)
+        subprocess.run([str(binary)], check=True)
         video = (source / 'src/platform/macos/av_video.m' if args.baseline else directory / 'video.m').read_text()
         callback = video[video.index('- (void)captureOutput:'):video.rindex('@end')]
         registration = video[video.index('    [self.videoOutputs setObject:'):video.index('    [self.session startRunning];', video.index('    [self.videoOutputs setObject:'))]

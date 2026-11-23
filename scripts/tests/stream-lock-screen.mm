@@ -30,6 +30,7 @@ static CGDirectDisplayID testMainDisplay() { return mainDisplay; }
 #include "CaptureDisplay.h"
 
 static std::chrono::steady_clock::time_point testNow {};
+static auto frame_timestamp_from_pts(CMSampleBufferRef) { return testNow; }
 static std::function<void(int)> beforeFrame;
 static bool deliverFrames = true;
 static int samplesBeforeSilence = 0;
@@ -78,6 +79,7 @@ struct av_pixel_buf_t {
     uint8_t *data() { return nullptr; }
 };
 struct img_t {
+    std::optional<std::chrono::steady_clock::time_point> frame_timestamp;
     uint8_t *data = nullptr;
     int width = 0, height = 0, row_pitch = 0, pixel_pitch = 0;
 };

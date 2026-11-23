@@ -6,7 +6,8 @@
 using namespace std::literals;
 
 namespace display_device {
-    struct Device { bool m_info; };
+    struct EnumeratedDevice { bool m_info; };
+    using Device = EnumeratedDevice;
     static std::vector<Device> devices;
     static int wakes;
     static bool can_wake = true;
@@ -20,10 +21,10 @@ namespace display_device {
 #define BOOST_LOG(level) std::cerr
 // Choose the policy after system includes so this portable replay does not
 // change the compiler's actual platform headers or call any real OS APIs.
-#ifdef NOCTURNE_TEST_OTHER_PLATFORM
-#undef __APPLE__
-#elif !defined(__APPLE__)
-#define __APPLE__ 1
+#ifdef NOCTURNE_TEST_WINDOWS
+#define _WIN32 1
+#else
+#undef _WIN32
 #endif
 #include "probe-gate.inc"
 
@@ -43,9 +44,9 @@ int main() {
         if (!condition) ++failures;
     };
     display_device::devices = {{false}};
-#ifdef NOCTURNE_TEST_OTHER_PLATFORM
+#ifdef NOCTURNE_TEST_WINDOWS
     check(start_video() != 0 && display_device::wakes == 0,
-        "other platforms preserve the upstream guard against probing inactive displays");
+        "Windows preserves the upstream guard against probing inactive displays");
 #else
     check(start_video() == 0 && display_device::wakes == 1,
         "an online Mac with only an inactive sleeping display reaches wake-up before encoder probing");

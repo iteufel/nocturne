@@ -13,6 +13,7 @@ static unsigned waits;
 static bool allowed = true;
 static unsigned selected = 27;
 static std::chrono::steady_clock::time_point testNow {};
+static auto frame_timestamp_from_pts(CMSampleBufferRef) { return testNow; }
 namespace platf { bool is_screen_capture_allowed() { return allowed; } }
 namespace nocturne {
     unsigned captureDisplay(unsigned) { return selected; }
@@ -25,7 +26,8 @@ struct av_pixel_buf_t {
     explicit av_pixel_buf_t(void *) {}
     unsigned char *data() { return nullptr; }
 };
-struct img_t { unsigned char *data = nullptr; int width = 0, height = 0, row_pitch = 0, pixel_pitch = 0; };
+struct img_t {
+    std::optional<std::chrono::steady_clock::time_point> frame_timestamp; unsigned char *data = nullptr; int width = 0, height = 0, row_pitch = 0, pixel_pitch = 0; };
 struct av_img_t: img_t {
     std::shared_ptr<av_sample_buf_t> sample_buffer;
     std::shared_ptr<av_pixel_buf_t> pixel_buffer;

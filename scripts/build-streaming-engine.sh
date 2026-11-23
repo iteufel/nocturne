@@ -30,13 +30,9 @@ if [ "$(git -C "$source_dir" rev-parse HEAD)" != "$revision" ]; then
   echo 'Unexpected streaming engine source revision; move .build/SunshinePerformanceSource and .build/SunshinePerformanceBuild aside and rerun bootstrap/build.' >&2
   exit 1
 fi
-# The build-deps checkout supplies the pinned prebuilt FFmpeg release. Its own
-# encoder source submodules are unnecessary; avoid downloading/building them.
-git -C "$source_dir" submodule update --init --depth 1 -- third-party/build-deps
-git -C "$source_dir" submodule update --init --recursive --depth 1 -- \
-  third-party/Simple-Web-Server third-party/TPCircularBuffer \
-  third-party/libdisplaydevice third-party/libvirtualhid \
-  third-party/lizardbyte-common third-party/moonlight-common-c
+# Upstream's CMake package lock now resolves the codec/platform libraries.
+# Its shared build helpers remain a pinned submodule.
+git -C "$source_dir" submodule update --init --recursive --depth 1 -- third-party/lizardbyte-common
 
 openssl_root="$(brew --prefix openssl@4)"
 runtime="$PWD/Vendor/StreamingRuntime/Contents"

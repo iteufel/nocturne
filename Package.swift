@@ -11,7 +11,7 @@ let package = Package(
         .library(name: "NocturneVoice", targets: ["NocturneVoice"]),
         .library(name: "NocturneMacClient", targets: ["NocturneMacClient"])
     ],
-    dependencies: [.package(url: "https://github.com/stasel/WebRTC.git", exact: "155.0.0")],
+    dependencies: [.package(url: "https://github.com/stasel/WebRTC.git", exact: "158.0.0")],
     targets: [
         .binaryTarget(name: "NocturneRemote", path: "Vendor/NocturneRemote.xcframework"),
         .target(name: "NocturneKit", dependencies: ["NocturneRemote"], path: "Sources/Shared", resources: [.process("Resources")],

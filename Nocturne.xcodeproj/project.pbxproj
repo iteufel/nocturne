@@ -44,7 +44,7 @@
 		AF5B78FEF7DC4A0987B81807 /* de */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = de; path = Resources/Localization/Server/de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		CD9A9B27FA64C45876C2D08C /* NocturneTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NocturneTheme.swift; path = Sources/Design/NocturneTheme.swift; sourceTree = "<group>"; };
 		FB040A6574DAD884612AE1AF /* es */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = es; path = Resources/Localization/Server/es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		FB3DA98667C93F71F2143D7F /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		FB3DA98667C93F71F2143D7F /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
 		FD5AC1E5BC629B0891C7EADB /* Server.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Server.xcassets; path = Resources/Server.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -168,7 +168,7 @@
 			packageReferences = (
 				0BCB92A207DB6F2403069851 /* XCLocalSwiftPackageReference "." */,
 			);
-			preferredProjectObjectVersion = 77;
+			preferredProjectObjectVersion = 100;
 			productRefGroup = 057AE3F389CAE647DBE07C13 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";

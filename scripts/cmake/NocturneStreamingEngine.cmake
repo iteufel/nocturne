@@ -1,5 +1,6 @@
 include("${CMAKE_CURRENT_LIST_DIR}/NocturneMacOSCapture.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/NocturneMacOSVideo.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/NocturneMacOSScreenCapture.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/NocturneVideo.cmake")
 
 # Apply source overlays to the pinned engine without editing its checkout.
@@ -22,6 +23,10 @@ function(nocturne_streaming_engine)
     nocturne_macos_video("${CMAKE_SOURCE_DIR}" "${macos_video}")
     list(REMOVE_ITEM sources "${CMAKE_SOURCE_DIR}/src/platform/macos/av_video.m")
     list(APPEND sources "${macos_video}")
+    set(macos_screen_capture "${CMAKE_BINARY_DIR}/NocturneScreenCapture.mm")
+    nocturne_macos_screen_capture("${CMAKE_SOURCE_DIR}" "${macos_screen_capture}")
+    list(REMOVE_ITEM sources "${CMAKE_SOURCE_DIR}/src/platform/macos/sc_capture.mm")
+    list(APPEND sources "${macos_screen_capture}")
     set_property(TARGET sunshine PROPERTY SOURCES "${sources}")
     target_include_directories(sunshine PRIVATE "${nocturne_root}/Sources/StreamingEngine" "${nocturne_root}/Sources/DisplayBridge/include")
 
