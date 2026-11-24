@@ -58,10 +58,15 @@ nocturne_video("{source}" "{directory}/engine-video.cpp")
         raise SystemExit('The pinned encoder probe/wake seam changed; review the test.')
     (directory / 'probe-gate.inc').write_text(gate.group())
     (directory / 'probe-entry.inc').write_text(probe_entry.group(1))
-    (directory / 'display-wake.inc').write_text(wake.group())
+    explicit_wake = re.search(r'    auto capture_wake = std::make_shared<nocturne::CaptureWake>\(\);.*?(?=    BOOST_LOG\(debug\) << "Waking display)', display, re.S)
+    (directory / 'display-wake.inc').write_text((explicit_wake.group() if explicit_wake else '') + wake.group())
+    handoff = re.search(r'    display->capture_wake = capture_wake;', display)
+    handoffs = len(re.findall(r'display->capture_wake = capture_wake;', display))
+    (directory / 'capture-wake-handoff.inc').write_text(f'    constexpr int wake_backend_count = {handoffs};\n' + (handoff.group() if handoff else ''))
     binary = directory / 'probe-wake-test'
     subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++20', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-I', str(directory),
+                    '-I', str(ROOT / 'scripts/tests/fakes'), '-I', str(ROOT / 'Sources/StreamingEngine'),
                     str(ROOT / 'scripts/tests/stream-probe-wake.cpp'), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
     # Upstream retains the inactive-display guard specifically on Windows.
@@ -69,6 +74,7 @@ nocturne_video("{source}" "{directory}/engine-video.cpp")
     subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++20', '-Wall', '-Wextra', '-Werror',
                     '-DNOCTURNE_TEST_WINDOWS=1', '-fsanitize=address,undefined',
                     '-fno-omit-frame-pointer', '-I', str(directory),
+                    '-I', str(ROOT / 'scripts/tests/fakes'), '-I', str(ROOT / 'Sources/StreamingEngine'),
                     str(ROOT / 'scripts/tests/stream-probe-wake.cpp'), '-o', str(other_binary)], check=True)
     subprocess.run([str(other_binary)], check=True)
 
