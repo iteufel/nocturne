@@ -70,24 +70,18 @@ struct ClientRootView: View {
                 case .computers: ComputersView(model: model)
                 case .hostApps: HostAppsWorkspace(client: model, model: model.hostApps, connection: model.server)
                 case .chats: ChatWorkspace(model: model.chats, connection: model.server, voice: model.voice, connect: { Task { await model.reconnectServer() } }, exit: { model.page = .computers })
-                case .terminal: TerminalWorkspace(connection: model.server, connect: { Task { await model.reconnectServer() } })
+                case .terminal:
+                    TerminalWorkspace(connection: model.server, connect: { Task { await model.reconnectServer() } },
+                        immersive: true, exit: { model.page = .computers },
+                        hostPicker: model.pairedServers.servers.isEmpty ? nil : AnyView(PairedHostMenu(model: model)))
                 case .files: FilesWorkspace(connection: model.server, connect: { Task { await model.reconnectServer() } })
                 case .settings: ClientSettingsView(model: model, showOnboarding: { replayOnboarding = true })
                 }
             }
-            // Terminal tabs identify the page; a navigation title adds an extra horizontal header on Duo.
-            .background { NocturneBackdrop() }.navigationTitle(page == .terminal ? "" : L(page.rawValue))
+            .background { NocturneBackdrop() }.navigationTitle(L(page.rawValue))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if page == .terminal {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Nocturne", systemImage: "chevron.left") { model.page = .computers }
-                            .labelStyle(.iconOnly)
-                    }
-                    if !model.pairedServers.servers.isEmpty {
-                        ToolbarItem(placement: .topBarTrailing) { PairedHostMenu(model: model) }
-                    }
-                } else if page == .computers {
+                if page == .computers {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(L("Add host"), systemImage: "plus") { model.showAdd = true }.disabled(model.busy || model.session != nil).accessibilityIdentifier("addComputer")
                     }

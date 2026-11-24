@@ -120,7 +120,7 @@ The installation is `/Library/Audio/Plug-Ins/HAL/NocturneMicrophone.driver`. To 
 
 ## Terminal and files
 
-The terminal is SwiftTerm connected to a real `/bin/zsh -l` PTY on the Mac. Open up to eight independent tabs with **+**, switch between them, and close a single shell with its tab’s **×**. Tabs are available in both the Terminal workspace and the stream tools panel. Escape, Tab, Control, and arrows come from the terminal keyboard’s built-in accessory; there is no duplicate shortcut strip.
+The terminal is SwiftTerm connected to a real `/bin/zsh -l` PTY on the Mac, with up to eight independent sessions. The Terminal workspace and terminals opened from chat show only the shell while typing. Pull down on the terminal to hide the keyboard, then tap **…** to switch, open, or close sessions, choose a host, or return to Nocturne. The stream tools panel keeps its inline tabs, **+** button, and tab **×** controls. Escape, Tab, Control, and arrows come from the terminal keyboard’s built-in accessory; there is no duplicate shortcut strip.
 
 Shells and running commands stay on the Mac when the mobile app backgrounds, disconnects, or quits. Reconnecting restores the same tabs, working directories, shell variables, and buffered output (the latest 512 KiB per tab). Finished shells remain readable until you close their tabs. The Mac server must stay running: closing a tab, disabling Terminal, removing its device, stopping the server, or quitting the Mac app ends the affected shells. Sessions do not survive a Mac/server restart.
 

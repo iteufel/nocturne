@@ -6,23 +6,30 @@ import NocturneKit
 struct TerminalWorkspace: View {
     @ObservedObject var connection: WorkspaceConnection
     let connect: () -> Void
+    var immersive = false
+    var exit: (() -> Void)? = nil
+    var hostPicker: AnyView? = nil
     @State private var opening = false
     @State private var error: String?
     @State private var closing: Set<String> = []
     @State private var visible = false
+    @State private var keyboardVisible = true
+    @State private var showsControls = false
     var body: some View {
         VStack(spacing: 0) {
             if !connection.terminals.isEmpty {
-                if connection.state != .connected { connectionHeader }
-                tabBar
+                if !immersive {
+                    if connection.state != .connected { connectionHeader }
+                    tabBar
+                }
                 ZStack {
                     ForEach(connection.terminals) { tab in
-                        TerminalPane(connection: connection, tab: tab, selected: visible && connection.terminalID == tab.id, reportError: { error = $0 })
+                        TerminalPane(connection: connection, tab: tab, immersive: immersive, selected: visible && !showsControls && connection.terminalID == tab.id, reportError: { error = $0 })
                             .opacity(connection.terminalID == tab.id ? 1 : 0)
                             .allowsHitTesting(connection.terminalID == tab.id)
                             .accessibilityHidden(connection.terminalID != tab.id)
                     }
-                }.padding(.horizontal, 4).padding(.bottom, 4)
+                }.padding(.horizontal, immersive ? 0 : 4).padding(.bottom, immersive ? 0 : 4)
             } else if connection.state == .connecting {
                 Spacer(); ProgressView(L("Restoring your terminals…")); Spacer()
             } else if connection.state != .connected {
@@ -41,9 +48,60 @@ struct TerminalWorkspace: View {
                 Spacer()
             }
             if let error { Text(error).font(.caption).foregroundStyle(.orange).padding(12) }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity).background { NocturneBackdrop() }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                if immersive { MoonStyle.terminalInk.ignoresSafeArea() }
+                else { NocturneBackdrop() }
+            }
+            .toolbar(immersive ? .hidden : .automatic, for: .navigationBar, .bottomBar)
+            .overlay(alignment: .topTrailing) {
+                if immersive, showsControlsButton {
+                    Button { showsControls = true } label: {
+                        Image(systemName: "ellipsis").frame(width: 44, height: 44)
+                    }.buttonStyle(NocturneGlassButtonStyle()).accessibilityLabel(L("Terminal"))
+                        .accessibilityIdentifier("terminalControls").padding(8)
+                }
+            }
+            .sheet(isPresented: $showsControls) { controls }
+            .accessibilityAction(named: L("Terminal")) { showsControls = true }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardVisible = true }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardVisible = false }
             .onAppear { visible = true }.onDisappear { visible = false }
             .onChange(of: connection.state) { _, state in if state == .connected { error = nil } }
+    }
+    private var showsControlsButton: Bool {
+        !keyboardVisible || connection.state != .connected ||
+            connection.terminals.first(where: { $0.id == connection.terminalID })?.info.running != true
+    }
+    private var controls: some View {
+        NavigationStack {
+            List {
+                if let hostPicker { Section { hostPicker } }
+                if connection.state != .connected { Section { connectionHeader } }
+                Section {
+                    ForEach(connection.terminals) { tab in
+                        HStack {
+                            Button {
+                                connection.selectTerminal(tab.id); showsControls = false
+                            } label: {
+                                Label(tab.info.name, systemImage: connection.terminalID == tab.id ? "checkmark" : "terminal")
+                            }
+                            Spacer()
+                            Button { closeTerminal(tab.id) } label: { Image(systemName: "xmark") }
+                                .disabled(connection.state != .connected || closing.contains(tab.id))
+                                .accessibilityLabel(L("Close %@", tab.info.name))
+                        }.buttonStyle(.borderless)
+                    }
+                    Button(L("New terminal"), systemImage: "plus") { openTerminal(); showsControls = false }
+                        .disabled(opening || connection.state != .connected || connection.terminals.count >= WorkspaceProtocol.maximumTerminals)
+                }
+                if let exit {
+                    Section { Button("Nocturne", systemImage: "chevron.left") { showsControls = false; exit() } }
+                }
+            }.navigationTitle(L("Terminal")).navigationBarTitleDisplayMode(.inline)
+                .toolbar(.visible, for: .navigationBar)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button(L("Done")) { showsControls = false } } }
+        }.presentationDetents([.medium, .large])
     }
     private var connectionHeader: some View {
         HStack(spacing: 8) {
@@ -122,19 +180,21 @@ private struct TerminalTabButton: View {
 private struct TerminalPane: View {
     @ObservedObject var connection: WorkspaceConnection
     @ObservedObject var tab: TerminalTab
+    let immersive: Bool
     let selected: Bool
     let reportError: (String) -> Void
     var body: some View {
         VStack(spacing: 0) {
             TerminalSurface(connection: connection, tab: tab, active: selected && connection.state == .connected && tab.info.running, reportError: reportError)
-                .padding(6).frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(immersive ? 0 : 6).frame(maxWidth: .infinity, maxHeight: .infinity)
             if !tab.info.running {
                 Text(L("Session ended")).font(.caption).foregroundStyle(MoonStyle.terminalText.opacity(0.7)).padding(10)
             } else if connection.state != .connected {
                 Text(L("Reconnect to continue. Your shell stays on your Mac."))
                     .font(.caption).foregroundStyle(MoonStyle.terminalText.opacity(0.7)).padding(10)
             }
-        }.background(MoonStyle.terminalInk, in: RoundedRectangle(cornerRadius: 18)).clipShape(RoundedRectangle(cornerRadius: 18))
+        }.background(MoonStyle.terminalInk, in: RoundedRectangle(cornerRadius: immersive ? 0 : 18))
+            .clipShape(RoundedRectangle(cornerRadius: immersive ? 0 : 18))
     }
 }
 
@@ -164,6 +224,9 @@ struct TerminalSurface: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(connection: connection, tab: tab, reportError: reportError) }
     func makeUIView(context: Context) -> SwiftTerm.TerminalView {
         let terminal = SwiftTerm.TerminalView(frame: .zero, font: UIFont.monospacedSystemFont(ofSize: 15, weight: .regular))
+        // Pull down to reveal controls, including when the shell has not filled its scrollback yet.
+        terminal.keyboardDismissMode = .interactive
+        terminal.alwaysBounceVertical = true
         terminal.nativeBackgroundColor = UIColor(MoonStyle.terminalInk); terminal.nativeForegroundColor = UIColor(MoonStyle.terminalText)
         terminal.terminalDelegate = context.coordinator
         terminal.resize(cols: tab.info.columns, rows: tab.info.rows)

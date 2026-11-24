@@ -33,7 +33,15 @@ final class TerminalLayoutTests: XCTestCase {
         let terminal = try XCTUnwrap(terminals(host.view).first)
         try await Task.sleep(nanoseconds: 500_000_000)
         host.view.layoutIfNeeded()
-        for _ in 0..<20 where peer.columns != terminal.terminalDimensions.cols || peer.rows != terminal.terminalDimensions.rows {
+        // Wait for keyboard animation and the debounced PTY resize, rather than sampling a transition frame.
+        for _ in 0..<60 {
+            host.view.layoutIfNeeded()
+            let canvas = terminal.convert(terminal.bounds, to: window)
+            let safe = window.bounds.inset(by: window.safeAreaInsets)
+            let keyboardTop = host.view.convert(keyboard.layoutFrame, to: window).minY
+            if abs(canvas.minY - safe.minY) < 1,
+               abs(canvas.maxY - keyboardTop) < 1,
+               peer.columns == terminal.terminalDimensions.cols, peer.rows == terminal.terminalDimensions.rows { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         let frame = terminal.convert(terminal.bounds, to: window)
@@ -42,8 +50,9 @@ final class TerminalLayoutTests: XCTestCase {
         let availableHeight = min(safe.maxY, keyboardTop) - safe.minY
         print("Terminal canvas: \(frame), safe: \(safe), keyboard top: \(keyboardTop), PTY: \(terminal.terminalDimensions.cols)x\(terminal.terminalDimensions.rows)")
         XCTAssertTrue(terminal.isFirstResponder)
-        XCTAssertGreaterThan(frame.width, safe.width * 0.9, "A terminal must not lose a quarter of its width to workspace navigation")
-        XCTAssertGreaterThan(frame.height, availableHeight - 120, "Keep terminal controls compact when the keyboard is open")
+        XCTAssertEqual(frame.width, safe.width, accuracy: 1, "The shell must fill the canvas without horizontal padding")
+        XCTAssertEqual(frame.minY, safe.minY, accuracy: 1, "No header or tab bar may reserve space above the shell")
+        XCTAssertEqual(frame.height, availableHeight, accuracy: 1, "Only the terminal should occupy the area above the keyboard")
         XCTAssertLessThanOrEqual(frame.maxY, keyboardTop + 1, "The shell must stay above the software keyboard")
         XCTAssertEqual(peer.columns, terminal.terminalDimensions.cols, "The remote PTY must follow the actual terminal width")
         XCTAssertEqual(peer.rows, terminal.terminalDimensions.rows, "The remote PTY must follow keyboard-driven resizing")
@@ -62,6 +71,9 @@ final class TerminalLayoutTests: XCTestCase {
         XCTAssertEqual(terminal.terminalDimensions.cols, columns)
         XCTAssertEqual(peer.rows, terminal.terminalDimensions.rows)
         XCTAssertEqual(app.server.terminals.first?.history, history, "Resizing must preserve the restored shell output")
+        if ProcessInfo.processInfo.environment["NOCTURNE_CAPTURE_TERMINAL"] == "1" {
+            try await Task.sleep(nanoseconds: 45_000_000_000)
+        }
     }
 }
 

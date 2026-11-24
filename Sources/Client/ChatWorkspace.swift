@@ -133,7 +133,7 @@ private struct ChatWorkspaceCanvas: View {
         case .browser: BrowserWorkspace(connection: connection) { sheet = nil }
         case .worktrees: DeveloperWorktreesView(model: project)
         case .changes: NavigationStack { DeveloperProjectPane(model: project, tab: .changes).navigationTitle(L("Review changes")).navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Done")) { sheet = nil } } } }
-        case .terminal: NavigationStack { TerminalWorkspace(connection: connection, connect: {}).navigationTitle(L("Terminal")).toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Done")) { sheet = nil } } } }
+        case .terminal: NavigationStack { TerminalWorkspace(connection: connection, connect: {}, immersive: true, exit: { sheet = nil }) }
         case .files: NavigationStack { FilesWorkspace(connection: connection, connect: {}).navigationTitle(L("Files")).toolbar { ToolbarItem(placement: .cancellationAction) { Button(L("Done")) { sheet = nil } } } }
         case .git: ChatGitActionsView(project: project) {
             selectedPRURL = project.selectedPR?.url; mode = .pullRequests; sheet = nil
