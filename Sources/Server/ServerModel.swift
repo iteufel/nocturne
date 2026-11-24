@@ -36,6 +36,7 @@ final class ServerModel: ObservableObject {
     private let appWindows = AppWindowSessionManager(host: NativeAppWindowHost())
     private let simulators = SimulatorSessionManager(backend: NativeSimulatorBackend())
     private let desktop = DesktopSessionManager(host: NativeDesktopHost())
+    private let macUnlock = MacUnlockController()
     @Published private(set) var running = false
     @Published private(set) var starting = false
     @Published private(set) var status = L("Stopped")
@@ -178,6 +179,7 @@ final class ServerModel: ObservableObject {
                 let permissions = HostPermissions(terminal: configuration.terminal, files: configuration.files,
                     microphone: configuration.microphone, chats: appliedSettings.chats, browser: appliedSettings.browser)
                 let host = try WorkspaceServer(folder: configuration.sharedFolder, name: name, devices: deviceStore, permissions: permissions, appWindows: configuration.screenSharing ? appWindows : nil, desktop: configuration.screenSharing ? desktop : nil, simulators: configuration.simulators ? simulators : nil, chatAgents: chatAgents, mcpServers: mcpServers)
+                if configuration.screenSharing { host.macUnlock = macUnlock }
                 if let tunnel = remoteTunnel {
                     host.authorizeRemoteDevice = { [weak tunnel] port, device in
                         guard let tunnel else { throw NocturneError.disconnected }

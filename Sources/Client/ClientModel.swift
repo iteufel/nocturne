@@ -91,7 +91,7 @@ final class ClientModel: ObservableObject {
     private var openingRequest = UUID()
     private var setupDeadline: Task<Void, Never>?
     @Published private(set) var hostErrors: [String: String] = [:]
-    private var linkedHostID: String? { pairedServers.active?.streamingHostID }
+    var linkedHostID: String? { pairedServers.active?.streamingHostID }
     /// Saving is refused until Keychain has been read, so a locked Keychain cannot erase other pairings.
     private var pairedServersLoaded = false
     private var pendingStream: Task<Void, Never>?

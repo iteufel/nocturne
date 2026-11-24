@@ -29,6 +29,31 @@ final class HostConnectionTests: XCTestCase {
         for _ in 0..<100 where !condition() { try await Task.sleep(nanoseconds: 50_000_000) }
         XCTAssertTrue(condition())
     }
+    func testUnlockPromptUsesSecureFieldAndSendsPasswordOnlyAfterSubmission() async throws {
+        let workspace = try TestWorkspace(); workspace.unlockEnabled = true; try await workspace.start()
+        let (model, _) = try model(for: workspace.address, linked: true)
+        defer { model.suspend(); workspace.stop() }
+        await model.reconnectServer()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
+        let previousWindow = scene.keyWindow, window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: MacUnlockControl(connection: model.server))
+        defer { window.isHidden = true; window.rootViewController = nil; previousWindow?.makeKey() }
+        window.rootViewController = host; window.makeKeyAndVisible()
+        func fields(_ view: UIView) -> [UITextField] { (view as? UITextField).map { [$0] } ?? view.subviews.flatMap(fields) }
+        func passwordField() -> UITextField? {
+            host.presentedViewController.map { fields($0.view).first { $0.isSecureTextEntry } } ?? nil
+        }
+        try await waitUntil { passwordField()?.isFirstResponder == true }
+        let field = try XCTUnwrap(passwordField())
+        XCTAssertEqual(field.textContentType, .password)
+        field.insertText("zY öäüß @€[]{}")
+        field.sendActions(for: .editingChanged)
+        XCTAssertTrue(field.isSecureTextEntry)
+        XCTAssertTrue(workspace.unlockPasswords.isEmpty, "Editing the field must not transmit a password")
+        field.sendActions(for: .editingDidEndOnExit)
+        try await waitUntil { workspace.unlockPasswords.count == 1 && host.presentedViewController == nil }
+        XCTAssertEqual(workspace.unlockPasswords, ["zY öäüß @€[]{}"])
+    }
     func testReconnectRepairsInterruptedVideoPairingWithoutAnotherQRScan() async throws {
         let workspace = try TestWorkspace(); try await workspace.start()
         let (model, engine) = try model(for: workspace.address, linked: false)
@@ -270,6 +295,9 @@ private final class TestWorkspace {
     private let listener: NWListener
     private var channels: [SecureChannel] = []
     private(set) var acceptedConnections = 0
+    var unlockEnabled = false
+    private var locked = true
+    private(set) var unlockPasswords: [String] = [] // Generated fixture credentials only.
     init() throws {
         let secret = try SecureStore.randomKey()
         listener = try NWListener(using: SecureTransport.parameters(secret: secret), on: .any)
@@ -298,10 +326,10 @@ private final class TestWorkspace {
     var address: PairingInvitation { try! invitation.replacingAddress(host: "127.0.0.1", port: port) }
     private func accept(_ connection: NWConnection) {
         acceptedConnections += 1
-        let channel = SecureChannel(connection: connection), challenge = Data(repeating: 7, count: 32)
+        let channel = SecureChannel(connection: connection, queue: .main), challenge = Data(repeating: 7, count: 32)
         channels.append(channel)
-        channel.onPacket = { [weak channel] packet in
-            guard let channel else { return }
+        channel.onPacket = { [weak self, weak channel] packet in
+            guard let self, let channel else { return }
             var reply = packet.reply()
             do {
                 switch packet.operation {
@@ -309,6 +337,13 @@ private final class TestWorkspace {
                 case .authenticate:
                     _ = try WorkspaceIdentity.verify(certificate: XCTUnwrap(packet.certificate), signature: XCTUnwrap(packet.signature), challenge: channel.boundChallenge(challenge))
                     reply.name = "Studio"; reply.capabilities = ["streaming"]
+                    if self.unlockEnabled { reply.capabilities?.append(MacUnlock.capability) }
+                case .macLockStatus where self.unlockEnabled:
+                    reply.macLockStatus = .init(state: self.locked ? .locked : .unlocked, user: "Fixture User")
+                case .macUnlock where self.unlockEnabled:
+                    guard let password = packet.unlockPassword else { throw NocturneError.invalidFrame }
+                    self.unlockPasswords.append(try password.withValue { $0 }); password.clear(); self.locked = false
+                    reply.macLockStatus = .init(state: .unlocked, user: "Fixture User")
                 case .pairStream, .ping: break
                 default: reply.error = "Unexpected request"
                 }

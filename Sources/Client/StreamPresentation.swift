@@ -6,6 +6,7 @@ import Combine
 final class StreamWorkspaceState: ObservableObject {
     @Published var showControls = false { didSet { captureChanged?() } }
     @Published var showTools = false { didSet { captureChanged?() } }
+    @Published var showUnlock = false { didSet { captureChanged?() } }
     @Published var lockPointer = true { didSet { captureChanged?() } }
     var captureChanged: (() -> Void)?
 }
@@ -49,7 +50,7 @@ final class StreamHostingController: UIHostingController<StreamWorkspace> {
 
     override var prefersPointerLocked: Bool {
         visible && sceneActive && !closing && session.videoReady && session.controller != nil && model.mouseConnected
-            && workspace.lockPointer && !workspace.showControls && !workspace.showTools
+            && workspace.lockPointer && !workspace.showControls && !workspace.showTools && !workspace.showUnlock
     }
     override var prefersStatusBarHidden: Bool { true }
     override var keyCommands: [UIKeyCommand]? {

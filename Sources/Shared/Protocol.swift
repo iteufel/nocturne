@@ -15,6 +15,7 @@ public enum Operation: String, Codable {
     case hello, authenticate, ping, pairStream, list, read, uploadBegin, uploadChunk, uploadCommit, uploadCancel
     case terminalList, terminalAttach, terminalOpen, terminalInput, terminalResize, terminalClose, terminalOutput, terminalExit, terminalClosed
     case displayPrepare, displayHeartbeat, displayRelease
+    case macLockStatus, macUnlock, macUnlockCancel
     case microphoneStart, microphoneAudio, microphoneStop
     case simulatorList, simulatorOpen, simulatorFrame, simulatorClose, simulatorInput
     case appList, appIcon, appLaunch, appOpen, appResize, appInput, appHeartbeat, appClose, appVideo, appEnded
@@ -71,6 +72,8 @@ public struct Packet: Codable {
     public var files: [RemoteFile]? = nil
     public var capabilities: [String]? = nil
     public var screenLocked: Bool? = nil
+    public var macLockStatus: MacLockStatus? = nil
+    public var unlockPassword: MacUnlockPassword? = nil
     public var certificate: Data? = nil
     public var signature: Data? = nil
     public var enrollmentToken: Data? = nil

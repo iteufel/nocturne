@@ -71,6 +71,11 @@ struct StreamWorkspace: View {
                         .padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
+                MacUnlockControl(connection: model.server, enabled: session.host.id == model.linkedHostID) { presented in
+                    workspace.showUnlock = presented
+                    if presented, let controller = session.controller { model.engine.setKeyboardVisible(false, controller: controller) }
+                }
+                .buttonStyle(.borderedProminent).padding(16)
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
             .onChange(of: layout.video.size, initial: true) { _, size in model.streamViewport(size, scale: displayScale, session: session) }

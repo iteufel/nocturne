@@ -31,8 +31,15 @@ struct MacDesktopWorkspace: View {
             .onChange(of: scale) { _, scale in stream.viewport(geometry.size, scale: scale) }
         }
         .navigationTitle(stream.title)
-        .navigationSubtitle(stream.route == nil ? (stream.screenLocked ? L("Lock screen · Enter your Mac password to unlock") : "") : stream.name)
+        .navigationSubtitle(stream.route == nil ? (stream.screenLocked ? L("Lock screen") : "") : stream.name)
         .toolbar {
+            ToolbarItem {
+                if stream.route == nil {
+                    MacUnlockControl(connection: stream.connection) { presented in
+                        if presented { stream.surface.releaseInput() }
+                    }
+                }
+            }
             ToolbarItem(placement: .navigation) {
                 Button(L("Disconnect"), systemImage: "xmark") {
                     if let route = stream.route { client.disconnectApp(route.id); dismiss() }

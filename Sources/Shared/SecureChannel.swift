@@ -56,10 +56,15 @@ public final class SecureChannel {
         }
     }
     public func send(_ packet: Packet, completion: ((Error?) -> Void)? = nil) {
+        // Snapshot a transient credential before its owner can cancel and clear it.
+        // Media/file packets retain their existing background encoding path.
+        let credentialFrame: Result<Data, Error>? = packet.unlockPassword == nil ? nil : Result { try FrameCodec.encode(packet) }
         queue.async { [weak self] in
             guard let self = self, !self.closed else { completion?(NocturneError.disconnected); return }
             do {
-                let data = try FrameCodec.encode(packet)
+                let data: Data
+                if let credentialFrame { data = try credentialFrame.get() }
+                else { data = try FrameCodec.encode(packet) }
                 self.connection.send(content: data, completion: .contentProcessed { [weak self] error in
                     completion?(error)
                     if let error = error { self?.finish(error) }
