@@ -1184,3 +1184,20 @@
 "Start a fresh supervisor conversation and stop its workers. Project conversations are kept." = "Avvia una nuova conversazione con il supervisore e interrompi i suoi agenti. Le conversazioni dei progetti vengono conservate.";
 "The supervisor was reset. Open Supervisor to start a fresh conversation." = "Il supervisore è stato reimpostato. Apri il supervisore per avviare una nuova conversazione.";
 "Nocturne conversations with Codex on this Mac" = "Conversazioni Nocturne con Codex su questo Mac";
+// Remote Mac unlock
+"Unlock Mac" = "Sblocca il Mac";
+"Unlock %@" = "Sblocca %@";
+"Enter the Mac login password for %@." = "Inserisci la password di accesso al Mac per %@.";
+"Mac login password" = "Password di accesso al Mac";
+"Nocturne sends this password only to this paired Mac over the encrypted connection. It is not saved. This unlocks an existing sign-in; it cannot unlock FileVault after a restart." = "Nocturne invia questa password solo a questo Mac abbinato tramite la connessione crittografata. Non viene salvata. Sblocca una sessione esistente, non FileVault dopo un riavvio.";
+"Unlocking…" = "Sblocco…";
+"Unlock" = "Sblocca";
+"Lock screen" = "Schermata di blocco";
+"Enter your Mac login password without line breaks." = "Inserisci la password di accesso al Mac senza interruzioni di riga.";
+"Sign in to this Mac locally before using remote unlock. FileVault startup cannot be unlocked by Nocturne." = "Accedi prima localmente a questo Mac. Nocturne non può sbloccare FileVault all’avvio.";
+"Another unlock attempt is in progress." = "È già in corso un altro tentativo di sblocco.";
+"Wait 30 seconds before another unlock attempt." = "Attendi 30 secondi prima di riprovare lo sblocco.";
+"The Mac’s signed-in user changed. Reconnect before unlocking it." = "L’utente connesso al Mac è cambiato. Riconnettiti prima di sbloccarlo.";
+"The Mac stayed locked. Check your login password, or enter it directly on the streamed lock screen. Nocturne will not retry it automatically." = "Il Mac è rimasto bloccato. Controlla la password o inseriscila direttamente nella schermata di blocco remota. Nocturne non riproverà automaticamente.";
+"Allow Nocturne in Accessibility on the host Mac before using remote unlock." = "Autorizza Nocturne in Accessibilità sul Mac host prima di usare lo sblocco remoto.";
+"macOS did not expose its password field for remote unlock. Enter your password directly on the streamed lock screen instead." = "macOS non ha reso disponibile il campo password per lo sblocco remoto. Inserisci la password direttamente nella schermata di blocco remota.";

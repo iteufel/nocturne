@@ -36,7 +36,7 @@ public final class WorkspaceConnection: ObservableObject {
     private var ready: CheckedContinuation<Void, Error>?
     private var pending: [String: CheckedContinuation<Packet, Error>] = [:]
     private var deadlines: [String: Task<Void, Never>] = [:]
-    private var generation = UUID()
+    private(set) var generation = UUID()
     private let discovery = WorkspaceDiscovery()
     private let identity: WorkspaceIdentity
     private let remoteStreaming: Bool

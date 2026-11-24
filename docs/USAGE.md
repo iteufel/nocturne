@@ -79,7 +79,11 @@ Virtual display creation and monitor disabling use runtime-checked private macOS
 
 ## Unlock a locked Mac
 
-Leave **Nocturne** running, then open **Desktop** from an already paired iPhone, iPad, or Mac. The stream shows the Mac's lock screen. On iPhone/iPad, open **Keyboard** from the stream controls or use a connected keyboard. On Mac, click inside the desktop viewer and type your normal Mac password. Individual app windows require unlocking through Desktop first.
+Leave **Nocturne** running, then open **Desktop** from an already paired iPhone, iPad, or Mac. With updated apps on both ends, Nocturne detects the locked session and offers **Unlock Mac**. The prompt names the paired Mac and its signed-in user. Enter that user’s Mac login password, then choose **Unlock**. Nocturne submits it to macOS’s own lock screen and waits for the session to become unlocked.
+
+The password travels only over the authenticated encrypted workspace connection and is not saved to Keychain, settings, files, or logs. The prompt clears on submission, cancellation, disconnect, or switching hosts. Each attempt submits once, with a 30-second interval between attempts; Nocturne never retries a password automatically. Only paired devices with desktop access can request unlock. Accessibility must already be allowed for Nocturne on the host.
+
+You can cancel the prompt and use the streamed lock screen instead. On iPhone/iPad, open **Show keyboard** from the stream controls or use a connected keyboard. On Mac, click inside the desktop viewer and type your password. This also works with older apps, or when macOS does not expose its secure password field for the prompt. Individual app windows require unlocking through Desktop first.
 
 While locked, video follows the Mac's main display, where macOS shows the password field. After you unlock, it returns to the selected physical or virtual display automatically. The lock screen may have a different aspect ratio from your virtual desktop. Pairing, Screen Recording and Accessibility permissions must already be set up.
 

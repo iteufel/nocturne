@@ -25,6 +25,10 @@ final class PointerLockTests: XCTestCase {
         XCTAssertFalse(host.prefersPointerLocked)
         host.workspace.showControls = false
         XCTAssertTrue(host.prefersPointerLocked)
+        host.workspace.showUnlock = true
+        XCTAssertFalse(host.prefersPointerLocked, "Password entry must release stream input capture")
+        host.workspace.showUnlock = false
+        XCTAssertTrue(host.prefersPointerLocked)
         host.workspace.showTools = true
         XCTAssertFalse(host.prefersPointerLocked)
         host.workspace.showTools = false

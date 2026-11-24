@@ -1184,3 +1184,20 @@
 "Start a fresh supervisor conversation and stop its workers. Project conversations are kept." = "Start a fresh supervisor conversation and stop its workers. Project conversations are kept.";
 "The supervisor was reset. Open Supervisor to start a fresh conversation." = "The supervisor was reset. Open Supervisor to start a fresh conversation.";
 "Nocturne conversations with Codex on this Mac" = "Nocturne conversations with Codex on this Mac";
+// Remote Mac unlock
+"Unlock Mac" = "Unlock Mac";
+"Unlock %@" = "Unlock %@";
+"Enter the Mac login password for %@." = "Enter the Mac login password for %@.";
+"Mac login password" = "Mac login password";
+"Nocturne sends this password only to this paired Mac over the encrypted connection. It is not saved. This unlocks an existing sign-in; it cannot unlock FileVault after a restart." = "Nocturne sends this password only to this paired Mac over the encrypted connection. It is not saved. This unlocks an existing sign-in; it cannot unlock FileVault after a restart.";
+"Unlocking…" = "Unlocking…";
+"Unlock" = "Unlock";
+"Lock screen" = "Lock screen";
+"Enter your Mac login password without line breaks." = "Enter your Mac login password without line breaks.";
+"Sign in to this Mac locally before using remote unlock. FileVault startup cannot be unlocked by Nocturne." = "Sign in to this Mac locally before using remote unlock. FileVault startup cannot be unlocked by Nocturne.";
+"Another unlock attempt is in progress." = "Another unlock attempt is in progress.";
+"Wait 30 seconds before another unlock attempt." = "Wait 30 seconds before another unlock attempt.";
+"The Mac’s signed-in user changed. Reconnect before unlocking it." = "The Mac’s signed-in user changed. Reconnect before unlocking it.";
+"The Mac stayed locked. Check your login password, or enter it directly on the streamed lock screen. Nocturne will not retry it automatically." = "The Mac stayed locked. Check your login password, or enter it directly on the streamed lock screen. Nocturne will not retry it automatically.";
+"Allow Nocturne in Accessibility on the host Mac before using remote unlock." = "Allow Nocturne in Accessibility on the host Mac before using remote unlock.";
+"macOS did not expose its password field for remote unlock. Enter your password directly on the streamed lock screen instead." = "macOS did not expose its password field for remote unlock. Enter your password directly on the streamed lock screen instead.";

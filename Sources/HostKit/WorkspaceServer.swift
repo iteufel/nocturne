@@ -23,6 +23,7 @@ public final class WorkspaceServer {
     public var pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?
     public var displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?
     public var displayDisconnected: ((UUID) -> Void)?
+    public var macUnlock: MacUnlockController?
     public var onDevices: (([WorkspaceDeviceConnection]) -> Void)?
     public var onStatus: ((String, Int) -> Void)?
     public var authorizeRemoteDevice: ((UInt16, String) throws -> Void)?
@@ -67,7 +68,7 @@ public final class WorkspaceServer {
             guard let self = self, self.listener != nil, self.sessions.count < 32 else { connection.cancel(); return }
             let id = UUID()
             let channel = SecureChannel(connection: connection, queue: self.queue)
-            let session = HostSession(channel: channel, terminals: self.terminals, microphone: self.microphone, appWindows: self.appWindows, desktop: self.desktop, simulators: self.simulators, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, chatAgents: self.chatAgents, supervisor: self.supervisor, mcpServers: self.mcpServers, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected)
+            let session = HostSession(channel: channel, terminals: self.terminals, microphone: self.microphone, appWindows: self.appWindows, desktop: self.desktop, simulators: self.simulators, folder: self.folder, name: self.name, devices: self.devices, permissions: self.permissions, chatAgents: self.chatAgents, supervisor: self.supervisor, mcpServers: self.mcpServers, pairStream: self.pairStream, displayCommand: self.displayCommand, displayDisconnected: self.displayDisconnected, macUnlock: self.desktop != nil ? self.macUnlock : nil)
             self.sessions[id] = session
             session.authorizeRemoteDevice = self.authorizeRemoteDevice
             session.onClose = { [weak self] in self?.sessions.removeValue(forKey: id); self?.publish("Ready") }
@@ -159,7 +160,8 @@ private final class HostSession {
     private let pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?
     private let displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?
     private let displayDisconnected: ((UUID) -> Void)?
-    init(channel: SecureChannel, terminals: TerminalRegistry, microphone: MicrophoneSession, appWindows: AppWindowSessionManager?, desktop: DesktopSessionManager?, simulators: SimulatorSessionManager?, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, chatAgents: [ChatAgentConfiguration], supervisor: ChatSupervisorService, mcpServers: MCPServerStore, pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?, displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?, displayDisconnected: ((UUID) -> Void)?) {
+    private let macUnlock: MacUnlockController?
+    init(channel: SecureChannel, terminals: TerminalRegistry, microphone: MicrophoneSession, appWindows: AppWindowSessionManager?, desktop: DesktopSessionManager?, simulators: SimulatorSessionManager?, folder: SharedFolder, name: String, devices: WorkspaceDeviceStore, permissions: HostPermissions, chatAgents: [ChatAgentConfiguration], supervisor: ChatSupervisorService, mcpServers: MCPServerStore, pairStream: ((String, String, String, String, @escaping (Error?) -> Void) -> Void)?, displayCommand: ((Packet, UUID, String, @escaping (Packet) -> Void) -> Void)?, displayDisconnected: ((UUID) -> Void)?, macUnlock: MacUnlockController?) {
         self.pairStream = pairStream; self.terminals = terminals
         self.microphone = microphone
         self.appWindows = appWindows
@@ -167,6 +169,7 @@ private final class HostSession {
         self.simulators = simulators
         chats = ChatHostSession(configurations: chatAgents, directory: folder.url, enabled: permissions.chats, supervisor: supervisor, mcpServers: mcpServers)
         self.displayCommand = displayCommand; self.displayDisconnected = displayDisconnected
+        self.macUnlock = macUnlock
         browserAuthorization.update(enabled: permissions.browser)
         self.channel = channel; self.devices = devices; self.folder = folder; self.name = name; self.permissions = permissions
         channel.onPacket = { [weak self] packet in self?.handle(packet) }
@@ -191,6 +194,7 @@ private final class HostSession {
         chats.close()
         if let simulators { let id = connectionID; Task { await simulators.disconnected(id) } }
         appConnection.close()
+        if let macUnlock { let id = connectionID; Task { @MainActor in macUnlock.disconnected(id) } }
         transfers.removeAll(); terminals.detach(connectionID)
         microphone.disconnected(connectionID)
         if let appWindows { let id = connectionID; Task { @MainActor in appWindows.disconnected(id) } }
@@ -203,6 +207,7 @@ private final class HostSession {
         } else { displayDisconnected?(connectionID) }
     }
     private func handle(_ packet: Packet) {
+        defer { if packet.operation != .macUnlock { packet.unlockPassword?.clear() } }
         do {
             guard !closed else { return }
             guard [.hello, .authenticate].contains(packet.operation) || device != nil else { throw NocturneError.remote("Authenticate this device before using your Mac.") }
@@ -230,6 +235,7 @@ private final class HostSession {
                 result.capabilities = [permissions.files ? "files" : nil, permissions.terminal ? "terminal" : nil, pairStream != nil ? "streaming" : nil, displayCommand != nil ? "display" : nil, permissions.microphone ? MicrophoneFormat.capability : nil].compactMap { $0 }
                 if appWindows != nil { result.capabilities?.append(AppStreaming.capability) }
                 if desktop != nil { result.capabilities?.append(DesktopStreaming.capability) }
+                if macUnlock != nil { result.capabilities?.append(MacUnlock.capability) }
                 if permissions.browser { result.capabilities?.append(BrowserProtocol.capability) }
                 if let simulators {
                     result.capabilities?.append(SimulatorStreaming.capability)
@@ -256,6 +262,16 @@ private final class HostSession {
                 }
                 return
             case .ping: break
+            case .macLockStatus, .macUnlock, .macUnlockCancel:
+                guard let macUnlock, device != nil else { packet.unlockPassword?.clear(); throw NocturneError.permissionDenied }
+                let connection = connectionID, channel = channel, state = appConnection
+                Task { @MainActor in
+                    let reply: Packet
+                    do { reply = try await macUnlock.handle(packet, connection: connection, isConnected: { state.isOpen }) }
+                    catch { reply = packet.reply(error: error.localizedDescription) }
+                    if state.isOpen { channel.send(reply) }
+                }
+                return
             case .chatMCPList, .chatMCPSave, .chatMCPRemove, .chatSupervisor, .chatProviders, .chatList, .chatLoad, .chatNew, .chatPrompt, .chatCancel, .chatPermission, .chatOptions, .chatConfigure, .chatRepository,
                  .chatVoicePrepare, .chatVoiceOpen, .chatVoiceStart, .chatVoiceHeartbeat, .chatVoiceStop:
                 guard permissions.chats else { throw NocturneError.permissionDenied }
@@ -366,6 +382,7 @@ private final class HostSession {
             }
             channel.send(result)
         } catch {
+            packet.unlockPassword?.clear()
             if packet.operation == .authenticate || packet.operation == .hello {
                 closed = true
                 channel.send(packet.reply(error: error.localizedDescription)) { [weak self] _ in self?.channel.cancel() }
