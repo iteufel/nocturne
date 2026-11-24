@@ -33,8 +33,9 @@ struct ClientRootView: View {
     }
     private var workspace: some View {
         GeometryReader { geometry in
-            if model.page == .chats {
-                navigation(for: .chats)
+            // Reading and typing workspaces need the full canvas, including on a wide phone.
+            if model.page == .chats || model.page == .terminal {
+                navigation(for: model.page)
             } else if horizontalSizeClass == .regular && WorkspaceLayout.resolve(width: geometry.size.width) == .expanded {
                 NavigationSplitView {
                     List(selection: Binding<ClientPage?>(get: { model.page }, set: { if let page = $0 { model.page = page } })) {
@@ -74,14 +75,23 @@ struct ClientRootView: View {
                 case .settings: ClientSettingsView(model: model, showOnboarding: { replayOnboarding = true })
                 }
             }
-            .background { NocturneBackdrop() }.navigationTitle(L(page.rawValue))
+            // Terminal tabs identify the page; a navigation title adds an extra horizontal header on Duo.
+            .background { NocturneBackdrop() }.navigationTitle(page == .terminal ? "" : L(page.rawValue))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if page == .computers {
+                if page == .terminal {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Nocturne", systemImage: "chevron.left") { model.page = .computers }
+                            .labelStyle(.iconOnly)
+                    }
+                    if !model.pairedServers.servers.isEmpty {
+                        ToolbarItem(placement: .topBarTrailing) { PairedHostMenu(model: model) }
+                    }
+                } else if page == .computers {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(L("Add host"), systemImage: "plus") { model.showAdd = true }.disabled(model.busy || model.session != nil).accessibilityIdentifier("addComputer")
                     }
-                } else if [.hostApps, .terminal, .files].contains(page), model.pairedServers.servers.count > 1 {
+                } else if [.hostApps, .files].contains(page), model.pairedServers.servers.count > 1 {
                     ToolbarItem(placement: .topBarLeading) { PairedHostMenu(model: model) }
                 }
             }

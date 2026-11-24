@@ -13,7 +13,7 @@ struct TerminalWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             if !connection.terminals.isEmpty {
-                connectionHeader
+                if connection.state != .connected { connectionHeader }
                 tabBar
                 ZStack {
                     ForEach(connection.terminals) { tab in
@@ -22,7 +22,7 @@ struct TerminalWorkspace: View {
                             .allowsHitTesting(connection.terminalID == tab.id)
                             .accessibilityHidden(connection.terminalID != tab.id)
                     }
-                }.padding(.horizontal, 8).padding(.bottom, 8)
+                }.padding(.horizontal, 4).padding(.bottom, 4)
             } else if connection.state == .connecting {
                 Spacer(); ProgressView(L("Restoring your terminals…")); Spacer()
             } else if connection.state != .connected {
@@ -58,6 +58,9 @@ struct TerminalWorkspace: View {
     }
     private var tabBar: some View {
         HStack(spacing: 6) {
+            Circle().fill(connection.state == .connected ? MoonStyle.mint : MoonStyle.secondary)
+                .frame(width: 6, height: 6)
+                .accessibilityLabel(connection.name)
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
                     NocturneGlassGroup(spacing: 6) {
@@ -68,7 +71,7 @@ struct TerminalWorkspace: View {
                                     select: { connection.selectTerminal(tab.id) }, close: { closeTerminal(tab.id) })
                                     .id(tab.id)
                             }
-                        }.padding(.vertical, 6).padding(.horizontal, 2)
+                        }.padding(.vertical, 2).padding(.horizontal, 2)
                     }
                 }.scrollIndicators(.hidden)
                     .onChange(of: connection.terminalID) { _, id in if let id { proxy.scrollTo(id, anchor: .trailing) } }
@@ -78,7 +81,7 @@ struct TerminalWorkspace: View {
                 else { Image(systemName: "plus").frame(width: 28, height: 28) }
             }.buttonStyle(NocturneGlassButtonStyle()).accessibilityLabel(L("New terminal"))
                 .disabled(opening || connection.state != .connected || connection.terminals.count >= WorkspaceProtocol.maximumTerminals)
-        }.padding(.horizontal, 10).padding(.bottom, 4)
+        }.padding(.horizontal, 10)
     }
     private func openTerminal() {
         opening = true; error = nil
@@ -124,7 +127,7 @@ private struct TerminalPane: View {
     var body: some View {
         VStack(spacing: 0) {
             TerminalSurface(connection: connection, tab: tab, active: selected && connection.state == .connected && tab.info.running, reportError: reportError)
-                .padding(10).frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(6).frame(maxWidth: .infinity, maxHeight: .infinity)
             if !tab.info.running {
                 Text(L("Session ended")).font(.caption).foregroundStyle(MoonStyle.terminalText.opacity(0.7)).padding(10)
             } else if connection.state != .connected {
@@ -160,7 +163,7 @@ struct TerminalSurface: UIViewRepresentable {
     let reportError: (String) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(connection: connection, tab: tab, reportError: reportError) }
     func makeUIView(context: Context) -> SwiftTerm.TerminalView {
-        let terminal = SwiftTerm.TerminalView(frame: .zero, font: UIFont.monospacedSystemFont(ofSize: 13, weight: .regular))
+        let terminal = SwiftTerm.TerminalView(frame: .zero, font: UIFont.monospacedSystemFont(ofSize: 15, weight: .regular))
         terminal.nativeBackgroundColor = UIColor(MoonStyle.terminalInk); terminal.nativeForegroundColor = UIColor(MoonStyle.terminalText)
         terminal.terminalDelegate = context.coordinator
         terminal.resize(cols: tab.info.columns, rows: tab.info.rows)
