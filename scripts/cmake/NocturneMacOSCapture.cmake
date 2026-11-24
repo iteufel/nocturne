@@ -4,10 +4,28 @@ function(nocturne_macos_capture source_root output)
     set(original "${source_root}/src/platform/macos/display.mm")
     file(READ "${original}" capture)
     set(before "    CGDirectDisplayID display_id {};  ///< Display ID.")
-    set(after "${before}\n    CGDirectDisplayID requested_display_id {};  ///< Selected desktop after unlock.")
+    set(after "${before}\n    CGDirectDisplayID requested_display_id {};  ///< Selected desktop after unlock.\n    std::shared_ptr<nocturne::CaptureWake> capture_wake;  ///< Wake sleeping rendering for this capture.")
     string(FIND "${capture}" "${before}" position)
     if(position EQUAL -1)
         message(FATAL_ERROR "The pinned macOS capture fields changed; review the Nocturne overlay")
+    endif()
+    string(REPLACE "${before}" "${after}" capture "${capture}")
+
+    # An active virtual framebuffer does not imply that WindowServer is awake.
+    # Upstream skips its wake request for active displays and otherwise declares
+    # remote-user activity, which leaves display rendering asleep on this Mac.
+    set(before "    BOOST_LOG(debug) << \"Waking display for capture selector [\"sv << display_name << ']';")
+    set(after [=[
+    auto capture_wake = std::make_shared<nocturne::CaptureWake>();
+    if (!*capture_wake) {
+      BOOST_LOG(warning) << "Could not request display wake before capture";
+    }
+
+]=])
+    string(APPEND after "${before}")
+    string(FIND "${capture}" "${before}" position)
+    if(position EQUAL -1)
+        message(FATAL_ERROR "The pinned macOS display wake changed; review the Nocturne overlay")
     endif()
     string(REPLACE "${before}" "${after}" capture "${capture}")
 
@@ -20,7 +38,7 @@ function(nocturne_macos_capture source_root output)
     string(REPLACE "${before}" "${after}" capture "${capture}")
 
     set(before "display->display_id = display_id;")
-    set(after "${before}\n    display->requested_display_id = requested_display_id;")
+    set(after "${before}\n    display->requested_display_id = requested_display_id;\n    display->capture_wake = capture_wake;")
     string(FIND "${capture}" "${before}" position)
     if(position EQUAL -1)
         message(FATAL_ERROR "The pinned macOS capture construction changed; review the Nocturne overlay")
@@ -204,5 +222,5 @@ function(nocturne_macos_capture source_root output)
         message(FATAL_ERROR "The pinned ScreenCaptureKit loop changed; review the Nocturne overlay")
     endif()
     string(REPLACE "${before}" "${after}" capture "${capture}")
-    file(CONFIGURE OUTPUT "${output}" CONTENT "#include <atomic>\n#include <mutex>\n#include \"CaptureDisplay.h\"\n#import \"NocturneAVVideo.h\"\n${capture}" @ONLY)
+    file(CONFIGURE OUTPUT "${output}" CONTENT "#include <atomic>\n#include <mutex>\n#include \"CaptureDisplay.h\"\n#include \"CaptureWake.h\"\n#import \"NocturneAVVideo.h\"\n${capture}" @ONLY)
 endfunction()
