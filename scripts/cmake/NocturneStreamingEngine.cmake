@@ -1,6 +1,7 @@
 include("${CMAKE_CURRENT_LIST_DIR}/NocturneMacOSCapture.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/NocturneMacOSVideo.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/NocturneMacOSScreenCapture.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/NocturneMacOSKeyboard.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/NocturneVideo.cmake")
 
 # Apply source overlays to the pinned engine without editing its checkout.
@@ -27,8 +28,33 @@ function(nocturne_streaming_engine)
     nocturne_macos_screen_capture("${CMAKE_SOURCE_DIR}" "${macos_screen_capture}")
     list(REMOVE_ITEM sources "${CMAKE_SOURCE_DIR}/src/platform/macos/sc_capture.mm")
     list(APPEND sources "${macos_screen_capture}")
+    set(keyboard_adapter "${CMAKE_BINARY_DIR}/NocturneVirtualHIDInput.cpp")
+    nocturne_macos_keyboard_adapter("${CMAKE_SOURCE_DIR}" "${keyboard_adapter}")
+    list(REMOVE_ITEM sources "${CMAKE_SOURCE_DIR}/src/platform/virtualhid_input.cpp")
+    list(APPEND sources "${keyboard_adapter}")
     set_property(TARGET sunshine PROPERTY SOURCES "${sources}")
-    target_include_directories(sunshine PRIVATE "${nocturne_root}/Sources/StreamingEngine" "${nocturne_root}/Sources/DisplayBridge/include")
+    # Preserve the input adapter's original file-relative header search path.
+    target_include_directories(sunshine PRIVATE "${nocturne_root}/Sources/StreamingEngine" "${nocturne_root}/Sources/DisplayBridge/include" "${CMAKE_SOURCE_DIR}/src/platform")
+
+    get_target_property(hid_target libvirtualhid::libvirtualhid ALIASED_TARGET)
+    get_target_property(hid_sources "${hid_target}" SOURCES)
+    set(keyboard_backend "${CMAKE_BINARY_DIR}/NocturneMacOSKeyboard.cpp")
+    set(original_backend "")
+    foreach(source IN LISTS hid_sources)
+        if(source MATCHES "/platform/macos/macos_backend.cpp$")
+            set(original_backend "${source}")
+        endif()
+    endforeach()
+    if(NOT original_backend)
+        message(FATAL_ERROR "The pinned macOS keyboard target changed; review the Nocturne overlay")
+    endif()
+    get_filename_component(backend_directory "${original_backend}" DIRECTORY)
+    get_filename_component(hid_root "${backend_directory}/../../.." ABSOLUTE)
+    nocturne_macos_keyboard_backend("${hid_root}" "${keyboard_backend}")
+    list(REMOVE_ITEM hid_sources "${original_backend}")
+    list(APPEND hid_sources "${keyboard_backend}")
+    set_property(TARGET "${hid_target}" PROPERTY SOURCES "${hid_sources}")
+    target_include_directories("${hid_target}" PRIVATE "${nocturne_root}/Sources/StreamingEngine")
 
     # Reuse the verified runtime libraries, which retain the release's macOS
     # compatibility. Homebrew supplies headers only, not runtime dependencies.
