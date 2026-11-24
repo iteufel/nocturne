@@ -159,6 +159,8 @@ final class AppWindowClientTests: XCTestCase {
     }
     func testAppWindowsHaveIndependentNativeScenesAndCloseSeparately() async throws {
         guard UIDevice.current.userInterfaceIdiom == .pad, UIApplication.shared.supportsMultipleScenes else { throw XCTSkip("Native app windows require iPad") }
+        let originalScene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { ($0.delegate as? DarkSceneDelegate)?.appStream == nil })
         let prefix = UUID().uuidString
         let first = AppWindowRoute(serverID: prefix, applicationID: "scene-test", windowID: 1, title: "First app window")
         let second = AppWindowRoute(serverID: prefix, applicationID: "scene-test", windowID: 2, title: "Second app window")
@@ -168,8 +170,24 @@ final class AppWindowClientTests: XCTestCase {
                 ($0.delegate as? DarkSceneDelegate)?.appStream?.route.serverID == prefix
             }
         }
-        defer {
-            for scene in scenes() { AppWindowScenes.close(scene.session) }
+        addTeardownBlock { @MainActor in
+            let remaining = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.filter {
+                ($0.delegate as? DarkSceneDelegate)?.appStream?.route.serverID == prefix
+            }
+            for scene in remaining { AppWindowScenes.close(scene.session) }
+            for _ in 0..<100 where remaining.contains(where: { $0.activationState != .unattached }) {
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            XCTAssertTrue(remaining.allSatisfy { $0.activationState == .unattached }, "Test app windows must finish closing")
+            // Closing the last foreground app window backgrounds the library.
+            // Restore it after closure so later keyboard tests have an active scene.
+            var restoreError: Error?
+            UIApplication.shared.requestSceneSessionActivation(originalScene.session, userActivity: nil, options: nil) { restoreError = $0 }
+            for _ in 0..<100 where originalScene.activationState != .foregroundActive && restoreError == nil {
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            if let restoreError { throw restoreError }
+            XCTAssertEqual(originalScene.activationState, .foregroundActive, "The original scene must regain focus after test cleanup")
         }
         AppWindowScenes.open(first) { openingError = $0 }
         for _ in 0..<100 where scenes().count < 1 && openingError == nil { try await Task.sleep(nanoseconds: 50_000_000) }
