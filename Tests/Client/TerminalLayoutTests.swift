@@ -13,7 +13,14 @@ final class TerminalLayoutTests: XCTestCase {
     func testAlternateKeyboardStillHasReachableControls() async throws {
         try await verifyTerminal(alternateKeyboard: true)
     }
-    private func verifyTerminal(alternateKeyboard: Bool) async throws {
+    func testFontSizeChangesReflowTheExistingTerminalAndPersist() async throws {
+        try await verifyTerminal(alternateKeyboard: false, adjustFont: true)
+    }
+    private func verifyTerminal(alternateKeyboard: Bool, adjustFont: Bool = false) async throws {
+        let fontKey = TerminalFontSettings.key
+        let savedFont = UserDefaults.standard.object(forKey: fontKey)
+        UserDefaults.standard.set(15, forKey: fontKey)
+        defer { UserDefaults.standard.set(savedFont, forKey: fontKey) }
         let key = "nocturne.client.onboardingComplete"
         let onboarding = UserDefaults.standard.object(forKey: key)
         UserDefaults.standard.set(true, forKey: key)
@@ -76,6 +83,39 @@ final class TerminalLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(frame.maxY, keyboardTop + 1, "The shell must stay above the software keyboard")
         XCTAssertEqual(peer.columns, terminal.terminalDimensions.cols, "The remote PTY must follow the actual terminal width")
         XCTAssertEqual(peer.rows, terminal.terminalDimensions.rows, "The remote PTY must follow keyboard-driven resizing")
+        if adjustFont {
+            let history = app.server.terminals.first?.history
+            for size in [23, 11, 22] {
+                let previousSize = terminal.font.pointSize
+                let previous = terminal.terminalDimensions
+                UserDefaults.standard.set(size, forKey: fontKey)
+                for _ in 0..<40 {
+                    try await Task.sleep(nanoseconds: 50_000_000)
+                    host.view.layoutIfNeeded()
+                    if terminal.font.pointSize == CGFloat(size),
+                       peer.columns == terminal.terminalDimensions.cols, peer.rows == terminal.terminalDimensions.rows { break }
+                }
+                XCTAssertEqual(terminal.font.pointSize, CGFloat(size), accuracy: 0.1)
+                XCTAssertTrue(terminals(host.view).first === terminal, "Changing text size must not recreate the terminal renderer")
+                if CGFloat(size) > previousSize {
+                    XCTAssertLessThan(terminal.terminalDimensions.cols, previous.cols)
+                    XCTAssertLessThan(terminal.terminalDimensions.rows, previous.rows)
+                } else {
+                    XCTAssertGreaterThan(terminal.terminalDimensions.cols, previous.cols)
+                    XCTAssertGreaterThan(terminal.terminalDimensions.rows, previous.rows)
+                }
+                XCTAssertEqual(peer.columns, terminal.terminalDimensions.cols)
+                XCTAssertEqual(peer.rows, terminal.terminalDimensions.rows)
+                XCTAssertEqual(app.server.terminals.first?.history, history)
+            }
+            let restored = UIHostingController(rootView: ClientRootView(model: app))
+            window.rootViewController = restored
+            try await Task.sleep(nanoseconds: 500_000_000)
+            restored.view.layoutIfNeeded()
+            let renderer = try XCTUnwrap(terminals(restored.view).first)
+            XCTAssertEqual(renderer.font.pointSize, 22, accuracy: 0.1, "A new workspace must use the saved font preference")
+            return
+        }
         let columns = terminal.terminalDimensions.cols
         let history = app.server.terminals.first?.history
         if ProcessInfo.processInfo.environment["NOCTURNE_CAPTURE_TERMINAL"] == "1" {

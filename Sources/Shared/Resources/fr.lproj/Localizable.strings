@@ -1201,3 +1201,6 @@
 "The Mac stayed locked. Check your login password, or enter it directly on the streamed lock screen. Nocturne will not retry it automatically." = "Le Mac est resté verrouillé. Vérifie ton mot de passe ou saisis-le directement sur l’écran verrouillé distant. Nocturne ne réessaiera pas automatiquement.";
 "Allow Nocturne in Accessibility on the host Mac before using remote unlock." = "Autorise Nocturne dans Accessibilité sur le Mac hôte avant le déverrouillage à distance.";
 "macOS did not expose its password field for remote unlock. Enter your password directly on the streamed lock screen instead." = "macOS n’a pas rendu son champ de mot de passe accessible au déverrouillage à distance. Saisis le mot de passe directement sur l’écran verrouillé distant.";
+"Font size" = "Taille de police";
+"%@ pt" = "%@ pt";
+"Reset font size" = "Réinitialiser la taille de police";

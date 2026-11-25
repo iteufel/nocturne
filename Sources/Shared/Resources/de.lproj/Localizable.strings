@@ -1201,3 +1201,6 @@
 "The Mac stayed locked. Check your login password, or enter it directly on the streamed lock screen. Nocturne will not retry it automatically." = "Der Mac bleibt gesperrt. Prüfe dein Anmeldepasswort oder gib es direkt im übertragenen Sperrbildschirm ein. Nocturne versucht es nicht automatisch erneut.";
 "Allow Nocturne in Accessibility on the host Mac before using remote unlock." = "Erlaube Nocturne auf dem Host-Mac unter Bedienungshilfen, bevor du ihn aus der Ferne entsperrst.";
 "macOS did not expose its password field for remote unlock. Enter your password directly on the streamed lock screen instead." = "macOS gibt sein Passwortfeld nicht zum Entsperren aus der Ferne frei. Gib dein Passwort direkt im übertragenen Sperrbildschirm ein.";
+"Font size" = "Schriftgröße";
+"%@ pt" = "%@ pt";
+"Reset font size" = "Schriftgröße zurücksetzen";

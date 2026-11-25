@@ -3,12 +3,20 @@ import SwiftTerm
 import Combine
 import NocturneKit
 
+enum TerminalFontSettings {
+    static let key = "nocturne.terminal.fontSize"
+    static let defaultSize = 15
+    static let range = 8...32
+    static func clamp(_ size: Int) -> Int { min(range.upperBound, max(range.lowerBound, size)) }
+}
+
 struct TerminalWorkspace: View {
     @ObservedObject var connection: WorkspaceConnection
     let connect: () -> Void
     var immersive = false
     var exit: (() -> Void)? = nil
     var hostPicker: AnyView? = nil
+    @AppStorage(TerminalFontSettings.key) private var fontSize = TerminalFontSettings.defaultSize
     @State private var opening = false
     @State private var error: String?
     @State private var closing: Set<String> = []
@@ -72,6 +80,19 @@ struct TerminalWorkspace: View {
                         Button("Nocturne", systemImage: "chevron.left") { showsControls = false; exit() }
                             .accessibilityIdentifier("terminalExit")
                     }
+                }
+                Section {
+                    Stepper(value: Binding(get: { TerminalFontSettings.clamp(fontSize) }, set: { fontSize = TerminalFontSettings.clamp($0) }), in: TerminalFontSettings.range) {
+                        HStack {
+                            Text(L("Font size"))
+                            Spacer()
+                            Text(L("%@ pt", TerminalFontSettings.clamp(fontSize).formatted())).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                    }.accessibilityIdentifier("terminalFontSize")
+                        .accessibilityValue(L("%@ pt", TerminalFontSettings.clamp(fontSize).formatted()))
+                    Button(L("Reset font size")) { fontSize = TerminalFontSettings.defaultSize }
+                        .disabled(fontSize == TerminalFontSettings.defaultSize)
+                        .accessibilityIdentifier("resetTerminalFontSize")
                 }
                 if let hostPicker { Section { hostPicker } }
                 if connection.state != .connected { Section { connectionHeader } }
@@ -233,13 +254,14 @@ struct ServerEmptyView: View {
 }
 
 struct TerminalSurface: UIViewRepresentable {
+    @AppStorage(TerminalFontSettings.key) private var fontSize = TerminalFontSettings.defaultSize
     let connection: WorkspaceConnection
     let tab: TerminalTab
     let active: Bool
     let reportError: (String) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(connection: connection, tab: tab, reportError: reportError) }
     func makeUIView(context: Context) -> SwiftTerm.TerminalView {
-        let terminal = SwiftTerm.TerminalView(frame: .zero, font: UIFont.monospacedSystemFont(ofSize: 15, weight: .regular))
+        let terminal = SwiftTerm.TerminalView(frame: .zero, font: UIFont.monospacedSystemFont(ofSize: CGFloat(TerminalFontSettings.clamp(fontSize)), weight: .regular))
         // Pull down can also dismiss the keyboard; the controls button remains available without this gesture.
         terminal.keyboardDismissMode = .interactive
         terminal.alwaysBounceVertical = true
@@ -264,6 +286,11 @@ struct TerminalSurface: UIViewRepresentable {
     func updateUIView(_ uiView: SwiftTerm.TerminalView, context: Context) {
         let becameActive = active && !context.coordinator.active
         context.coordinator.active = active
+        let size = CGFloat(TerminalFontSettings.clamp(fontSize))
+        if uiView.font.pointSize != size {
+            // Reflow the existing renderer and let its delegate resize the PTY; keep the shell and history.
+            uiView.font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        }
         if !active { uiView.resignFirstResponder() }
         // Layout may have changed while disconnected or while another tab was selected.
         if becameActive {
