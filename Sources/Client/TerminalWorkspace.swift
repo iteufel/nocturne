@@ -13,7 +13,6 @@ struct TerminalWorkspace: View {
     @State private var error: String?
     @State private var closing: Set<String> = []
     @State private var visible = false
-    @State private var keyboardVisible = true
     @State private var showsControls = false
     var body: some View {
         VStack(spacing: 0) {
@@ -55,27 +54,25 @@ struct TerminalWorkspace: View {
             }
             .toolbar(immersive ? .hidden : .automatic, for: .navigationBar, .bottomBar)
             .overlay(alignment: .topTrailing) {
-                if immersive, showsControlsButton {
-                    Button { showsControls = true } label: {
-                        Image(systemName: "ellipsis").frame(width: 44, height: 44)
-                    }.buttonStyle(NocturneGlassButtonStyle()).accessibilityLabel(L("Terminal"))
-                        .accessibilityIdentifier("terminalControls").padding(8)
+                if immersive {
+                    TerminalControlsButton { showsControls = true }
+                        .frame(width: 44, height: 44).padding(8)
                 }
             }
             .sheet(isPresented: $showsControls) { controls }
             .accessibilityAction(named: L("Terminal")) { showsControls = true }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardVisible = true }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardVisible = false }
             .onAppear { visible = true }.onDisappear { visible = false }
             .onChange(of: connection.state) { _, state in if state == .connected { error = nil } }
-    }
-    private var showsControlsButton: Bool {
-        !keyboardVisible || connection.state != .connected ||
-            connection.terminals.first(where: { $0.id == connection.terminalID })?.info.running != true
     }
     private var controls: some View {
         NavigationStack {
             List {
+                if let exit {
+                    Section {
+                        Button("Nocturne", systemImage: "chevron.left") { showsControls = false; exit() }
+                            .accessibilityIdentifier("terminalExit")
+                    }
+                }
                 if let hostPicker { Section { hostPicker } }
                 if connection.state != .connected { Section { connectionHeader } }
                 Section {
@@ -94,9 +91,6 @@ struct TerminalWorkspace: View {
                     }
                     Button(L("New terminal"), systemImage: "plus") { openTerminal(); showsControls = false }
                         .disabled(opening || connection.state != .connected || connection.terminals.count >= WorkspaceProtocol.maximumTerminals)
-                }
-                if let exit {
-                    Section { Button("Nocturne", systemImage: "chevron.left") { showsControls = false; exit() } }
                 }
             }.navigationTitle(L("Terminal")).navigationBarTitleDisplayMode(.inline)
                 .toolbar(.visible, for: .navigationBar)
@@ -149,6 +143,28 @@ struct TerminalWorkspace: View {
         closing.insert(id); error = nil
         Task { defer { closing.remove(id) }; do { try await connection.closeTerminal(id) } catch { self.error = NocturneLocalization.message(error.localizedDescription) } }
     }
+}
+
+// Keep this action reachable while the software keyboard or SwiftTerm's alternate keyboard is open.
+// It overlays the canvas instead of reserving a navigation row.
+private struct TerminalControlsButton: UIViewRepresentable {
+    let action: () -> Void
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        var configuration = UIButton.Configuration.tinted()
+        configuration.image = UIImage(systemName: "ellipsis")
+        configuration.cornerStyle = .capsule
+        configuration.baseForegroundColor = UIColor(MoonStyle.accent)
+        button.configuration = configuration
+        button.accessibilityLabel = L("Terminal")
+        button.accessibilityIdentifier = "terminalControls"
+        button.addAction(UIAction { [weak button] _ in
+            button?.window?.endEditing(true)
+            action()
+        }, for: .touchUpInside)
+        return button
+    }
+    func updateUIView(_ uiView: UIButton, context: Context) {}
 }
 
 private struct TerminalTabButton: View {
@@ -224,7 +240,7 @@ struct TerminalSurface: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(connection: connection, tab: tab, reportError: reportError) }
     func makeUIView(context: Context) -> SwiftTerm.TerminalView {
         let terminal = SwiftTerm.TerminalView(frame: .zero, font: UIFont.monospacedSystemFont(ofSize: 15, weight: .regular))
-        // Pull down to reveal controls, including when the shell has not filled its scrollback yet.
+        // Pull down can also dismiss the keyboard; the controls button remains available without this gesture.
         terminal.keyboardDismissMode = .interactive
         terminal.alwaysBounceVertical = true
         terminal.nativeBackgroundColor = UIColor(MoonStyle.terminalInk); terminal.nativeForegroundColor = UIColor(MoonStyle.terminalText)

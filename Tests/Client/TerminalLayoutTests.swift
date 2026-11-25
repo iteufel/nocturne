@@ -8,6 +8,12 @@ import NocturneKit
 @MainActor
 final class TerminalLayoutTests: XCTestCase {
     func testTerminalUsesTheAvailableCanvasWithTheKeyboardOpen() async throws {
+        try await verifyTerminal(alternateKeyboard: false)
+    }
+    func testAlternateKeyboardStillHasReachableControls() async throws {
+        try await verifyTerminal(alternateKeyboard: true)
+    }
+    private func verifyTerminal(alternateKeyboard: Bool) async throws {
         let key = "nocturne.client.onboardingComplete"
         let onboarding = UserDefaults.standard.object(forKey: key)
         UserDefaults.standard.set(true, forKey: key)
@@ -33,6 +39,20 @@ final class TerminalLayoutTests: XCTestCase {
         let terminal = try XCTUnwrap(terminals(host.view).first)
         try await Task.sleep(nanoseconds: 500_000_000)
         host.view.layoutIfNeeded()
+        if alternateKeyboard {
+            func buttons(_ view: UIView) -> [UIButton] {
+                (view as? UIButton).map { [$0] } ?? view.subviews.flatMap(buttons)
+            }
+            let accessory = try XCTUnwrap(terminal.inputAccessoryView)
+            let toggle = try XCTUnwrap(buttons(accessory).first { button in
+                button.allTargets.contains { target in
+                    button.actions(forTarget: target.base, forControlEvent: .touchDown)?.contains("toggleInputKeyboard:") == true
+                }
+            })
+            toggle.sendActions(for: .touchDown)
+            XCTAssertNotNil(terminal.inputView, "Exercise SwiftTerm's actual alternate keyboard, not a synthetic dismissal")
+            try await Task.sleep(nanoseconds: 500_000_000)
+        }
         // Wait for keyboard animation and the debounced PTY resize, rather than sampling a transition frame.
         for _ in 0..<60 {
             host.view.layoutIfNeeded()
@@ -59,7 +79,9 @@ final class TerminalLayoutTests: XCTestCase {
         let columns = terminal.terminalDimensions.cols
         let history = app.server.terminals.first?.history
         if ProcessInfo.processInfo.environment["NOCTURNE_CAPTURE_TERMINAL"] == "1" {
-            try await Task.sleep(nanoseconds: 45_000_000_000)
+            // Leave the live fixture available for manually testing navigation away from Terminal.
+            for _ in 0..<2 { try await Task.sleep(nanoseconds: 45_000_000_000) }
+            return
         }
         terminal.resignFirstResponder()
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -71,9 +93,27 @@ final class TerminalLayoutTests: XCTestCase {
         XCTAssertEqual(terminal.terminalDimensions.cols, columns)
         XCTAssertEqual(peer.rows, terminal.terminalDimensions.rows)
         XCTAssertEqual(app.server.terminals.first?.history, history, "Resizing must preserve the restored shell output")
-        if ProcessInfo.processInfo.environment["NOCTURNE_CAPTURE_TERMINAL"] == "1" {
-            try await Task.sleep(nanoseconds: 45_000_000_000)
+        // The user must be able to leave Terminal without a successful keyboard-dismiss gesture.
+        terminal.becomeFirstResponder()
+        try await Task.sleep(nanoseconds: 500_000_000)
+        host.view.layoutIfNeeded()
+        func controlsButton(_ view: UIView) -> UIButton? {
+            if let button = view as? UIButton, button.accessibilityIdentifier == "terminalControls" { return button }
+            return view.subviews.lazy.compactMap(controlsButton).first
         }
+        let controls = try XCTUnwrap(controlsButton(host.view), "Terminal controls must remain reachable with the keyboard open")
+        let controlsFrame = controls.convert(controls.bounds, to: window)
+        XCTAssertGreaterThanOrEqual(controlsFrame.width, 44)
+        XCTAssertLessThanOrEqual(controlsFrame.maxY, host.view.convert(keyboard.layoutFrame, to: window).minY)
+        let target = window.hitTest(CGPoint(x: controlsFrame.midX, y: controlsFrame.midY), with: nil)
+        XCTAssertTrue(target === controls || target?.isDescendant(of: controls) == true, "Controls must be tappable above the keyboard")
+        controls.sendActions(for: .touchUpInside)
+        for _ in 0..<40 where terminal.isFirstResponder || host.presentedViewController == nil {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertFalse(terminal.isFirstResponder, "Opening controls must end terminal editing without a keyboard gesture")
+        XCTAssertNotNil(host.presentedViewController, "The controls sheet must expose session and exit actions")
+        host.dismiss(animated: false)
     }
 }
 
